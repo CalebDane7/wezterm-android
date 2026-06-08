@@ -20,6 +20,8 @@ does not have to remember SSH hosts, tmux shortcuts, or terminal key chords.
   scrollback is not enough.
 - Respects Android status, navigation, and keyboard insets so toolbar buttons
   stay tappable on the S25 Ultra.
+- Detects a blank/stuck WebView after resume and reloads only that ttyd page.
+  This reattaches the browser client without killing tmux, Codex, or any tab.
 
 ## Architecture
 
@@ -34,6 +36,18 @@ does not have to remember SSH hosts, tmux shortcuts, or terminal key chords.
 
 The Android app is intentionally thin. The control server owns tmux selection,
 scrolling, reader generation, close behavior, and stop behavior.
+
+## Current Checkpoint
+
+- Installed checkpoint: `versionCode=30`, `versionName=1.29`.
+- v1.29 fixes the black-screen resume case where Android focused WEzterm but
+  the WebView never opened a fresh ttyd HTTP/WebSocket connection.
+- The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a
+  reload on every resume would disconnect normal app switches and make tabs
+  jump while typing.
+- Latest phone proof used Tailscale ADB `127.0.0.1:5556`, cold-launched the app,
+  verified terminal content plus toolbar labels, then hot-resumed from Home and
+  verified terminal content stayed visible.
 
 ## Build
 

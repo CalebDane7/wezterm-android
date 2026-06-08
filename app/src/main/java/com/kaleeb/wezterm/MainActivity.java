@@ -63,6 +63,8 @@ public class MainActivity extends Activity {
     private SharedPreferences prefs;
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
     private long lastReconnectReloadAtMs = 0;
+    private long lastBlankTerminalReloadAtMs = 0;
+    private long lastTerminalLoadAtMs = 0;
     private boolean readModeSuppressesKeyboard = false;
     private boolean terminalHistoryViewportActive = false;
     private boolean terminalTouchStartedInHistoryViewport = false;
@@ -100,6 +102,7 @@ public class MainActivity extends Activity {
         if (webView != null) {
             webView.onResume();
             focusTerminalInputSoon();
+            scheduleBlankTerminalWatchdog("resume");
         }
     }
 
@@ -116,6 +119,7 @@ public class MainActivity extends Activity {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus && webView != null) {
             focusTerminalInputSoon();
+            scheduleBlankTerminalWatchdog("window-focus");
         }
     }
 
@@ -335,6 +339,7 @@ public class MainActivity extends Activity {
 
     private void loadTerminal() {
         int fontSize = prefs.getInt(PREF_FONT_SIZE, DEFAULT_FONT_SIZE);
+        lastTerminalLoadAtMs = System.currentTimeMillis();
         // WHY: Android WebView can be sluggish with ttyd's default WebGL xterm
         // renderer. ttyd documents `rendererType=canvas` as a client option,
         // and URL options outrank server defaults, so the app keeps this even
@@ -345,6 +350,7 @@ public class MainActivity extends Activity {
                 + "&rendererType=canvas"
                 + "&scrollOnUserInput=true");
         focusTerminalInputSoon();
+        scheduleBlankTerminalWatchdog("load");
     }
 
     private void adjustFont(int delta) {
@@ -875,6 +881,67 @@ public class MainActivity extends Activity {
         // not kill tmux, Codex, or any tab.
         webView.reload();
         uiHandler.postDelayed(() -> focusTerminalInputSoon(), 800);
+        scheduleBlankTerminalWatchdog("reconnect-reload");
+    }
+
+    private void scheduleBlankTerminalWatchdog(String reason) {
+        if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            return;
+        }
+        long generation = lastTerminalLoadAtMs;
+        uiHandler.postDelayed(() -> verifyTerminalPainted(reason, generation), 2600);
+    }
+
+    private void verifyTerminalPainted(String reason, long loadGeneration) {
+        if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            return;
+        }
+        if (loadGeneration != lastTerminalLoadAtMs) {
+            return;
+        }
+        // WHY: On 2026-06-08 the phone resumed from a Chrome Custom Tab/blank
+        // WebView layer. Android focus was on this Activity and ttyd/tmux were
+        // healthy, but the WebView never made a fresh HTTP/WebSocket request, so
+        // the user saw a black terminal until the whole app was force-stopped.
+        // This watchdog only reloads when the ttyd/xterm DOM is absent or has no
+        // visible text after a real load delay. Do not replace it with a blind
+        // onResume reload: that would disconnect every normal app switch and
+        // recreate the older "tab jumps while I type" regression.
+        webView.evaluateJavascript(
+                "(function(){"
+                        + "try{"
+                        + "var term=document.querySelector('.xterm');"
+                        + "var rows=document.querySelector('.xterm-rows');"
+                        + "var text=(rows&&rows.innerText||document.body&&document.body.innerText||'').trim();"
+                        + "var canvas=document.querySelector('canvas');"
+                        + "return JSON.stringify({hasTerm:!!term,hasCanvas:!!canvas,textLength:text.length,text:text.slice(0,80)});"
+                        + "}catch(e){return JSON.stringify({error:String(e)});}"
+                + "})()",
+                value -> handleTerminalPaintProbe(value, reason, loadGeneration)
+        );
+    }
+
+    private void handleTerminalPaintProbe(String value, String reason, long loadGeneration) {
+        if (loadGeneration != lastTerminalLoadAtMs) {
+            return;
+        }
+        String probe = value == null ? "" : value.toLowerCase();
+        boolean missingTerminal = probe.contains("\"hasterm\":false")
+                || probe.contains("\"textlength\":0")
+                || probe.contains("\"error\"");
+        if (!missingTerminal) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (now - lastBlankTerminalReloadAtMs < 12000) {
+            return;
+        }
+        lastBlankTerminalReloadAtMs = now;
+        lastTerminalLoadAtMs = now;
+        toast("Reconnecting terminal");
+        webView.loadUrl(webView.getUrl() == null ? TERMINAL_URL : webView.getUrl());
+        uiHandler.postDelayed(() -> focusTerminalInputSoon(), 900);
+        uiHandler.postDelayed(() -> verifyTerminalPainted("blank-watchdog-" + reason, lastTerminalLoadAtMs), 3200);
     }
 
     private void getJson(String path, JsonCallback callback) {

@@ -24,6 +24,8 @@ import android.view.ViewConfiguration;
 import android.view.WindowInsets;
 import android.view.Window;
 import android.view.WindowManager;
+import android.view.animation.AlphaAnimation;
+import android.view.animation.Animation;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
@@ -46,6 +48,8 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.util.ArrayList;
+import java.util.List;
 
 public class MainActivity extends Activity {
     private static final String TERMINAL_URL = "http://kaleeblaptop-1.taildbdeee.ts.net:8088/";
@@ -57,8 +61,8 @@ public class MainActivity extends Activity {
     private static final int MIN_FONT_SIZE = 4;
     private static final int MAX_FONT_SIZE = 18;
     private static final int TOOLBAR_HEIGHT_DP = 56;
-    private static final long HISTORY_DRAG_THROTTLE_MS = 70;
-    private static final int HISTORY_DRAG_PAGES_PER_STEP = 8;
+    private static final long HISTORY_DRAG_THROTTLE_MS = 90;
+    private static final int HISTORY_DRAG_PAGES_PER_STEP = 4;
     private WebView webView;
     private SharedPreferences prefs;
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
@@ -77,10 +81,19 @@ public class MainActivity extends Activity {
     private float terminalLastHistoryDragY = 0;
     private boolean terminalHistoryDragActive = false;
     private boolean terminalMultiTouchGesture = false;
+    private boolean terminalTouchExceededTapSlop = false;
+    private boolean terminalHorizontalPanActive = false;
+    private boolean historyScrollRequestInFlight = false;
+    private String pendingHistoryScrollWhere = "";
+    private int pendingHistoryScrollRepeats = 0;
     private long lastHistoryDragAtMs = 0;
 
     private interface JsonCallback {
         void onResult(JSONObject payload) throws Exception;
+    }
+
+    private interface FailureCallback {
+        void onFailure(Exception exc);
     }
 
     @Override
@@ -229,6 +242,10 @@ public class MainActivity extends Activity {
         view.setFocusable(true);
         view.setFocusableInTouchMode(true);
         view.setBackgroundColor(Color.rgb(16, 16, 20));
+        // WHY: Android's edge effects can make a WebView pan look like the page
+        // is refreshing or fighting the user's finger. The terminal already has
+        // explicit Live/Read controls, so native overscroll feedback is noise.
+        view.setOverScrollMode(View.OVER_SCROLL_NEVER);
         view.setWebViewClient(new TerminalWebViewClient());
         view.setWebChromeClient(new WebChromeClient());
         terminalTouchSlop = ViewConfiguration.get(this).getScaledTouchSlop();
@@ -267,11 +284,15 @@ public class MainActivity extends Activity {
             terminalLastHistoryDragY = terminalTouchStartY;
             terminalHistoryDragActive = false;
             terminalMultiTouchGesture = false;
+            terminalTouchExceededTapSlop = false;
+            terminalHorizontalPanActive = false;
             terminalTouchStartedInHistoryViewport = terminalHistoryViewportActive || readModeSuppressesKeyboard;
             lastHistoryDragAtMs = 0;
-            if (!terminalTouchStartedInHistoryViewport) {
-                scheduleLiveTapFocus("tap-down");
-            }
+            // WHY: v1.30 fixed tap-to-type by refocusing xterm on live taps,
+            // but doing it on ACTION_DOWN races with a user's horizontal pan.
+            // Samsung's keyboard/WebView focus can then snap the terminal back
+            // left while the finger is trying to read a long line. Only refocus
+            // after ACTION_UP proves this was a tap, not a pan or history drag.
             // WHY: when the terminal is in history/reader mode, a plain tap means
             // "return me to live input." If this ACTION_DOWN is allowed through to
             // WebView, xterm can open Samsung's keyboard before the server has
@@ -288,6 +309,19 @@ public class MainActivity extends Activity {
             float dy = event.getY() - terminalTouchStartY;
             float absDx = Math.abs(dx);
             float absDy = Math.abs(dy);
+            if (absDx > terminalTouchSlop || absDy > terminalTouchSlop) {
+                terminalTouchExceededTapSlop = true;
+            }
+            if (!terminalHistoryDragActive
+                    && absDx >= terminalTouchSlop * 2
+                    && absDx > absDy * 1.25f) {
+                // WHY: one-finger horizontal movement is the user's line-reading
+                // pan inside ttyd/WebView. The app must not treat it as a live
+                // tap or a server history gesture, or xterm focus will recenter
+                // the viewport and recreate the "snaps back left" bug.
+                terminalHorizontalPanActive = true;
+                return false;
+            }
             if (!terminalHistoryDragActive) {
                 if (absDy < terminalTouchSlop * 2 || absDy < absDx * 1.35f) {
                     return terminalTouchStartedInHistoryViewport;
@@ -312,11 +346,15 @@ public class MainActivity extends Activity {
             boolean consumed = terminalHistoryDragActive;
             boolean startedInHistoryViewport = terminalTouchStartedInHistoryViewport;
             boolean wasMultiTouch = terminalMultiTouchGesture;
+            boolean wasHorizontalPan = terminalHorizontalPanActive;
+            boolean movedPastTapSlop = terminalTouchExceededTapSlop;
             boolean shouldRestoreTyping = action == MotionEvent.ACTION_UP
                     && startedInHistoryViewport
                     && !terminalHistoryDragActive;
             terminalHistoryDragActive = false;
             terminalMultiTouchGesture = false;
+            terminalTouchExceededTapSlop = false;
+            terminalHorizontalPanActive = false;
             terminalTouchStartedInHistoryViewport = false;
             if (shouldRestoreTyping) {
                 restoreLiveForTyping("Typing ready");
@@ -325,7 +363,9 @@ public class MainActivity extends Activity {
             if (action == MotionEvent.ACTION_UP
                     && !startedInHistoryViewport
                     && !consumed
-                    && !wasMultiTouch) {
+                    && !wasMultiTouch
+                    && !wasHorizontalPan
+                    && !movedPastTapSlop) {
                 scheduleLiveTapFocus("tap-up");
             }
             return consumed || startedInHistoryViewport;
@@ -339,13 +379,51 @@ public class MainActivity extends Activity {
         // amount. The actual terminal history lives in tmux/Codex, so deliberate
         // one-finger vertical drags must call the same server history path as the
         // explicit buttons, with mode=history to avoid the old ignored-live guard.
-        // WHY: v1.24 fired several separate HTTP requests per swipe. That made
-        // Android history feel glitchy and let old page responses race against
-        // tap-to-type. A single batched request keeps the drag fast while giving
-        // the keyboard/live-bottom guard one response to reason about.
+        // WHY: v1.24 fired several separate HTTP requests per swipe and v1.28
+        // made each request too large. That made down-scroll feel like it was
+        // fighting the finger because stale PageUp/PageDown responses arrived
+        // out of order. Keep one request in flight, coalesce the newest
+        // direction, and use smaller page batches so top scroll, down scroll,
+        // and tap-to-live can stop racing each other.
+        int boundedRepeats = Math.max(1, Math.min(6, repeats));
+        if (historyScrollRequestInFlight) {
+            pendingHistoryScrollWhere = where;
+            pendingHistoryScrollRepeats = Math.max(pendingHistoryScrollRepeats, boundedRepeats);
+            return;
+        }
+        sendHistoryScrollFromTouch(where, boundedRepeats);
+    }
+
+    private void sendHistoryScrollFromTouch(String where, int repeats) {
+        long readModeGeneration = enterReadMode();
+        historyScrollRequestInFlight = true;
         String path = "/scroll?where=" + urlEncode(where)
                 + "&mode=history&repeat=" + Math.max(1, repeats);
-        control(path, "", false);
+        getJson(path, payload -> {
+            historyScrollRequestInFlight = false;
+            if (readModeGeneration == terminalModeGeneration) {
+                keepReadModeIfCurrent(readModeGeneration);
+            }
+            drainPendingHistoryScroll();
+        }, exc -> {
+            historyScrollRequestInFlight = false;
+            toast("WEzterm control is not reachable");
+            drainPendingHistoryScroll();
+        });
+    }
+
+    private void drainPendingHistoryScroll() {
+        if (pendingHistoryScrollWhere.isEmpty()
+                || historyScrollRequestInFlight
+                || !terminalHistoryViewportActive
+                || !readModeSuppressesKeyboard) {
+            return;
+        }
+        String nextWhere = pendingHistoryScrollWhere;
+        int nextRepeats = pendingHistoryScrollRepeats;
+        pendingHistoryScrollWhere = "";
+        pendingHistoryScrollRepeats = 0;
+        sendHistoryScrollFromTouch(nextWhere, Math.max(1, nextRepeats));
     }
 
     private void loadTerminal() {
@@ -478,6 +556,9 @@ public class MainActivity extends Activity {
                 toast(message);
             }
             focusTerminalInputSoon();
+        }, exc -> {
+            liveRestoreInFlight = false;
+            toast("WEzterm control is not reachable");
         });
     }
 
@@ -486,6 +567,8 @@ public class MainActivity extends Activity {
         terminalHistoryViewportActive = false;
         terminalTouchStartedInHistoryViewport = false;
         readModeSuppressesKeyboard = false;
+        pendingHistoryScrollWhere = "";
+        pendingHistoryScrollRepeats = 0;
         return generation;
     }
 
@@ -568,10 +651,28 @@ public class MainActivity extends Activity {
     private void showTabs() {
         getJson("/tabs", payload -> {
             JSONArray windows = payload.getJSONArray("windows");
+            List<JSONObject> sortedWindows = new ArrayList<>();
+            for (int i = 0; i < windows.length(); i++) {
+                sortedWindows.add(windows.getJSONObject(i));
+            }
+            // WHY: tmux window indexes are old-to-new and shift after closes.
+            // The phone picker should start with the work touched most recently.
+            // Use server-provided `window_activity`, then fall back to higher
+            // indexes only when tmux reports equal activity timestamps.
+            sortedWindows.sort((left, right) -> {
+                long leftActivity = left.optLong("activityAt", 0);
+                long rightActivity = right.optLong("activityAt", 0);
+                if (leftActivity != rightActivity) {
+                    return Long.compare(rightActivity, leftActivity);
+                }
+                return Integer.compare(right.optInt("index", 0), left.optInt("index", 0));
+            });
             String session = payload.optString("session", "main");
             ScrollView scrollView = new ScrollView(this);
+            scrollView.setFocusable(false);
             LinearLayout list = new LinearLayout(this);
             list.setOrientation(LinearLayout.VERTICAL);
+            list.setFocusable(false);
             list.setPadding(dp(8), dp(6), dp(8), dp(6));
             scrollView.addView(list);
 
@@ -583,12 +684,14 @@ public class MainActivity extends Activity {
             list.addView(header);
 
             final AlertDialog[] dialogRef = new AlertDialog[1];
-            for (int i = 0; i < windows.length(); i++) {
-                JSONObject window = windows.getJSONObject(i);
+            for (int i = 0; i < sortedWindows.size(); i++) {
+                JSONObject window = sortedWindows.get(i);
                 int index = window.getInt("index");
                 String windowId = window.optString("windowId", "");
                 String title = window.optString("title", window.optString("name", "shell"));
                 String detail = tabDetail(window, session);
+                String status = window.optString("status", "idle");
+                String statusLabel = window.optString("statusLabel", "Done");
 
                 LinearLayout row = new LinearLayout(this);
                 row.setOrientation(LinearLayout.HORIZONTAL);
@@ -608,6 +711,27 @@ public class MainActivity extends Activity {
                     }
                     selectTabForTyping(index, windowId, title);
                 });
+
+                LinearLayout titleRow = new LinearLayout(this);
+                titleRow.setOrientation(LinearLayout.HORIZONTAL);
+                titleRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+
+                TextView statusDot = new TextView(this);
+                statusDot.setText("●");
+                statusDot.setTextSize(14);
+                statusDot.setGravity(android.view.Gravity.CENTER);
+                statusDot.setIncludeFontPadding(false);
+                statusDot.setContentDescription(statusLabel);
+                if ("running".equals(status)) {
+                    statusDot.setTextColor(Color.rgb(166, 227, 161));
+                    AlphaAnimation pulse = new AlphaAnimation(0.35f, 1.0f);
+                    pulse.setDuration(650);
+                    pulse.setRepeatMode(Animation.REVERSE);
+                    pulse.setRepeatCount(Animation.INFINITE);
+                    statusDot.startAnimation(pulse);
+                } else {
+                    statusDot.setTextColor(Color.rgb(127, 132, 156));
+                }
 
                 TextView titleText = new TextView(this);
                 titleText.setText((window.optBoolean("active", false) ? "Current: " : "") + title);
@@ -632,7 +756,21 @@ public class MainActivity extends Activity {
                 // Keeping the useful title as a red first line makes the work
                 // identity scannable without changing the stable windowId close
                 // path that already proved exact tmux tab cleanup.
-                openPanel.addView(titleText, new LinearLayout.LayoutParams(
+                // WHY: users need to know whether a Codex tab is still actively
+                // working before switching or closing it. The dot is driven by
+                // control-server pane evidence, not by the mutable title string,
+                // so it can improve scanability without changing close/select
+                // targets or consuming extra row height.
+                titleRow.addView(statusDot, new LinearLayout.LayoutParams(
+                        dp(18),
+                        LinearLayout.LayoutParams.MATCH_PARENT
+                ));
+                titleRow.addView(titleText, new LinearLayout.LayoutParams(
+                        0,
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        1
+                ));
+                openPanel.addView(titleRow, new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         0,
                         1
@@ -679,6 +817,12 @@ public class MainActivity extends Activity {
                     .setNegativeButton("Cancel", null)
                     .show();
             dialogRef[0] = dialog;
+            // WHY: Android AlertDialog can focus a child row or preserve a
+            // measured scroll position, which made Tabs open in the middle.
+            // The user's mental model is newest-first from the top, so force
+            // the picker to the top after layout instead of trusting default
+            // ScrollView focus behavior.
+            scrollView.post(() -> scrollView.scrollTo(0, 0));
         });
     }
 
@@ -757,9 +901,11 @@ public class MainActivity extends Activity {
 
     private String tabDetail(JSONObject window, String session) throws Exception {
         String state = window.getBoolean("active") ? "Current tab" : "Tap to open";
+        String status = window.optString("statusLabel", "Done");
         String detail = window.optString("detail", window.optString("command", ""));
         String path = window.optString("shortPath", "");
-        return state
+        return status
+                + " - " + state
                 + " - Session " + session
                 + " - Tab " + window.getInt("index")
                 + " - " + detail
@@ -855,26 +1001,17 @@ public class MainActivity extends Activity {
                         + "var root=document.querySelector('.xterm');"
                         + "if(root&&typeof root.focus==='function'){root.focus();}"
                         + "var el=document.querySelector('.xterm-helper-textarea, .xterm textarea, textarea');"
-                        + "var body=(document.body&&document.body.innerText||'').toLowerCase();"
-                        + "if(body.indexOf('reconnect')>=0){return 'reconnect';}"
                         + "if(el){"
                         + "el.setAttribute('autocapitalize','none');"
                         + "el.setAttribute('autocomplete','off');"
                         + "el.setAttribute('autocorrect','off');"
                         + "el.setAttribute('spellcheck','false');"
                         + "el.focus();"
-                        + "if(typeof el.click==='function'){el.click();}"
                         + "}"
                         + "return el?'focused':'no-input';"
                         + "}catch(e){return 'err';}"
                 + "})()",
-                value -> {
-                    if (value != null && value.toLowerCase().contains("reconnect")) {
-                        reloadTerminalForReconnect();
-                    } else {
-                        showKeyboardIfLive();
-                    }
-                }
+                value -> showKeyboardIfLive()
         );
         showKeyboardIfLive();
     }
@@ -906,6 +1043,9 @@ public class MainActivity extends Activity {
 
     private void showKeyboardIfLive() {
         if (webView == null || readModeSuppressesKeyboard || terminalHistoryViewportActive) {
+            return;
+        }
+        if (terminalHistoryDragActive || terminalMultiTouchGesture || terminalHorizontalPanActive) {
             return;
         }
         webView.requestFocusFromTouch();
@@ -944,6 +1084,13 @@ public class MainActivity extends Activity {
         if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
             return;
         }
+        if (terminalHistoryDragActive
+                || terminalMultiTouchGesture
+                || terminalHorizontalPanActive
+                || terminalHistoryViewportActive
+                || readModeSuppressesKeyboard) {
+            return;
+        }
         if (loadGeneration != lastTerminalLoadAtMs) {
             return;
         }
@@ -951,10 +1098,10 @@ public class MainActivity extends Activity {
         // WebView layer. Android focus was on this Activity and ttyd/tmux were
         // healthy, but the WebView never made a fresh HTTP/WebSocket request, so
         // the user saw a black terminal until the whole app was force-stopped.
-        // This watchdog only reloads when the ttyd/xterm DOM is absent or has no
-        // visible text after a real load delay. Do not replace it with a blind
-        // onResume reload: that would disconnect every normal app switch and
-        // recreate the older "tab jumps while I type" regression.
+        // This watchdog only reloads when the ttyd/xterm renderer is absent
+        // after a real load delay. Do not replace it with a blind onResume
+        // reload: that would disconnect every normal app switch and recreate
+        // the older "tab jumps while I type" regression.
         webView.evaluateJavascript(
                 "(function(){"
                         + "try{"
@@ -962,8 +1109,8 @@ public class MainActivity extends Activity {
                         + "var rows=document.querySelector('.xterm-rows');"
                         + "var text=(rows&&rows.innerText||document.body&&document.body.innerText||'').trim();"
                         + "var canvas=document.querySelector('canvas');"
-                        + "return JSON.stringify({hasTerm:!!term,hasCanvas:!!canvas,textLength:text.length,text:text.slice(0,80)});"
-                        + "}catch(e){return JSON.stringify({error:String(e)});}"
+                        + "return ({hasTerm:!!term,hasCanvas:!!canvas,canvasWidth:canvas?canvas.width:0,canvasHeight:canvas?canvas.height:0,textLength:text.length});"
+                        + "}catch(e){return ({error:String(e)});}"
                 + "})()",
                 value -> handleTerminalPaintProbe(value, reason, loadGeneration)
         );
@@ -973,10 +1120,28 @@ public class MainActivity extends Activity {
         if (loadGeneration != lastTerminalLoadAtMs) {
             return;
         }
-        String probe = value == null ? "" : value.toLowerCase();
-        boolean missingTerminal = probe.contains("\"hasterm\":false")
-                || probe.contains("\"textlength\":0")
-                || probe.contains("\"error\"");
+        if (terminalHistoryDragActive
+                || terminalMultiTouchGesture
+                || terminalHorizontalPanActive
+                || terminalHistoryViewportActive
+                || readModeSuppressesKeyboard) {
+            return;
+        }
+        JSONObject probe = parseJavascriptObject(value);
+        boolean missingTerminal = true;
+        if (probe != null) {
+            boolean hasTerm = probe.optBoolean("hasTerm", false);
+            boolean hasCanvas = probe.optBoolean("hasCanvas", false);
+            int canvasWidth = probe.optInt("canvasWidth", 0);
+            int canvasHeight = probe.optInt("canvasHeight", 0);
+            boolean hasError = probe.has("error");
+            // WHY: ttyd is forced to xterm's canvas renderer for Android
+            // performance. Canvas output can be visibly painted while DOM text is
+            // empty, so `textLength == 0` must never trigger a reload by itself.
+            // That false positive caused random "refresh" while reading output.
+            missingTerminal = hasError || (!hasTerm && !hasCanvas)
+                    || (hasTerm && hasCanvas && (canvasWidth <= 0 || canvasHeight <= 0));
+        }
         if (!missingTerminal) {
             return;
         }
@@ -992,7 +1157,27 @@ public class MainActivity extends Activity {
         uiHandler.postDelayed(() -> verifyTerminalPainted("blank-watchdog-" + reason, lastTerminalLoadAtMs), 3200);
     }
 
+    private JSONObject parseJavascriptObject(String value) {
+        if (value == null || value.trim().isEmpty() || "null".equals(value.trim())) {
+            return null;
+        }
+        try {
+            return new JSONObject(value);
+        } catch (Exception ignored) {
+            try {
+                String unquoted = new JSONArray("[" + value + "]").getString(0);
+                return new JSONObject(unquoted);
+            } catch (Exception nested) {
+                return null;
+            }
+        }
+    }
+
     private void getJson(String path, JsonCallback callback) {
+        getJson(path, callback, null);
+    }
+
+    private void getJson(String path, JsonCallback callback, FailureCallback failureCallback) {
         new Thread(() -> {
             HttpURLConnection connection = null;
             try {
@@ -1014,7 +1199,13 @@ public class MainActivity extends Activity {
                     }
                 });
             } catch (Exception exc) {
-                uiHandler.post(() -> toast("WEzterm control is not reachable"));
+                uiHandler.post(() -> {
+                    if (failureCallback != null) {
+                        failureCallback.onFailure(exc);
+                    } else {
+                        toast("WEzterm control is not reachable");
+                    }
+                });
             } finally {
                 if (connection != null) {
                     connection.disconnect();

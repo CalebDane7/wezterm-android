@@ -13,6 +13,10 @@ does not have to remember SSH hosts, tmux shortcuts, or terminal key chords.
 - Shows a bottom toolbar with `Tabs`, `New Tab`, `Live`, `Stop`, `Read`,
   `Close Tab`, and `View`.
 - Uses stable tmux window IDs for selecting and closing tabs.
+- Orders the tab picker newest-first by tmux activity and snaps the picker to
+  the top when opened.
+- Shows a green pulsing dot for tabs with visible active work and a grey dot
+  for idle/done tabs.
 - Keeps `Live` as the recovery path for returning to the bottom/input prompt.
 - Keeps `Stop` visible so a running Codex task can be interrupted and steered
   from the phone.
@@ -24,6 +28,8 @@ does not have to remember SSH hosts, tmux shortcuts, or terminal key chords.
   This reattaches the browser client without killing tmux, Codex, or any tab.
 - Reopens terminal typing on ordinary live terminal taps after the keyboard has
   been hidden, without consuming two-finger zoom or history/read gestures.
+- Leaves one-finger horizontal pan to WebView so long lines do not snap back
+  left while reading.
 
 ## Architecture
 
@@ -33,15 +39,17 @@ does not have to remember SSH hosts, tmux shortcuts, or terminal key chords.
 - Control URL: `http://kaleeblaptop-1.taildbdeee.ts.net:8089`
 - Desktop terminal service: `~/.local/bin/phone-terminal`
 - Control server: `~/.local/bin/phone-terminal-control-server`
+- Title sync service: `~/phone-title-sync/main.py`
 - tmux base session: `main`
 - tmux phone view session: `main_phone`
 
 The Android app is intentionally thin. The control server owns tmux selection,
-scrolling, reader generation, close behavior, and stop behavior.
+scrolling, reader generation, close behavior, status fields, and stop behavior.
+The title-sync service continuously renames tmux windows from live pane evidence.
 
 ## Current Checkpoint
 
-- Installed checkpoint: `versionCode=31`, `versionName=1.30`.
+- Installed checkpoint: `versionCode=33`, `versionName=1.32`.
 - v1.29 fixes the black-screen resume case where Android focused WEzterm but
   the WebView never opened a fresh ttyd HTTP/WebSocket connection.
 - The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a
@@ -49,11 +57,13 @@ scrolling, reader generation, close behavior, and stop behavior.
   jump while typing.
 - v1.30 fixes tap-to-type after the first keyboard cycle by explicitly
   refocusing WebView and xterm's hidden textarea on normal live terminal taps.
-- Latest phone proof used Tailscale ADB `127.0.0.1:5556`, cold-launched the app,
-  verified terminal content plus toolbar labels, then hot-resumed from Home and
-  verified terminal content stayed visible. v1.30 proof typed `b`, hid the
-  keyboard, tapped the terminal again, typed `c`, and the phone screenshot
-  showed `bc` in a disposable shell tab.
+- v1.31/v1.32 narrows that tap refocus to confirmed taps, removes the broad
+  terminal-text `reconnect` reload heuristic, prevents blank-watchdog reloads
+  while touching/reading, coalesces one-finger history scroll requests, and
+  adds newest-first tab order plus running/done status dots.
+- Latest install proof used Tailscale ADB `127.0.0.1:5556` and reports
+  `versionCode=33`, `versionName=1.32`. Clean physical UI proof was blocked
+  during this checkpoint because Instagram repeatedly took phone foreground.
 
 ## Build
 

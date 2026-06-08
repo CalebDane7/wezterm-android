@@ -65,6 +65,7 @@ public class MainActivity extends Activity {
     private long lastReconnectReloadAtMs = 0;
     private long lastBlankTerminalReloadAtMs = 0;
     private long lastTerminalLoadAtMs = 0;
+    private long lastLiveTapFocusAtMs = 0;
     private boolean readModeSuppressesKeyboard = false;
     private boolean terminalHistoryViewportActive = false;
     private boolean terminalTouchStartedInHistoryViewport = false;
@@ -268,6 +269,9 @@ public class MainActivity extends Activity {
             terminalMultiTouchGesture = false;
             terminalTouchStartedInHistoryViewport = terminalHistoryViewportActive || readModeSuppressesKeyboard;
             lastHistoryDragAtMs = 0;
+            if (!terminalTouchStartedInHistoryViewport) {
+                scheduleLiveTapFocus("tap-down");
+            }
             // WHY: when the terminal is in history/reader mode, a plain tap means
             // "return me to live input." If this ACTION_DOWN is allowed through to
             // WebView, xterm can open Samsung's keyboard before the server has
@@ -307,6 +311,7 @@ public class MainActivity extends Activity {
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
             boolean consumed = terminalHistoryDragActive;
             boolean startedInHistoryViewport = terminalTouchStartedInHistoryViewport;
+            boolean wasMultiTouch = terminalMultiTouchGesture;
             boolean shouldRestoreTyping = action == MotionEvent.ACTION_UP
                     && startedInHistoryViewport
                     && !terminalHistoryDragActive;
@@ -316,6 +321,12 @@ public class MainActivity extends Activity {
             if (shouldRestoreTyping) {
                 restoreLiveForTyping("Typing ready");
                 return true;
+            }
+            if (action == MotionEvent.ACTION_UP
+                    && !startedInHistoryViewport
+                    && !consumed
+                    && !wasMultiTouch) {
+                scheduleLiveTapFocus("tap-up");
             }
             return consumed || startedInHistoryViewport;
         }
@@ -829,6 +840,7 @@ public class MainActivity extends Activity {
         webView.requestFocusFromTouch();
         webView.requestFocus(View.FOCUS_DOWN);
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            showKeyboardIfLive();
             return;
         }
         // WHY: Android IMEs do not reliably emit desktop-style key events, and
@@ -859,9 +871,45 @@ public class MainActivity extends Activity {
                 value -> {
                     if (value != null && value.toLowerCase().contains("reconnect")) {
                         reloadTerminalForReconnect();
+                    } else {
+                        showKeyboardIfLive();
                     }
                 }
         );
+        showKeyboardIfLive();
+    }
+
+    private void scheduleLiveTapFocus(String reason) {
+        long generation = terminalModeGeneration;
+        long now = System.currentTimeMillis();
+        if (now - lastLiveTapFocusAtMs < 180) {
+            return;
+        }
+        lastLiveTapFocusAtMs = now;
+        uiHandler.postDelayed(() -> {
+            if (generation != terminalModeGeneration
+                    || terminalHistoryDragActive
+                    || terminalMultiTouchGesture
+                    || terminalHistoryViewportActive
+                    || readModeSuppressesKeyboard) {
+                return;
+            }
+            // WHY: A normal live tap used to be passed through to ttyd/xterm but
+            // did not always reopen Samsung's keyboard after the first hidden
+            // keyboard cycle. Android's IME API needs a focused native view, while
+            // xterm also needs its hidden textarea focused. Keep this delayed and
+            // generation-guarded so a swipe into history/read mode can still hide
+            // the keyboard and two-finger pinch zoom remains WebView-owned.
+            focusTerminalInputSoon();
+        }, 140);
+    }
+
+    private void showKeyboardIfLive() {
+        if (webView == null || readModeSuppressesKeyboard || terminalHistoryViewportActive) {
+            return;
+        }
+        webView.requestFocusFromTouch();
+        webView.requestFocus(View.FOCUS_DOWN);
         InputMethodManager inputMethodManager =
                 (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
         if (inputMethodManager != null) {

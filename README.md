@@ -10,16 +10,17 @@ does not have to remember SSH hosts, tmux shortcuts, or terminal key chords.
 
 - Opens as a real Android app named `WEzterm`, not a Chrome shortcut.
 - Connects to the desktop terminal over Tailscale.
-- Shows a bottom toolbar with `Tabs`, `New Tab`, `Live`, `Stop`, `Read`,
-  `Close Tab`, and `View`.
+- Shows a bottom toolbar with only the primary work controls: `Tabs`,
+  `New Tab`, `Steer`, and `Close Tab`.
 - Uses stable tmux window IDs for selecting and closing tabs.
 - Orders the tab picker newest-first by tmux activity and snaps the picker to
   the top when opened.
 - Shows a green pulsing dot for tabs with visible active work and a grey dot
   for idle/done tabs.
-- Keeps `Live` as the recovery path for returning to the bottom/input prompt.
-- Keeps `Stop` visible so a running Codex task can be interrupted and steered
-  from the phone.
+- Keeps live-bottom recovery as an internal automatic path for returning to the
+  bottom/input prompt after tab switching and history actions.
+- Keeps `Steer` visible so a running Codex task can be interrupted and steered
+  from the phone without opening a secondary menu.
 - Uses a read-only Codex session reader for true full-session history when tmux
   scrollback is not enough.
 - Respects Android status, navigation, and keyboard insets so toolbar buttons
@@ -49,7 +50,7 @@ The title-sync service continuously renames tmux windows from live pane evidence
 
 ## Current Checkpoint
 
-- Installed checkpoint: `versionCode=33`, `versionName=1.32`.
+- Installed checkpoint: `versionCode=34`, `versionName=1.33`.
 - v1.29 fixes the black-screen resume case where Android focused WEzterm but
   the WebView never opened a fresh ttyd HTTP/WebSocket connection.
 - The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a
@@ -61,9 +62,18 @@ The title-sync service continuously renames tmux windows from live pane evidence
   terminal-text `reconnect` reload heuristic, prevents blank-watchdog reloads
   while touching/reading, coalesces one-finger history scroll requests, and
   adds newest-first tab order plus running/done status dots.
+- v1.33 simplifies the main phone toolbar to `Tabs`, `New Tab`, `Steer`, and
+  `Close Tab`. The confusing `Live`, `Read`, and `View` buttons are no longer
+  primary controls, but their proven recovery/history code paths remain
+  available internally.
+- v1.33 also adds fast control-server responses for select/new/close/active
+  actions so those controls do not rebuild the full `/tabs` payload and pane
+  status dots unless the Tabs picker is actually opened.
 - Latest install proof used Tailscale ADB `127.0.0.1:5556` and reports
-  `versionCode=33`, `versionName=1.32`. Clean physical UI proof was blocked
-  during this checkpoint because Instagram repeatedly took phone foreground.
+  `versionCode=34`, `versionName=1.33`. Physical toolbar proof showed only
+  `Tabs`, `New Tab`, `Steer`, and `Close Tab` with the keyboard visible.
+  Tabs-dialog screenshot proof was blocked during this checkpoint because
+  Google Maps navigation retook phone foreground.
 
 ## Build
 

@@ -172,17 +172,15 @@ public class MainActivity extends Activity {
         toolbar.setMinimumHeight(dp(TOOLBAR_HEIGHT_DP));
         toolbar.setBackgroundColor(Color.rgb(24, 24, 37));
         toolbar.addView(toolbarButton("Tabs", v -> showTabs()));
-        toolbar.addView(toolbarButton("New Tab", v -> control("/new", "New tab opened")));
-        toolbar.addView(toolbarButton("Live", v -> goLiveBottom()));
-        // WHY: Stop/steer is not a secondary action. The user needs to interrupt
-        // a running Codex turn and immediately type a new prompt from the phone.
-        // Do not hide Stop under View, and do not remove Live to make room for
-        // Stop. Live is the proven recovery path for keyboard/bottom regressions;
-        // losing it recreated the exact loop where one fix broke another.
-        toolbar.addView(toolbarButton("Stop", v -> stopAndSteer()));
-        toolbar.addView(toolbarButton("Read", v -> openFullSessionReader()));
+        toolbar.addView(toolbarButton("New Tab", v -> control("/new?fast=1", "New tab opened")));
+        // WHY: the phone surface must stay simple under Android's small
+        // keyboard/status/nav real estate. Live/read/view are still preserved as
+        // internal recovery/history paths, but showing them as primary buttons
+        // made the bar feel like random terminal jargon. Keep the four actions
+        // the user actually asked for: switch tabs, create a tab, stop current
+        // output so they can steer, and close the current tab.
+        toolbar.addView(toolbarButton("Steer", v -> stopAndSteer()));
         toolbar.addView(toolbarButton("Close Tab", v -> confirmClose()));
-        toolbar.addView(toolbarButton("View", v -> showViewControls()));
         return toolbar;
     }
 
@@ -812,7 +810,7 @@ public class MainActivity extends Activity {
             AlertDialog dialog = new AlertDialog.Builder(this)
                     .setTitle("Tabs")
                     .setView(scrollView)
-                    .setPositiveButton("New tab", (d, which) -> control("/new", "New tab"))
+                    .setPositiveButton("New tab", (d, which) -> control("/new?fast=1", "New tab"))
                     .setNeutralButton("Rename current tab", (d, which) -> showRenameCurrentTab())
                     .setNegativeButton("Cancel", null)
                     .show();
@@ -827,16 +825,16 @@ public class MainActivity extends Activity {
     }
 
     private void confirmClose() {
-        getJson("/tabs", payload -> {
-            JSONArray windows = payload.getJSONArray("windows");
-            for (int i = 0; i < windows.length(); i++) {
-                JSONObject window = windows.getJSONObject(i);
-                if (window.getBoolean("active")) {
-                    confirmClose(window.getInt("index"), window.optString("windowId", ""), window.optString("title", "current tab"));
-                    return;
-                }
+        // WHY: closing the active tab should not rebuild the whole Tabs dialog
+        // payload. `/tabs` now includes per-window status checks, which are useful
+        // for the picker but made the main Close button feel disconnected.
+        getJson("/active", payload -> {
+            JSONObject window = payload.optJSONObject("window");
+            if (window == null) {
+                confirmClose(-1, "", "current tab");
+                return;
             }
-            confirmClose(-1, "", "current tab");
+            confirmClose(window.getInt("index"), window.optString("windowId", ""), window.optString("title", "current tab"));
         });
     }
 
@@ -846,8 +844,8 @@ public class MainActivity extends Activity {
                 .setMessage("This kills that tmux tab and whatever is running inside it.")
                 .setPositiveButton("Close", (dialog, which) -> {
                     String path = index >= 0
-                            ? "/close?windowId=" + urlEncode(windowId) + "&index=" + index
-                            : "/close";
+                            ? "/close?fast=1&windowId=" + urlEncode(windowId) + "&index=" + index
+                            : "/close?fast=1";
                     control(path, "Closed tab");
                 })
                 .setNegativeButton("Cancel", null)
@@ -930,7 +928,11 @@ public class MainActivity extends Activity {
         // forced back to the live bottom and xterm is focused so the next prompt
         // can be typed immediately.
         long generation = leaveReadModeForLiveInput();
-        String path = "/select?windowId=" + urlEncode(windowId) + "&index=" + index;
+        // WHY: switching tabs used to wait for the server to rebuild the full
+        // tab list, including pane-tail status reads for every Codex window,
+        // before returning to live typing. The picker already has the data; the
+        // switch path only needs an OK so it can restore live bottom immediately.
+        String path = "/select?fast=1&windowId=" + urlEncode(windowId) + "&index=" + index;
         getJson(path, payload -> {
             if (generation != terminalModeGeneration) {
                 return;

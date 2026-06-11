@@ -24,6 +24,17 @@ rm -rf build/compiled build/gen build/classes build/dex
 rm -f build/WEzterm-unsigned.apk build/WEzterm-with-dex-unsigned.apk build/WEzterm-aligned-unsigned.apk build/WEzterm.apk build/WEzterm.apk.idsig
 mkdir -p build/compiled build/gen build/classes build/dex
 
+# WHY: the phone plan has repeatedly regressed protected UX after unrelated
+# fixes. Run cheap source-level regression gates before compiling so a future
+# agent cannot silently ship a build that again requires pressing Enter just to
+# reconnect the ttyd WebView transport.
+if [ -x scripts/test-reconnect-overlay-guard.sh ]; then
+    scripts/test-reconnect-overlay-guard.sh
+fi
+if [ -x scripts/test-phone-plan-guards.sh ]; then
+    scripts/test-phone-plan-guards.sh
+fi
+
 "$AAPT2" compile --dir app/src/main/res -o build/compiled
 "$AAPT2" link \
     -o build/WEzterm-unsigned.apk \
@@ -61,4 +72,88 @@ cp build/WEzterm-unsigned.apk build/WEzterm-with-dex-unsigned.apk
     build/WEzterm-aligned-unsigned.apk
 
 "$APKSIGNER" verify --print-certs build/WEzterm.apk >/dev/null
+
+# WHY: the phone opens build/install.html for no-USB installs. APK signing is
+# not treated as hash-stable here, so a manually maintained SHA can become
+# stale after an otherwise valid rebuild. Generate the public install page from
+# the just-signed APK so the user never sees a v1.44/v1.45 handoff or a stale
+# checksum for the file being served.
+VERSION_CODE="$(grep -o 'android:versionCode="[0-9]*"' app/src/main/AndroidManifest.xml | head -n 1 | cut -d'"' -f2)"
+VERSION_NAME="$(grep -o 'android:versionName="[^"]*"' app/src/main/AndroidManifest.xml | head -n 1 | cut -d'"' -f2)"
+APK_SHA="$(sha256sum build/WEzterm.apk | awk '{print $1}')"
+cat > build/install.html <<HTML
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WEzterm v${VERSION_NAME} Install</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #111418;
+      color: #f3f5f7;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    main {
+      width: min(100%, 520px);
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: 26px;
+      line-height: 1.15;
+    }
+    p {
+      color: #c8d0d8;
+      line-height: 1.45;
+    }
+    a {
+      display: block;
+      margin: 22px 0;
+      padding: 16px 18px;
+      text-align: center;
+      color: #071014;
+      background: #7ce7c2;
+      border-radius: 8px;
+      font-weight: 700;
+      text-decoration: none;
+    }
+    code {
+      word-break: break-all;
+      color: #d8e2ea;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>WEzterm v${VERSION_NAME}</h1>
+    <p>Install this build to keep Refresh, session/date picker, Needs Attention, Copy/Paste, no-USB update flow, automatic reconnect, Android viewer zoom/pan, keyboard-visible typing, tmux line-sized touch scrolling, and fast-flick fling bursts guarded.</p>
+    <a href="./WEzterm.apk" download>Download WEzterm.apk</a>
+    <p>Package: <code>com.kaleeb.wezterm</code><br>versionCode: <code>${VERSION_CODE}</code></p>
+    <p>SHA-256: <code>${APK_SHA}</code></p>
+  </main>
+</body>
+</html>
+HTML
+cat > build/index.html <<HTML
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="refresh" content="0; url=./install.html">
+  <title>WEzterm v${VERSION_NAME} Install</title>
+</head>
+<body>
+  <p><a href="./install.html">Open WEzterm v${VERSION_NAME} install page</a></p>
+</body>
+</html>
+HTML
 echo "$ROOT/build/WEzterm.apk"

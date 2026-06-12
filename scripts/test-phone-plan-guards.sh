@@ -12,6 +12,8 @@ INSTALL_PAGE="$ROOT/build/install.html"
 INSTALL_INDEX="$ROOT/build/index.html"
 RUNTIME_PROOF="$ROOT/scripts/prove-phone-runtime-regression.sh"
 MENU_UI_PROOF="$ROOT/scripts/prove-phone-menu-ui.sh"
+APPLE_DOC="$ROOT/docs/apple-users.md"
+MACOS_PREFLIGHT="$ROOT/scripts/macos-host-preflight.sh"
 
 require() {
     local file="$1"
@@ -89,6 +91,23 @@ if [ -f "$README" ]; then
     require "$README" 'direct `Upload` toolbar button' "README must document the direct media upload toolbar button"
     require "$README" 'streams to disk with a 2 GB cap' "README must document video-safe media streaming"
     require "$README" 'Latest no-USB package proof used the Tailscale ADB relay' "README must document the no-USB proof path"
+    require "$README" 'Apple User Support' "README must document the Apple/macOS support path"
+    require "$README" 'tmux runs on macOS' "README must not imply tmux is Linux-only"
+    require "$README" 'Safari/Add to Home Screen' "README must explain the iOS client path"
+fi
+if [ -f "$APPLE_DOC" ]; then
+    require "$APPLE_DOC" 'Mac as the terminal host' "Apple doc must support Mac host users"
+    require "$APPLE_DOC" 'iPhone or iPad as the client' "Apple doc must explain iOS client users"
+    require "$APPLE_DOC" 'brew install tmux ttyd tailscale python' "Apple doc must include Homebrew dependency install"
+    require "$APPLE_DOC" 'tmux is the persistence boundary' "Apple doc must preserve the tmux architecture reason"
+    require "$APPLE_DOC" 'Do not tell iPhone users to install the Android APK' "Apple doc must prevent Android APK/iOS confusion"
+fi
+if [ -f "$MACOS_PREFLIGHT" ]; then
+    require "$MACOS_PREFLIGHT" 'uname -s' "macOS preflight must verify it is running on Darwin"
+    require "$MACOS_PREFLIGHT" 'brew install tmux ttyd tailscale python' "macOS preflight must give one Homebrew install hint"
+    require "$MACOS_PREFLIGHT" 'tailscale ip -4' "macOS preflight must prove Tailnet reachability"
+    require "$MACOS_PREFLIGHT" 'tmux new-session -d -s "$TMUX_SESSION"' "macOS preflight must create/reuse the phone tmux session"
+    require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
     require "$INSTALL_PAGE" 'WEzterm v1.67' "install page must advertise the current v1.67 APK"

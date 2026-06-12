@@ -6,6 +6,12 @@ WEzterm opens a Tailscale-hosted `ttyd` terminal that attaches to the desktop
 `main_phone` tmux view. The Android app adds phone-first controls so the user
 does not have to remember SSH hosts, tmux shortcuts, or terminal key chords.
 
+The terminal host is not Windows-only. tmux/ttyd/Tailscale can also run on
+macOS, so Mac users can host the same persistent terminal workflow. The native
+APK is Android-only; iPhone and iPad users should use Safari/Add to Home Screen
+against the Tailscale terminal URL unless a separate native iOS client is built.
+See [Apple User Support](docs/apple-users.md).
+
 ## What It Does
 
 - Opens as a real Android app named `WEzterm`, not a Chrome shortcut.
@@ -66,6 +72,20 @@ does not have to remember SSH hosts, tmux shortcuts, or terminal key chords.
 The Android app is intentionally thin. The control server owns tmux selection,
 scrolling, reader generation, close behavior, status fields, and stop behavior.
 The title-sync service continuously renames tmux windows from live pane evidence.
+
+## Apple Users
+
+tmux runs on macOS as well as Linux/BSD-style hosts. For a Mac host, install
+`tmux`, `ttyd`, `tailscale`, and `python` with Homebrew, then run:
+
+```bash
+scripts/macos-host-preflight.sh
+```
+
+WHY: Apple support should not fork the architecture. The fast path is still
+tmux for persistence, ttyd for browser terminal transport, the control server
+for phone buttons, and Tailscale for private reachability. iPhone/iPad users use
+Safari/Add to Home Screen today; Android users use the native APK.
 
 ## Current Checkpoint
 

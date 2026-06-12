@@ -134,7 +134,7 @@ cat > build/install.html <<HTML
 <body>
   <main>
     <h1>WEzterm v${VERSION_NAME}</h1>
-    <p>Install this build to keep Refresh, Active/Old session pickers, parent-only old sessions by date, Needs Attention, Copy/Paste, direct Upload toolbar media, streaming video-safe phone uploads, no-USB update flow, automatic reconnect, Android viewer zoom/pan, keyboard-visible typing, tmux line-sized touch scrolling, fast upward flicks, and smooth down-scroll bottom-edge guards.</p>
+    <p>Install this build to keep Refresh, Active/Old session pickers, parent-only old sessions by date, Needs Attention, Copy/Paste, direct Upload toolbar media, streaming video-safe phone uploads, no-USB update flow, automatic reconnect, Android viewer zoom/pan, keyboard-visible typing, safe native prompt submit, separate Start/Stop controls, fast Active switching, /home/cabule new-session cwd, lightweight tmux touch-scroll gestures, fast upward flicks, and smooth down-scroll bottom-edge guards.</p>
     <a href="./WEzterm.apk" download>Download WEzterm.apk</a>
     <p>Package: <code>com.kaleeb.wezterm</code><br>versionCode: <code>${VERSION_CODE}</code></p>
     <p>SHA-256: <code>${APK_SHA}</code></p>

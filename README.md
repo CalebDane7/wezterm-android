@@ -11,7 +11,8 @@ does not have to remember SSH hosts, tmux shortcuts, or terminal key chords.
 - Opens as a real Android app named `WEzterm`, not a Chrome shortcut.
 - Connects to the desktop terminal over Tailscale.
 - Shows a bottom toolbar with the primary work controls: `Active`, `Old`,
-  `New`, `Refresh`, `Scroll`, `Copy/Paste`, `Upload`, `Steer`, and `Close`.
+  `New`, `Refresh`, `Scroll`, `Copy/Paste`, `Upload`, `Close`, `Start`, and
+  `Stop`.
 - Uses stable tmux window IDs for selecting and closing active sessions.
 - Orders the Active Sessions picker newest-first by tmux activity and snaps it to
   the top when opened.
@@ -32,8 +33,8 @@ does not have to remember SSH hosts, tmux shortcuts, or terminal key chords.
   a direct `Upload` toolbar button, Android's file picker, or the system Share
   sheet, then copies the desktop path so it can be pasted into the active
   terminal.
-- Keeps `Steer` visible so a running Codex task can be interrupted and steered
-  from the phone without opening a secondary menu.
+- Keeps separate thumb-side `Start` and `Stop` controls so sending Enter and
+  interrupting with Escape are explicit, not a hidden smart-button guess.
 - Uses a read-only Codex session reader for true full-session history when tmux
   scrollback is not enough.
 - Respects Android status, navigation, and keyboard insets so toolbar buttons
@@ -68,7 +69,7 @@ The title-sync service continuously renames tmux windows from live pane evidence
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=54`, `versionName=1.53`.
+- Built checkpoint: `versionCode=55`, `versionName=1.54`.
 - v1.29 fixes the black-screen resume case where Android focused WEzterm but
   the WebView never opened a fresh ttyd HTTP/WebSocket connection.
 - The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a
@@ -195,12 +196,29 @@ The title-sync service continuously renames tmux windows from live pane evidence
   uploads now stream from Android's selected URI to the desktop instead of
   buffering the whole file in APK memory, and the desktop server streams to disk with a 2 GB cap
   so phone videos are a supported path rather than a screenshot-only shortcut.
+- v1.54 removes the ambiguous combined interrupt/send action and makes the final two
+  thumb-side toolbar buttons `Start` and `Stop`. WHY: the user sometimes needed
+  one Escape to leave a terminal/history surface and a second Escape to stop the
+  running Codex turn, while the same button was also expected to submit prompts.
+  `Start` now always sends Enter, long-pressing `Start` opens a native safe
+  prompt composer that sends one tmux paste+Enter, and `Stop` cancels tmux
+  copy-mode then sends a small double-Escape.
+- v1.54 also moves one-finger MOVE and bottom-edge finger-up restore onto a
+  lightweight `/touch-scroll` server path. WHY: the full `/scroll` endpoint is
+  still correct for toolbar proof/recovery because it gathers Codex/process and
+  visible pane evidence, but that work is too heavy for every finger movement
+  and made scrolling feel delayed. The gesture route now stays tmux-owned while
+  skipping process scans and visible capture payloads.
+- v1.54 opens new phone-created sessions in `/home/cabule` and adds a
+  server-side `/select-live` endpoint so Active Sessions switching does one
+  select+bottom restore round trip instead of a slow select followed by a second
+  Android bottom request.
 - v1.33 also adds fast control-server responses for select/new/close/active
   actions so those controls do not rebuild the full `/tabs` payload and pane
   status dots unless the Active Sessions picker is actually opened.
 - Latest no-USB package proof used the Tailscale ADB relay
   `127.0.0.1:5556 -> 100.77.22.120:5555` and reported phone model
-  `SM-S938U1`. v1.53 must be installed through that relay after every APK
+  `SM-S938U1`. v1.54 must be installed through that relay after every APK
   rebuild; the generated install page carries the current APK SHA-256.
   Future builds must use that no-USB relay unless the relay is
   unavailable and the user explicitly permits USB fallback.
@@ -228,9 +246,11 @@ scripts/prove-phone-runtime-regression.sh
 
 This creates and closes a disposable tmux session window, then restores the
 original phone session. It proves the live control server, no-USB package state, Active Sessions,
-Old Sessions parent-only date data, Needs Attention endpoint, tmux-owned touch
-scroll, bottom/live recovery, Copy/Paste endpoints, phone media upload endpoint,
-safe old-session resume, and stable `windowId` close/select.
+Old Sessions parent-only date data, Needs Attention endpoint, lightweight
+tmux-owned touch scroll, bottom/live recovery, Start/Stop server actions,
+safe prompt submit, Copy/Paste endpoints, phone media upload endpoint, safe
+old-session resume, `/home/cabule` new-session cwd, and stable `windowId`
+close/select.
 
 Run the installed-phone menu proof after installing an APK:
 
@@ -251,8 +271,8 @@ Sessions` and `Active Sessions`, checks date-grouped old sessions with visible
 `Resume` actions, confirms subagent/explorer/worker wording is absent, proves
 physical one-finger slow drag versus fast flick, pixel-checks Refresh repaint,
 opens the command palette, round-trips `Copy/Paste`, proves tap-to-type sends
-one token without duplication, verifies `Steer`, and closes only a disposable
-session.
+one token without duplication, verifies `Start` and `Stop`, and closes only a
+disposable session.
 
 ## Install To Phone
 

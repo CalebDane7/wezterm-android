@@ -19,6 +19,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.OpenableColumns;
+import android.text.InputType;
 import android.text.TextUtils;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -32,6 +33,8 @@ import android.view.WindowManager;
 import android.view.animation.AlphaAnimation;
 import android.view.animation.Animation;
 import android.view.inputmethod.InputMethodManager;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputConnection;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
@@ -66,12 +69,13 @@ public class MainActivity extends Activity {
     private static final String PREFS = "wezterm";
     private static final String PREF_PIN_REQUESTED = "pin_requested";
     private static final String PREF_FONT_SIZE = "font_size";
+    private static final String APP_VERSION_NAME = "1.54";
     private static final int DEFAULT_FONT_SIZE = 11;
     private static final int MIN_FONT_SIZE = 4;
     private static final int MAX_FONT_SIZE = 18;
     private static final int TOOLBAR_HEIGHT_DP = 56;
-    private static final long HISTORY_DRAG_THROTTLE_MS = 28;
-    private static final int HISTORY_DRAG_LINE_THRESHOLD_DP = 10;
+    private static final long HISTORY_DRAG_THROTTLE_MS = 16;
+    private static final int HISTORY_DRAG_LINE_THRESHOLD_DP = 8;
     private static final int HISTORY_DRAG_PAGES_PER_STEP = 1;
     private static final int HISTORY_DRAG_MAX_PAGES_PER_STEP = 20;
     private static final int HISTORY_DRAG_DOWN_MAX_REPEATS = 4;
@@ -126,6 +130,7 @@ public class MainActivity extends Activity {
     private float webViewScale = 1.0f;
     private long viewerPanUnlockedUntilMs = 0;
     private int lastImeInsetBottom = 0;
+    private boolean sessionSwitchInFlight = false;
     private VelocityTracker terminalVelocityTracker;
 
     private interface JsonCallback {
@@ -141,7 +146,7 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         configureWindow();
-        webView = new WebView(this);
+        webView = new TerminalWebView(this);
         configureWebView(webView);
         setContentView(buildLayout(webView));
         if (getIntent().getBooleanExtra("pin_shortcut", false)) {
@@ -282,13 +287,20 @@ public class MainActivity extends Activity {
         // avoids burying the fastest media path in a dialog while preserving every
         // existing toolbar control that prior plan receipts protect.
         toolbar.addView(toolbarButton("Upload", v -> pickMediaForUpload()));
-        // WHY: the phone surface must stay simple under Android's small
-        // keyboard/status/nav real estate, but simplicity cannot delete recovery.
-        // The visible actions remain active sessions, old sessions, create,
-        // scroll/recover, copy/paste, direct media upload, steer/stop, and close
-        // the current active session.
-        toolbar.addView(toolbarButton("Steer", v -> stopAndSteer()));
         toolbar.addView(toolbarButton("Close", v -> confirmClose()));
+        // WHY: the user reported that a single smart combined button was not
+        // predictable under pressure. Keep the two thumb-side actions separate:
+        // Start always means "submit/send Enter", while Stop always means
+        // "interrupt with Escape". Long-press Start opens the native composer so
+        // a full prompt can be sent as one tmux paste when WebView/IME live typing
+        // starts corrupting characters.
+        Button startButton = toolbarButton("Start", v -> startCurrentTask());
+        startButton.setOnLongClickListener(v -> {
+            showSafePromptComposer();
+            return true;
+        });
+        toolbar.addView(startButton);
+        toolbar.addView(toolbarButton("Stop", v -> stopCurrentTask()));
         return toolbar;
     }
 
@@ -556,7 +568,7 @@ public class MainActivity extends Activity {
                 // terminal look like it refreshed/jumped before the user arrived
                 // at the bottom. On finger-up, do the single explicit bottom
                 // restore so typing returns after the scroll gesture is over.
-                restoreLiveForTyping("At live bottom");
+                restoreTouchLiveBottom();
                 return true;
             }
             if (action == MotionEvent.ACTION_UP
@@ -720,8 +732,8 @@ public class MainActivity extends Activity {
                 ? terminalModeGeneration
                 : enterReadMode();
         historyScrollRequestInFlight = true;
-        String path = "/scroll?where=" + urlEncode(where)
-                + "&mode=touch&repeat=" + Math.max(1, repeats);
+        String path = "/touch-scroll?where=" + urlEncode(where)
+                + "&repeat=" + Math.max(1, repeats);
         getJson(path, payload -> {
             historyScrollRequestInFlight = false;
             if (gestureGeneration != terminalTouchGestureGeneration) {
@@ -764,6 +776,29 @@ public class MainActivity extends Activity {
         return payload.optBoolean("atLiveBottom", false)
                 && "tmux".equals(payload.optString("layer", ""))
                 && "tmux-linedown".equals(payload.optString("action", ""));
+    }
+
+    private void restoreTouchLiveBottom() {
+        // WHY: a finger-up after tmux reports live bottom is still part of the
+        // high-frequency touch path. Using the full `/scroll` endpoint here makes
+        // Android wait on Codex/process inspection and visible-capture proof data,
+        // which is exactly the delayed bottom-edge "refresh" feeling. The server
+        // exposes a lightweight tmux-only bottom restore for gestures; explicit
+        // toolbar/menu bottom actions still use the broader recovery route.
+        long generation = leaveReadModeForLiveInput();
+        getJson("/touch-scroll?where=bottom", payload -> {
+            if (generation != terminalModeGeneration) {
+                return;
+            }
+            if (!payload.optBoolean("ok", false)) {
+                toast(payload.optString("error", "Bottom failed"));
+                return;
+            }
+            toast("At live bottom");
+            pinTerminalViewportSoon("touch-live-bottom");
+            focusTerminalInputSoon();
+            keepLiveInputVisibleSoon("touch-live-bottom");
+        }, exc -> toast("WEzterm control is not reachable"));
     }
 
     private void drainPendingHistoryScroll() {
@@ -904,7 +939,7 @@ public class MainActivity extends Activity {
     private void createBugReport() {
         try {
             JSONObject client = new JSONObject();
-            client.put("appVersion", "1.50");
+            client.put("appVersion", APP_VERSION_NAME);
             client.put("webViewUrl", webView == null ? "" : webView.getUrl());
             client.put("readMode", readModeSuppressesKeyboard);
             client.put("historyViewport", terminalHistoryViewportActive);
@@ -928,12 +963,79 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void stopAndSteer() {
-        // WHY: after interrupting a running Codex task, the next expected user
-        // action is typing a steering prompt. Keep this as one visible toolbar
-        // path and refocus xterm after `/stop`; otherwise the user has to hunt
-        // through View controls while the task keeps running.
+    private void startCurrentTask() {
+        // WHY: Start is deliberately not "smart". It sends Enter regardless of
+        // whether the pane looks idle or running, matching the desktop habit of
+        // pressing Enter to submit the prompt currently visible in the composer.
+        // Stop remains a separate explicit interrupt button beside it.
+        sendEnterToTerminal();
+    }
+
+    private void stopCurrentTask() {
         control("/stop", "Stop sent", true);
+    }
+
+    private void sendEnterToTerminal() {
+        long generation = leaveReadModeForLiveInput();
+        getJson("/send-enter", payload -> {
+            if (generation != terminalModeGeneration) {
+                return;
+            }
+            if (!payload.optBoolean("ok", false)) {
+                toast(payload.optString("error", "Send failed"));
+                return;
+            }
+            toast("Sent");
+            focusTerminalInputSoon();
+            keepLiveInputVisibleSoon("send-enter");
+        }, exc -> toast("WEzterm control is not reachable"));
+    }
+
+    private void showSafePromptComposer() {
+        final EditText input = new EditText(this);
+        input.setSingleLine(false);
+        input.setMinLines(3);
+        input.setMaxLines(8);
+        input.setInputType(InputType.TYPE_CLASS_TEXT
+                | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                | InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        input.setImeOptions(EditorInfo.IME_ACTION_SEND
+                | EditorInfo.IME_FLAG_NO_EXTRACT_UI
+                | EditorInfo.IME_FLAG_NO_FULLSCREEN
+                | EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING);
+        int pad = dp(10);
+        input.setPadding(pad, pad, pad, pad);
+        new AlertDialog.Builder(this)
+                .setTitle("Type prompt")
+                .setView(input)
+                .setPositiveButton("Send", (dialog, which) -> {
+                    String text = input.getText().toString();
+                    submitSafePrompt(text);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void submitSafePrompt(String text) {
+        String value = text == null ? "" : text.trim();
+        if (value.isEmpty()) {
+            toast("Prompt is empty");
+            return;
+        }
+        long generation = leaveReadModeForLiveInput();
+        postText("/submit-text", value, payload -> {
+            if (generation != terminalModeGeneration) {
+                return;
+            }
+            if (!payload.optBoolean("ok", false)) {
+                toast(payload.optString("error", "Send failed"));
+                return;
+            }
+            toast("Prompt sent");
+            focusTerminalInputSoon();
+            keepLiveInputVisibleSoon("safe-prompt");
+        }, exc -> toast("WEzterm control is not reachable"));
     }
 
     private long enterReadMode() {
@@ -1133,9 +1235,11 @@ public class MainActivity extends Activity {
                 "Old Sessions",
                 "Needs Attention",
                 "Create bug report",
+                "Type prompt safely",
                 "Upload media from phone",
                 "Install/update over Tailscale",
                 "Go to live bottom / type",
+                "Start / send Enter",
                 "Go to history top",
                 "Read current session",
                 "Page up",
@@ -1162,31 +1266,35 @@ public class MainActivity extends Activity {
                     } else if (which == 5) {
                         createBugReport();
                     } else if (which == 6) {
-                        pickMediaForUpload();
+                        showSafePromptComposer();
                     } else if (which == 7) {
-                        openInstallPage();
+                        pickMediaForUpload();
                     } else if (which == 8) {
-                        goLiveBottom();
+                        openInstallPage();
                     } else if (which == 9) {
-                        enterReadMode();
-                        scrollTerminal("top", "History top", false);
+                        goLiveBottom();
                     } else if (which == 10) {
-                        enterReadMode();
-                        control("/read-session", "Session reader", false);
+                        startCurrentTask();
                     } else if (which == 11) {
                         enterReadMode();
-                        scrollTerminal("pageUp", "Page up", false);
+                        scrollTerminal("top", "History top", false);
                     } else if (which == 12) {
                         enterReadMode();
-                        scrollTerminal("pageDown", "Page down", false);
+                        control("/read-session", "Session reader", false);
                     } else if (which == 13) {
-                        adjustFont(-1);
+                        enterReadMode();
+                        scrollTerminal("pageUp", "Page up", false);
                     } else if (which == 14) {
-                        adjustFont(1);
+                        enterReadMode();
+                        scrollTerminal("pageDown", "Page down", false);
                     } else if (which == 15) {
-                        resetFont();
+                        adjustFont(-1);
                     } else if (which == 16) {
-                        control("/stop", "Stop sent");
+                        adjustFont(1);
+                    } else if (which == 17) {
+                        resetFont();
+                    } else if (which == 18) {
+                        stopCurrentTask();
                     }
                 })
                 .setNegativeButton("Cancel", null)
@@ -1200,8 +1308,10 @@ public class MainActivity extends Activity {
                 "Refresh current session",
                 "Needs Attention",
                 "Copy/Paste",
+                "Type prompt safely",
                 "Upload media from phone",
                 "Go to live bottom / type",
+                "Start / send Enter",
                 "Go to history top",
                 "Read current session",
                 "Page up",
@@ -1225,27 +1335,31 @@ public class MainActivity extends Activity {
                     } else if (which == 4) {
                         showCopyPasteControls();
                     } else if (which == 5) {
-                        pickMediaForUpload();
+                        showSafePromptComposer();
                     } else if (which == 6) {
-                        goLiveBottom();
+                        pickMediaForUpload();
                     } else if (which == 7) {
-                        enterReadMode();
-                        scrollTerminal("top", "History top", false);
+                        goLiveBottom();
                     } else if (which == 8) {
-                        openFullSessionReader();
+                        startCurrentTask();
                     } else if (which == 9) {
                         enterReadMode();
-                        scrollTerminal("pageUp", "Page up", false);
+                        scrollTerminal("top", "History top", false);
                     } else if (which == 10) {
+                        openFullSessionReader();
+                    } else if (which == 11) {
+                        enterReadMode();
+                        scrollTerminal("pageUp", "Page up", false);
+                    } else if (which == 12) {
                         enterReadMode();
                         scrollTerminal("pageDown", "Page down", false);
-                    } else if (which == 11) {
-                        openInstallPage();
-                    } else if (which == 12) {
-                        createBugReport();
                     } else if (which == 13) {
-                        control("/stop", "Stop sent");
+                        openInstallPage();
                     } else if (which == 14) {
+                        createBugReport();
+                    } else if (which == 15) {
+                        stopCurrentTask();
+                    } else if (which == 16) {
                         showRenameCurrentTab();
                     }
                 })
@@ -1257,6 +1371,7 @@ public class MainActivity extends Activity {
         String[] labels = new String[]{
                 "Paste phone clipboard into terminal",
                 "Copy visible terminal text",
+                "Type prompt safely",
                 "Upload media from phone"
         };
         new AlertDialog.Builder(this)
@@ -1267,6 +1382,8 @@ public class MainActivity extends Activity {
                     } else if (which == 1) {
                         copyVisibleTerminalToClipboard();
                     } else if (which == 2) {
+                        showSafePromptComposer();
+                    } else if (which == 3) {
                         pickMediaForUpload();
                     }
                 })
@@ -2077,6 +2194,10 @@ public class MainActivity extends Activity {
     }
 
     private void selectTabForTyping(int index, String windowId, String title) {
+        if (sessionSwitchInFlight) {
+            return;
+        }
+        sessionSwitchInFlight = true;
         // WHY: opening a tab from the phone should never require a separate Live
         // tap or Enter press. The select happens first, then the selected tab is
         // forced back to the live bottom and xterm is focused so the next prompt
@@ -2084,10 +2205,12 @@ public class MainActivity extends Activity {
         long generation = leaveReadModeForLiveInput();
         // WHY: switching tabs used to wait for the server to rebuild the full
         // tab list, including pane-tail status reads for every Codex window,
-        // before returning to live typing. The picker already has the data; the
-        // switch path only needs an OK so it can restore live bottom immediately.
-        String path = "/select?fast=1&windowId=" + urlEncode(windowId) + "&index=" + index;
+        // before returning to live typing. `/select-live` combines select and
+        // bottom restore server-side, so the phone performs one round trip and
+        // stale double-taps cannot stack slow switch requests.
+        String path = "/select-live?fast=1&windowId=" + urlEncode(windowId) + "&index=" + index;
         getJson(path, payload -> {
+            sessionSwitchInFlight = false;
             if (generation != terminalModeGeneration) {
                 return;
             }
@@ -2096,7 +2219,13 @@ public class MainActivity extends Activity {
                 toast(error);
                 return;
             }
-            restoreLiveForTyping("Opened " + title);
+            toast("Opened " + title);
+            pinTerminalViewportSoon("select-live");
+            focusTerminalInputSoon();
+            keepLiveInputVisibleSoon("select-live");
+        }, exc -> {
+            sessionSwitchInFlight = false;
+            toast("WEzterm control is not reachable");
         });
     }
 
@@ -2271,6 +2400,10 @@ public class MainActivity extends Activity {
                 + "el.setAttribute('autocomplete','off');"
                 + "el.setAttribute('autocorrect','off');"
                 + "el.setAttribute('spellcheck','false');"
+                + "el.setAttribute('enterkeyhint','send');"
+                + "el.setAttribute('aria-autocomplete','none');"
+                + "el.setAttribute('data-gramm','false');"
+                + "el.setAttribute('data-ms-editor','false');"
                 + "}"
                 + resetDocumentScroll
                 + "return 'visible';"
@@ -2324,6 +2457,10 @@ public class MainActivity extends Activity {
                 + "el.setAttribute('autocomplete','off');"
                 + "el.setAttribute('autocorrect','off');"
                 + "el.setAttribute('spellcheck','false');"
+                + "el.setAttribute('enterkeyhint','send');"
+                + "el.setAttribute('aria-autocomplete','none');"
+                + "el.setAttribute('data-gramm','false');"
+                + "el.setAttribute('data-ms-editor','false');"
                 + "if(document.activeElement!==el){try{el.focus({preventScroll:true});}catch(e){el.focus();}}"
                 + "}"
                 + "function reconnectText(s){"
@@ -2731,6 +2868,34 @@ public class MainActivity extends Activity {
         );
         manager.requestPinShortcut(shortcut, callback.getIntentSender());
         prefs.edit().putBoolean(PREF_PIN_REQUESTED, true).apply();
+    }
+
+    private static class TerminalWebView extends WebView {
+        TerminalWebView(Context context) {
+            super(context);
+        }
+
+        @Override
+        public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
+            InputConnection connection = super.onCreateInputConnection(outAttrs);
+            if (outAttrs != null) {
+                // WHY: this WebView is a terminal, not prose input. Samsung/Android
+                // prediction, gesture typing, personalized learning, and extract UI
+                // can rewrite terminal text while the hidden xterm textarea is
+                // composing. Force terminal-like input flags at the native IME
+                // boundary so typing does not turn into autocorrected/random text.
+                outAttrs.inputType = InputType.TYPE_CLASS_TEXT
+                        | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                        | InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                        | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
+                outAttrs.imeOptions = (outAttrs.imeOptions & ~EditorInfo.IME_MASK_ACTION)
+                        | EditorInfo.IME_ACTION_SEND
+                        | EditorInfo.IME_FLAG_NO_EXTRACT_UI
+                        | EditorInfo.IME_FLAG_NO_FULLSCREEN
+                        | EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING;
+            }
+            return connection;
+        }
     }
 
     private class TerminalWebViewClient extends WebViewClient {

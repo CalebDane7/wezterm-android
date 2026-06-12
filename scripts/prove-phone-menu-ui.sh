@@ -13,7 +13,7 @@ OLD_SCREENSHOT="$SCREENSHOT_DIR/wezterm-v151-old-sessions.png"
 BUTTON_SCREENSHOT="$SCREENSHOT_DIR/wezterm-v151-button-proof.png"
 PROOF_NAME="WEzterm UI Button Proof"
 COPY_FILE="/tmp/wezterm-ui-copy-paste-proof.$$"
-STEER_FILE="/tmp/wezterm-ui-steer-proof.$$"
+STOP_FILE="/tmp/wezterm-ui-stop-proof.$$"
 COPY_TOKEN="PHONE_UI_COPY_SOURCE_$(date +%s)_$$"
 TYPE_FILE="/tmp/wezterm-ui-keyboard-proof.$$"
 TYPE_TOKEN="PHONE_UI_TYPE_$(date +%s)_$$"
@@ -210,9 +210,9 @@ print(f"terminal screenshot text pixels: {bright}")
 PY
 }
 
-wait_for_steer_escape() {
+wait_for_stop_escape() {
     for _ in $(seq 1 60); do
-        if [ -f "$STEER_FILE" ] && python3 - "$STEER_FILE" <<'PY'
+        if [ -f "$STOP_FILE" ] && python3 - "$STOP_FILE" <<'PY'
 import pathlib
 import sys
 
@@ -224,8 +224,8 @@ PY
         fi
         sleep 0.2
     done
-    echo "phone menu UI proof failed: Steer did not deliver Escape to the active pane" >&2
-    [ -f "$STEER_FILE" ] && xxd -p "$STEER_FILE" >&2 || true
+    echo "phone menu UI proof failed: Stop did not deliver Escape to the active pane" >&2
+    [ -f "$STOP_FILE" ] && xxd -p "$STOP_FILE" >&2 || true
     exit 1
 }
 
@@ -502,7 +502,7 @@ cleanup() {
     cleanup_window "$reader_window"
     cleanup_window "$resume_window"
     cleanup_window "$proof_window"
-    rm -f "$COPY_FILE" "$STEER_FILE" "$TYPE_FILE"
+    rm -f "$COPY_FILE" "$STOP_FILE" "$TYPE_FILE"
     restore_original_tmux_state
 }
 trap cleanup EXIT
@@ -533,7 +533,7 @@ sleep 1.0
 ensure_toolbar
 
 echo "phone menu UI proof: toolbar labels"
-for label in Active Old New Refresh Scroll "Copy/Paste" Upload Steer Close; do
+for label in Active Old New Refresh Scroll "Copy/Paste" Upload Close Start Stop; do
     assert_text "$label"
 done
 assert_absent "Tabs"
@@ -605,7 +605,7 @@ reopen_wezterm
 echo "phone menu UI proof: Refresh button restores live tmux mode without switching sessions"
 tmux send-keys -t "$TMUX_SESSION:$proof_window" "printf '${REFRESH_TOKEN}\\n'" Enter
 wait_for_capture_text "$proof_window" "$REFRESH_TOKEN"
-control_get "/scroll?where=lineUp&mode=touch&repeat=3" | json_assert "pre-refresh enters copy mode" "p.get('ok') is True and p.get('paneMode') == 'copy-mode'"
+control_get "/touch-scroll?where=lineUp&repeat=3" | json_assert "pre-refresh enters copy mode" "p.get('ok') is True and p.get('paneMode') == 'copy-mode'"
 wait_for_pane_mode "1"
 ensure_toolbar
 tap_text "Refresh"
@@ -802,8 +802,24 @@ tmux send-keys -t "$TMUX_SESSION:$proof_window" C-c
 wait_for_shell "$proof_window"
 echo "Tap-to-type delivered one visible token; screenshot: /tmp/wezterm-v151-keyboard-proof.png; IME dump: /tmp/wezterm-ime-proof.txt"
 
-echo "phone menu UI proof: Steer sends Escape to the active pane"
-tmux send-keys -t "$TMUX_SESSION:$proof_window" "rm -f '$STEER_FILE'; python3 -c 'import sys,pathlib; pathlib.Path(\"$STEER_FILE\").write_bytes(sys.stdin.buffer.read(1))'" Enter
+echo "phone menu UI proof: Start sends Enter to the active pane"
+tmux send-keys -t "$TMUX_SESSION:$proof_window" "rm -f '$STOP_FILE'; cat > '$STOP_FILE'" Enter
+for _ in $(seq 1 40); do
+    if [ "$(tmux display-message -p -t "$TMUX_SESSION:$proof_window" '#{pane_current_command}')" = "cat" ]; then
+        break
+    fi
+    sleep 0.2
+done
+tmux send-keys -t "$TMUX_SESSION:$proof_window" -l "PHONE_START_BUTTON_OK"
+ensure_toolbar
+tap_text "Start"
+wait_for_file_text "$STOP_FILE" "PHONE_START_BUTTON_OK"
+tmux send-keys -t "$TMUX_SESSION:$proof_window" C-c
+wait_for_shell "$proof_window"
+echo "Start button sent Enter"
+
+echo "phone menu UI proof: Stop sends Escape to the active pane"
+tmux send-keys -t "$TMUX_SESSION:$proof_window" "rm -f '$STOP_FILE'; python3 -c 'import sys,pathlib,termios,tty; fd=sys.stdin.fileno(); old=termios.tcgetattr(fd); tty.setraw(fd); data=sys.stdin.buffer.read(1); termios.tcsetattr(fd, termios.TCSADRAIN, old); pathlib.Path(\"$STOP_FILE\").write_bytes(data)'" Enter
 for _ in $(seq 1 40); do
     if [ "$(tmux display-message -p -t "$TMUX_SESSION:$proof_window" '#{pane_current_command}')" = "python3" ]; then
         break
@@ -811,10 +827,10 @@ for _ in $(seq 1 40); do
     sleep 0.2
 done
 ensure_toolbar
-tap_text "Steer"
-wait_for_steer_escape
+tap_text "Stop"
+wait_for_stop_escape
 wait_for_shell "$proof_window"
-echo "Steer button delivered Escape"
+echo "Stop button delivered Escape"
 
 echo "phone menu UI proof: Close button closes only disposable session"
 select_window "$proof_window"

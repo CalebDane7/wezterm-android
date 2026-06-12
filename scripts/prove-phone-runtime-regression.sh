@@ -16,6 +16,10 @@ orig_window=""
 orig_mode=""
 orig_scroll=""
 proof_window=""
+new_window=""
+ENTER_FILE=""
+SUBMIT_FILE=""
+STOP_FILE=""
 
 cleanup() {
     # WHY: this script creates a disposable tmux window to prove destructive
@@ -26,9 +30,14 @@ cleanup() {
         curl -fsS "$CONTROL_URL/close?fast=1&windowId=${proof_window//@/%40}" >/dev/null || \
             tmux kill-window -t "$TMUX_SESSION:$proof_window" || true
     fi
+    if [ -n "${new_window:-}" ] && tmux list-windows -t "$TMUX_SESSION:" -F '#{window_id}' 2>/dev/null | grep -Fxq "$new_window"; then
+        curl -fsS "$CONTROL_URL/close?fast=1&windowId=${new_window//@/%40}" >/dev/null || \
+            tmux kill-window -t "$TMUX_SESSION:$new_window" || true
+    fi
     if [ -n "${orig_window:-}" ] && tmux list-windows -t "$TMUX_SESSION:" -F '#{window_id}' 2>/dev/null | grep -Fxq "$orig_window"; then
         curl -fsS "$CONTROL_URL/select?fast=1&windowId=${orig_window//@/%40}" >/dev/null || true
     fi
+    rm -f "${ENTER_FILE:-}" "${SUBMIT_FILE:-}" "${STOP_FILE:-}" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -178,6 +187,15 @@ curl -fsS "$CONTROL_URL/close?fast=1&windowId=${proof_window//@/%40}" | json_ass
 proof_window=""
 curl -fsS "$CONTROL_URL/select?fast=1&windowId=${orig_window//@/%40}" | json_assert "restore after resume-session proof" "p.get('ok') is True"
 
+echo "new session cwd"
+new_payload="$(curl -fsS "$CONTROL_URL/new?fast=1")"
+new_window="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("windowId",""))' "$new_payload")"
+printf '%s' "$new_payload" | json_assert "new session cwd is /home/cabule" "p.get('ok') is True and p.get('action') == 'new' and p.get('cwd') == '/home/cabule' and p.get('windowId', '').startswith('@')"
+tmux display-message -p -t "$TMUX_SESSION:$new_window" '#{pane_current_path}' | grep -Fxq '/home/cabule'
+curl -fsS "$CONTROL_URL/close?fast=1&windowId=${new_window//@/%40}" | json_assert "new session cleanup close" "p.get('ok') is True and p.get('action') == 'closed'"
+new_window=""
+curl -fsS "$CONTROL_URL/select?fast=1&windowId=${orig_window//@/%40}" | json_assert "restore after new-session proof" "p.get('ok') is True"
+
 proof_window="$(tmux new-window -d -P -F '#{window_id}' -t "$TMUX_SESSION:" -n phone-runtime-regression "bash -lc 'for i in \$(seq 1 2400); do printf \"PREG_%04d\\n\" \"\$i\"; done; printf \"READY_COPYPASTE\\n\"; exec bash -li'")"
 echo "proof window $proof_window from $orig_window"
 
@@ -189,15 +207,66 @@ for _ in $(seq 1 30); do
 done
 
 echo "stable select"
-curl -fsS "$CONTROL_URL/select?fast=1&windowId=${proof_window//@/%40}" | json_assert "stable windowId select" "p.get('ok') is True"
+curl -fsS "$CONTROL_URL/select-live?fast=1&windowId=${proof_window//@/%40}" | json_assert "select-live endpoint" "p.get('ok') is True and p.get('action') == 'selected-live'"
 
 echo "touch scroll"
-curl -fsS "$CONTROL_URL/scroll?where=lineUp&mode=touch&repeat=7" | json_assert "touch line up is tmux-owned" "p.get('ok') is True and p.get('layer') == 'tmux' and p.get('action') == 'tmux-lineup' and p.get('paneMode') == 'copy-mode'"
-curl -fsS "$CONTROL_URL/scroll?where=lineDown&mode=touch&repeat=3" | json_assert "touch line down is tmux-owned" "p.get('ok') is True and p.get('layer') == 'tmux' and p.get('action') == 'tmux-linedown' and p.get('paneMode') == 'copy-mode'"
+curl -fsS "$CONTROL_URL/touch-scroll?where=lineUp&repeat=7" | json_assert "touch-scroll endpoint" "p.get('ok') is True and p.get('layer') == 'tmux' and p.get('action') == 'tmux-lineup' and p.get('paneMode') == 'copy-mode'"
+curl -fsS "$CONTROL_URL/touch-scroll?where=lineDown&repeat=3" | json_assert "touch line down is tmux-owned" "p.get('ok') is True and p.get('layer') == 'tmux' and p.get('action') == 'tmux-linedown' and p.get('paneMode') == 'copy-mode'"
 curl -fsS "$CONTROL_URL/scroll?where=top&mode=touch" | json_assert "touch top reaches tmux history top" "p.get('ok') is True and p.get('layer') == 'tmux' and p.get('action') == 'tmux-top' and p.get('paneMode') == 'copy-mode' and ('PREG_0001' in p.get('visible', {}).get('copyCursorLine', '') or any('PREG_0001' in line for line in p.get('visible', {}).get('head', []) + p.get('visible', {}).get('tail', [])))"
 curl -fsS "$CONTROL_URL/scroll?where=bottom" | json_assert "bottom restores live mode" "p.get('ok') is True and p.get('layer') == 'tmux' and p.get('action') == 'tmux-bottom' and not p.get('paneMode')"
-curl -fsS "$CONTROL_URL/scroll?where=lineDown&mode=touch&repeat=8" | json_assert "extra down at live bottom stays stopped" "p.get('ok') is True and p.get('layer') == 'tmux' and p.get('action') == 'tmux-linedown' and p.get('atLiveBottom') is True and p.get('paneMode') == 'copy-mode'"
-curl -fsS "$CONTROL_URL/scroll?where=bottom" | json_assert "finger-up bottom restore exits copy mode" "p.get('ok') is True and p.get('layer') == 'tmux' and p.get('action') == 'tmux-bottom' and not p.get('paneMode')"
+curl -fsS "$CONTROL_URL/touch-scroll?where=lineDown&repeat=8" | json_assert "extra down at live bottom stays stopped" "p.get('ok') is True and p.get('layer') == 'tmux' and p.get('action') == 'tmux-linedown' and p.get('atLiveBottom') is True and p.get('paneMode') == 'copy-mode'"
+curl -fsS "$CONTROL_URL/touch-scroll?where=bottom" | json_assert "finger-up bottom restore exits copy mode" "p.get('ok') is True and p.get('layer') == 'tmux' and p.get('action') == 'tmux-bottom' and not p.get('paneMode')"
+
+echo "start stop safe prompt"
+ENTER_FILE="/tmp/wezterm-runtime-enter-proof.$$"
+SUBMIT_FILE="/tmp/wezterm-runtime-submit-proof.$$"
+STOP_FILE="/tmp/wezterm-runtime-stop-proof.$$"
+rm -f "$ENTER_FILE" "$SUBMIT_FILE" "$STOP_FILE"
+tmux send-keys -t "$TMUX_SESSION:$proof_window" "rm -f '$ENTER_FILE'; cat > '$ENTER_FILE'" Enter
+for _ in $(seq 1 30); do
+    [ "$(tmux display-message -p -t "$TMUX_SESSION:$proof_window" '#{pane_current_command}')" = "cat" ] && break
+    sleep 0.1
+done
+tmux send-keys -t "$TMUX_SESSION:$proof_window" -l "PHONE_SEND_ENTER_OK"
+curl -fsS "$CONTROL_URL/send-enter" | json_assert "send-enter endpoint" "p.get('ok') is True and p.get('action') == 'sent-enter' and p.get('key') == 'Enter'"
+for _ in $(seq 1 30); do
+    [ -f "$ENTER_FILE" ] && grep -Fq "PHONE_SEND_ENTER_OK" "$ENTER_FILE" && break
+    sleep 0.1
+done
+grep -Fq "PHONE_SEND_ENTER_OK" "$ENTER_FILE"
+tmux send-keys -t "$TMUX_SESSION:$proof_window" C-c
+
+tmux send-keys -t "$TMUX_SESSION:$proof_window" "rm -f '$SUBMIT_FILE'; cat > '$SUBMIT_FILE'" Enter
+for _ in $(seq 1 30); do
+    [ "$(tmux display-message -p -t "$TMUX_SESSION:$proof_window" '#{pane_current_command}')" = "cat" ] && break
+    sleep 0.1
+done
+printf 'PHONE_SUBMIT_TEXT_OK' | curl -fsS -X POST --data-binary @- "$CONTROL_URL/submit-text" | json_assert "submit-text endpoint" "p.get('ok') is True and p.get('action') == 'submitted-text'"
+for _ in $(seq 1 30); do
+    [ -f "$SUBMIT_FILE" ] && grep -Fq "PHONE_SUBMIT_TEXT_OK" "$SUBMIT_FILE" && break
+    sleep 0.1
+done
+grep -Fq "PHONE_SUBMIT_TEXT_OK" "$SUBMIT_FILE"
+tmux send-keys -t "$TMUX_SESSION:$proof_window" C-c
+
+tmux send-keys -t "$TMUX_SESSION:$proof_window" "rm -f '$STOP_FILE'; python3 -c 'import sys,pathlib,termios,tty; fd=sys.stdin.fileno(); old=termios.tcgetattr(fd); tty.setraw(fd); data=sys.stdin.buffer.read(1); termios.tcsetattr(fd, termios.TCSADRAIN, old); pathlib.Path(\"$STOP_FILE\").write_bytes(data)'" Enter
+for _ in $(seq 1 30); do
+    [ "$(tmux display-message -p -t "$TMUX_SESSION:$proof_window" '#{pane_current_command}')" = "python3" ] && break
+    sleep 0.1
+done
+curl -fsS "$CONTROL_URL/stop" | json_assert "stop endpoint double escape" "p.get('ok') is True and p.get('keys') == ['Escape', 'Escape']"
+for _ in $(seq 1 30); do
+    [ -f "$STOP_FILE" ] && [ "$(wc -c < "$STOP_FILE")" -ge 1 ] && break
+    sleep 0.1
+done
+python3 - "$STOP_FILE" <<'PY'
+import pathlib, sys
+data = pathlib.Path(sys.argv[1]).read_bytes()
+if not data.startswith(b"\x1b"):
+    raise SystemExit(f"stop did not deliver Escape bytes: {data!r}")
+print("stop delivered Escape bytes: ok")
+PY
+rm -f "$ENTER_FILE" "$SUBMIT_FILE" "$STOP_FILE"
 
 echo "copy paste"
 printf 'PHONE_PASTE_REGRESSION_OK' | curl -fsS -X POST --data-binary @- "$CONTROL_URL/paste" | json_assert "paste endpoint" "p.get('ok') is True and p.get('action') == 'pasted'"

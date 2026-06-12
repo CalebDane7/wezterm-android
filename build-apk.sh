@@ -32,7 +32,7 @@ if [ -x scripts/test-reconnect-overlay-guard.sh ]; then
     scripts/test-reconnect-overlay-guard.sh
 fi
 if [ -x scripts/test-phone-plan-guards.sh ]; then
-    scripts/test-phone-plan-guards.sh
+    PHONE_SKIP_GENERATED_PAGE_GUARD=1 scripts/test-phone-plan-guards.sh
 fi
 
 "$AAPT2" compile --dir app/src/main/res -o build/compiled
@@ -134,7 +134,7 @@ cat > build/install.html <<HTML
 <body>
   <main>
     <h1>WEzterm v${VERSION_NAME}</h1>
-    <p>Install this build to keep Refresh, session/date picker, Needs Attention, Copy/Paste, no-USB update flow, automatic reconnect, Android viewer zoom/pan, keyboard-visible typing, tmux line-sized touch scrolling, and fast-flick fling bursts guarded.</p>
+    <p>Install this build to keep Refresh, Active/Old session pickers, parent-only old sessions by date, Needs Attention, Copy/Paste, direct Upload toolbar media, streaming video-safe phone uploads, no-USB update flow, automatic reconnect, Android viewer zoom/pan, keyboard-visible typing, tmux line-sized touch scrolling, fast upward flicks, and smooth down-scroll bottom-edge guards.</p>
     <a href="./WEzterm.apk" download>Download WEzterm.apk</a>
     <p>Package: <code>com.kaleeb.wezterm</code><br>versionCode: <code>${VERSION_CODE}</code></p>
     <p>SHA-256: <code>${APK_SHA}</code></p>
@@ -156,4 +156,11 @@ cat > build/index.html <<HTML
 </body>
 </html>
 HTML
+
+# WHY: the first phone-plan guard run happens before generated install pages
+# exist for the new manifest version. Run it again here without the skip so
+# stale public handoff pages cannot survive a successful APK build.
+if [ -x scripts/test-phone-plan-guards.sh ]; then
+    scripts/test-phone-plan-guards.sh
+fi
 echo "$ROOT/build/WEzterm.apk"

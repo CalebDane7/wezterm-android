@@ -10,6 +10,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ShortcutInfo;
 import android.content.pm.ShortcutManager;
+import android.database.Cursor;
 import android.graphics.Color;
 import android.graphics.drawable.Icon;
 import android.net.Uri;
@@ -17,6 +18,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.OpenableColumns;
 import android.text.TextUtils;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -72,6 +74,8 @@ public class MainActivity extends Activity {
     private static final int HISTORY_DRAG_LINE_THRESHOLD_DP = 10;
     private static final int HISTORY_DRAG_PAGES_PER_STEP = 1;
     private static final int HISTORY_DRAG_MAX_PAGES_PER_STEP = 20;
+    private static final int HISTORY_DRAG_DOWN_MAX_REPEATS = 4;
+    private static final int HISTORY_DRAG_DOWN_RELEASE_MAX_REPEATS = 4;
     private static final int HISTORY_DRAG_RELEASE_FLING_BURSTS = 2;
     private static final float HISTORY_DRAG_FAST_VELOCITY_PX_PER_SEC = 1200f;
     private static final float HISTORY_DRAG_FLING_VELOCITY_PX_PER_SEC = 2600f;
@@ -79,6 +83,9 @@ public class MainActivity extends Activity {
     private static final long TERMINAL_FOCUS_BURST_MIN_INTERVAL_MS = 700;
     private static final long LIVE_INPUT_VISIBILITY_BURST_MIN_INTERVAL_MS = 220;
     private static final long KEYBOARD_SHOW_MIN_INTERVAL_MS = 450;
+    private static final int REQUEST_UPLOAD_MEDIA = 5201;
+    private static final long MAX_MEDIA_UPLOAD_BYTES = 2L * 1024L * 1024L * 1024L;
+    private static final int MEDIA_UPLOAD_STREAM_CHUNK_BYTES = 1024 * 1024;
     private WebView webView;
     private View historyTouchOverlay;
     private SharedPreferences prefs;
@@ -112,6 +119,8 @@ public class MainActivity extends Activity {
     private boolean historyScrollRequestInFlight = false;
     private String pendingHistoryScrollWhere = "";
     private int pendingHistoryScrollRepeats = 0;
+    private long pendingHistoryScrollGeneration = 0;
+    private long terminalTouchGestureGeneration = 0;
     private long lastHistoryDragAtMs = 0;
     private long terminalLastHistoryDragEventAtMs = 0;
     private float webViewScale = 1.0f;
@@ -139,6 +148,30 @@ public class MainActivity extends Activity {
             requestHomeShortcutOnce();
         }
         loadTerminal();
+        handleIncomingMediaShare(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleIncomingMediaShare(intent);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_UPLOAD_MEDIA && resultCode == RESULT_OK && data != null) {
+            Uri uri = data.getData();
+            if (uri == null && data.getClipData() != null && data.getClipData().getItemCount() > 0) {
+                uri = data.getClipData().getItemAt(0).getUri();
+            }
+            if (uri == null) {
+                toast("No media selected");
+                return;
+            }
+            uploadMediaUri(uri, false);
+        }
     }
 
     @Override
@@ -216,8 +249,9 @@ public class MainActivity extends Activity {
         toolbar.setPadding(dp(6), dp(5), dp(6), dp(5));
         toolbar.setMinimumHeight(dp(TOOLBAR_HEIGHT_DP));
         toolbar.setBackgroundColor(Color.rgb(24, 24, 37));
-        toolbar.addView(toolbarButton("Tabs", v -> showTabs()));
-        toolbar.addView(toolbarButton("New Tab", v -> control("/new?fast=1", "New tab opened")));
+        toolbar.addView(toolbarButton("Active", v -> showActiveSessions()));
+        toolbar.addView(toolbarButton("Old", v -> showOldSessions()));
+        toolbar.addView(toolbarButton("New", v -> control("/new?fast=1", "New session opened")));
         // WHY: during upgrades, the user should not have to close the Android
         // task or hunt for the same tmux tab just to refresh the terminal
         // transport. This button preserves the current tmux window, returns it
@@ -230,17 +264,31 @@ public class MainActivity extends Activity {
         // Codex transcript pager drift, or keyboard focus failures never leave
         // the phone with no way back to history top or live typing.
         toolbar.addView(toolbarButton("Scroll", v -> showViewControls()));
-        // WHY: phone paste must be a first-class action, not a Samsung keyboard
-        // long-press trick. The button opens explicit copy/paste controls backed
-        // by Android clipboard APIs and tmux paste buffers, so prompts can be
-        // moved between phone apps and the exact active desktop pane.
-        toolbar.addView(toolbarButton("Copy/Paste", v -> showCopyPasteControls()));
+        // WHY: phone paste must be a first-class action, not a keyboard long-press
+        // trick. The button opens explicit copy/paste controls backed by Android
+        // clipboard APIs and tmux paste buffers, so prompts can be moved between
+        // phone apps and the exact active desktop pane.
+        Button copyPasteButton = toolbarButton("Copy/Paste", v -> showCopyPasteControls());
+        copyPasteButton.setOnLongClickListener(v -> {
+            // WHY: upload is also available as its own toolbar button, but a
+            // long-press here preserves muscle memory for "send phone content into
+            // this terminal" without hiding the older copy/paste menu.
+            pickMediaForUpload();
+            return true;
+        });
+        toolbar.addView(copyPasteButton);
+        // WHY: screenshots, videos, PDFs, and other reference files need a one-tap
+        // path from the app chrome itself. Keeping Upload separate from Copy/Paste
+        // avoids burying the fastest media path in a dialog while preserving every
+        // existing toolbar control that prior plan receipts protect.
+        toolbar.addView(toolbarButton("Upload", v -> pickMediaForUpload()));
         // WHY: the phone surface must stay simple under Android's small
         // keyboard/status/nav real estate, but simplicity cannot delete recovery.
-        // The visible actions remain switch tabs, create tab, scroll/recover,
-        // copy/paste, steer/stop, and close the current tab.
+        // The visible actions remain active sessions, old sessions, create,
+        // scroll/recover, copy/paste, direct media upload, steer/stop, and close
+        // the current active session.
         toolbar.addView(toolbarButton("Steer", v -> stopAndSteer()));
-        toolbar.addView(toolbarButton("Close Tab", v -> confirmClose()));
+        toolbar.addView(toolbarButton("Close", v -> confirmClose()));
         return toolbar;
     }
 
@@ -356,6 +404,15 @@ public class MainActivity extends Activity {
             // WHY: two-finger gestures belong to Android/WebView for viewer zoom
             // and positioning. The app must not consume them while trying to fix
             // tmux history, and the viewport pin must not snap them back to 0,0.
+            if (!terminalMultiTouchGesture) {
+                // WHY: a second finger changes ownership from tmux history to the
+                // Android/WebView viewer. Any outstanding one-finger scroll response
+                // now belongs to an old gesture and must not later mark live-bottom
+                // or replay queued movement after the user started zooming/panning.
+                terminalTouchGestureGeneration++;
+                terminalTouchReachedLiveBottom = false;
+                clearPendingHistoryScroll();
+            }
             terminalMultiTouchGesture = true;
             terminalHistoryDragActive = false;
             allowViewerPanBriefly();
@@ -375,6 +432,12 @@ public class MainActivity extends Activity {
             terminalHorizontalPanActive = false;
             terminalTouchReachedLiveBottom = false;
             terminalTouchStartedInHistoryViewport = terminalHistoryViewportActive || readModeSuppressesKeyboard;
+            // WHY: touch-scroll HTTP responses can arrive after the finger has
+            // already changed direction, released, or started a new gesture. Tagging
+            // every request with this generation keeps stale server replies from
+            // triggering the bottom restore/refresh jump on a later gesture.
+            terminalTouchGestureGeneration++;
+            clearPendingHistoryScroll();
             lastHistoryDragAtMs = 0;
             // WHY: v1.30 fixed tap-to-type by refocusing xterm on live taps,
             // but doing it on ACTION_DOWN races with a user's horizontal pan.
@@ -583,13 +646,25 @@ public class MainActivity extends Activity {
         int repeats = fullFling
                 ? HISTORY_DRAG_MAX_PAGES_PER_STEP
                 : Math.max(8, HISTORY_DRAG_MAX_PAGES_PER_STEP / 2);
+        String where = totalDy > 0 ? "lineUp" : "lineDown";
+        if ("lineDown".equals(where)) {
+            // WHY: upward flicks are for racing through old output, so a large burst
+            // is useful there. Downward flicks are the return-to-live path. If they
+            // queue the same large delayed burst over a slow Tailscale/WebView paint,
+            // tmux can reach bottom before the user sees the last lines, which feels
+            // like a refresh or snap. Keep downward release movement local-looking by
+            // using one small batch and no delayed second burst.
+            repeats = Math.min(repeats, HISTORY_DRAG_DOWN_RELEASE_MAX_REPEATS);
+            fullFling = false;
+        }
         // WHY: real fast flicks produce fewer ACTION_MOVE samples than slow drags,
         // especially through WebView and ADB input. v1.44 therefore moved fewer
         // lines for a fast flick than for a slow drag of the same distance. Add
         // one bounded release burst based on total gesture velocity so fast flicks
         // jump farther while slow finger movement remains line-by-line.
-        String where = totalDy > 0 ? "lineUp" : "lineDown";
-        scrollTerminalFromTouch(where, repeats);
+        final String flingWhere = where;
+        final int flingRepeats = repeats;
+        scrollTerminalFromTouch(flingWhere, flingRepeats);
         if (fullFling) {
             // WHY: if a fast flick releases while a MOVE request is still in
             // flight, the first release burst is intentionally coalesced into one
@@ -597,7 +672,7 @@ public class MainActivity extends Activity {
             // the extra distance users expect without affecting slow drags.
             uiHandler.postDelayed(() -> {
                 if (terminalHistoryViewportActive && readModeSuppressesKeyboard) {
-                    scrollTerminalFromTouch(where, repeats);
+                    scrollTerminalFromTouch(flingWhere, flingRepeats);
                 }
             }, 140);
         }
@@ -612,7 +687,11 @@ public class MainActivity extends Activity {
         // WHY: keep one request in flight and coalesce the newest direction so
         // stale responses cannot fight the user's finger. If the user keeps
         // dragging in the same direction, accumulate a small capped batch.
-        int boundedRepeats = Math.max(1, Math.min(HISTORY_DRAG_MAX_PAGES_PER_STEP, repeats));
+        int maxRepeats = "lineDown".equals(where)
+                ? HISTORY_DRAG_DOWN_MAX_REPEATS
+                : HISTORY_DRAG_MAX_PAGES_PER_STEP;
+        int boundedRepeats = Math.max(1, Math.min(maxRepeats, repeats));
+        long gestureGeneration = terminalTouchGestureGeneration;
         if (terminalTouchReachedLiveBottom && "lineDown".equals(where)) {
             return;
         }
@@ -620,21 +699,23 @@ public class MainActivity extends Activity {
             terminalTouchReachedLiveBottom = false;
         }
         if (historyScrollRequestInFlight) {
-            if (where.equals(pendingHistoryScrollWhere)) {
+            if (where.equals(pendingHistoryScrollWhere)
+                    && pendingHistoryScrollGeneration == gestureGeneration) {
                 pendingHistoryScrollRepeats = Math.min(
-                        HISTORY_DRAG_MAX_PAGES_PER_STEP,
+                        maxRepeats,
                         pendingHistoryScrollRepeats + boundedRepeats
                 );
             } else {
                 pendingHistoryScrollWhere = where;
                 pendingHistoryScrollRepeats = boundedRepeats;
+                pendingHistoryScrollGeneration = gestureGeneration;
             }
             return;
         }
-        sendHistoryScrollFromTouch(where, boundedRepeats);
+        sendHistoryScrollFromTouch(where, boundedRepeats, gestureGeneration);
     }
 
-    private void sendHistoryScrollFromTouch(String where, int repeats) {
+    private void sendHistoryScrollFromTouch(String where, int repeats, long gestureGeneration) {
         long readModeGeneration = terminalHistoryViewportActive
                 ? terminalModeGeneration
                 : enterReadMode();
@@ -643,6 +724,14 @@ public class MainActivity extends Activity {
                 + "&mode=touch&repeat=" + Math.max(1, repeats);
         getJson(path, payload -> {
             historyScrollRequestInFlight = false;
+            if (gestureGeneration != terminalTouchGestureGeneration) {
+                // WHY: delayed `/scroll` responses are expected on a mobile network.
+                // They may still be valid tmux commands, but they no longer describe
+                // the user's current finger gesture. Do not let them mark live-bottom
+                // or keep the terminal in read mode for a newer touch/zoom/tap.
+                drainPendingHistoryScroll();
+                return;
+            }
             if ("lineDown".equals(where) && touchScrollReachedLiveBottom(payload)) {
                 // WHY: the server has reached tmux's real live bottom. During
                 // ACTION_MOVE this must remain a stop signal, not a live-typing
@@ -651,8 +740,7 @@ public class MainActivity extends Activity {
                 // and keep read-mode until ACTION_UP performs one explicit bottom
                 // restore.
                 terminalTouchReachedLiveBottom = true;
-                pendingHistoryScrollWhere = "";
-                pendingHistoryScrollRepeats = 0;
+                clearPendingHistoryScroll();
                 if (readModeGeneration == terminalModeGeneration) {
                     keepReadModeIfCurrent(readModeGeneration);
                 }
@@ -673,10 +761,9 @@ public class MainActivity extends Activity {
         if (payload == null) {
             return false;
         }
-        if (payload.optBoolean("atLiveBottom", false)) {
-            return true;
-        }
-        return false;
+        return payload.optBoolean("atLiveBottom", false)
+                && "tmux".equals(payload.optString("layer", ""))
+                && "tmux-linedown".equals(payload.optString("action", ""));
     }
 
     private void drainPendingHistoryScroll() {
@@ -688,9 +775,18 @@ public class MainActivity extends Activity {
         }
         String nextWhere = pendingHistoryScrollWhere;
         int nextRepeats = pendingHistoryScrollRepeats;
+        long nextGeneration = pendingHistoryScrollGeneration;
+        clearPendingHistoryScroll();
+        if (nextGeneration != terminalTouchGestureGeneration) {
+            return;
+        }
+        sendHistoryScrollFromTouch(nextWhere, Math.max(1, nextRepeats), nextGeneration);
+    }
+
+    private void clearPendingHistoryScroll() {
         pendingHistoryScrollWhere = "";
         pendingHistoryScrollRepeats = 0;
-        sendHistoryScrollFromTouch(nextWhere, Math.max(1, nextRepeats));
+        pendingHistoryScrollGeneration = 0;
     }
 
     private void loadTerminal() {
@@ -912,9 +1008,10 @@ public class MainActivity extends Activity {
         long generation = ++terminalModeGeneration;
         terminalHistoryViewportActive = false;
         terminalTouchStartedInHistoryViewport = false;
+        terminalTouchReachedLiveBottom = false;
+        terminalTouchGestureGeneration++;
         readModeSuppressesKeyboard = false;
-        pendingHistoryScrollWhere = "";
-        pendingHistoryScrollRepeats = 0;
+        clearPendingHistoryScroll();
         hideHistoryTouchOverlay();
         return generation;
     }
@@ -1032,13 +1129,15 @@ public class MainActivity extends Activity {
         String[] labels = new String[]{
                 "Command palette",
                 "Refresh current session",
-                "Sessions by date",
-                "Needs attention",
+                "Active Sessions",
+                "Old Sessions",
+                "Needs Attention",
                 "Create bug report",
+                "Upload media from phone",
                 "Install/update over Tailscale",
                 "Go to live bottom / type",
                 "Go to history top",
-                "Open full session reader",
+                "Read current session",
                 "Page up",
                 "Page down",
                 "Smaller terminal text",
@@ -1048,41 +1147,45 @@ public class MainActivity extends Activity {
                 "Current text size: " + current
         };
         new AlertDialog.Builder(this)
-                .setTitle("Scroll")
+                .setTitle("Terminal Controls")
                 .setItems(labels, (dialog, which) -> {
                     if (which == 0) {
                         showCommandPalette();
                     } else if (which == 1) {
                         refreshTerminalTransport();
                     } else if (which == 2) {
-                        showTabs();
+                        showActiveSessions();
                     } else if (which == 3) {
-                        showNeedsAttention();
+                        showOldSessions();
                     } else if (which == 4) {
-                        createBugReport();
+                        showNeedsAttention();
                     } else if (which == 5) {
-                        openInstallPage();
+                        createBugReport();
                     } else if (which == 6) {
-                        goLiveBottom();
+                        pickMediaForUpload();
                     } else if (which == 7) {
-                        enterReadMode();
-                        scrollTerminal("top", "History top", false);
+                        openInstallPage();
                     } else if (which == 8) {
-                        enterReadMode();
-                        control("/read-session", "Session reader", false);
+                        goLiveBottom();
                     } else if (which == 9) {
                         enterReadMode();
-                        scrollTerminal("pageUp", "Page up", false);
+                        scrollTerminal("top", "History top", false);
                     } else if (which == 10) {
                         enterReadMode();
-                        scrollTerminal("pageDown", "Page down", false);
+                        control("/read-session", "Session reader", false);
                     } else if (which == 11) {
-                        adjustFont(-1);
+                        enterReadMode();
+                        scrollTerminal("pageUp", "Page up", false);
                     } else if (which == 12) {
-                        adjustFont(1);
+                        enterReadMode();
+                        scrollTerminal("pageDown", "Page down", false);
                     } else if (which == 13) {
-                        resetFont();
+                        adjustFont(-1);
                     } else if (which == 14) {
+                        adjustFont(1);
+                    } else if (which == 15) {
+                        resetFont();
+                    } else if (which == 16) {
                         control("/stop", "Stop sent");
                     }
                 })
@@ -1092,51 +1195,57 @@ public class MainActivity extends Activity {
 
     private void showCommandPalette() {
         String[] labels = new String[]{
+                "Active Sessions",
+                "Old Sessions",
                 "Refresh current session",
-                "Sessions by date",
-                "Needs attention",
+                "Needs Attention",
                 "Copy/Paste",
+                "Upload media from phone",
                 "Go to live bottom / type",
                 "Go to history top",
-                "Open full session reader",
+                "Read current session",
                 "Page up",
                 "Page down",
                 "Install/update over Tailscale",
                 "Create bug report",
                 "Stop current task",
-                "Rename current tab"
+                "Rename current session"
         };
         new AlertDialog.Builder(this)
                 .setTitle("Command palette")
                 .setItems(labels, (dialog, which) -> {
                     if (which == 0) {
-                        refreshTerminalTransport();
+                        showActiveSessions();
                     } else if (which == 1) {
-                        showTabs();
+                        showOldSessions();
                     } else if (which == 2) {
-                        showNeedsAttention();
+                        refreshTerminalTransport();
                     } else if (which == 3) {
-                        showCopyPasteControls();
+                        showNeedsAttention();
                     } else if (which == 4) {
-                        goLiveBottom();
+                        showCopyPasteControls();
                     } else if (which == 5) {
-                        enterReadMode();
-                        scrollTerminal("top", "History top", false);
+                        pickMediaForUpload();
                     } else if (which == 6) {
-                        openFullSessionReader();
+                        goLiveBottom();
                     } else if (which == 7) {
                         enterReadMode();
-                        scrollTerminal("pageUp", "Page up", false);
+                        scrollTerminal("top", "History top", false);
                     } else if (which == 8) {
+                        openFullSessionReader();
+                    } else if (which == 9) {
+                        enterReadMode();
+                        scrollTerminal("pageUp", "Page up", false);
+                    } else if (which == 10) {
                         enterReadMode();
                         scrollTerminal("pageDown", "Page down", false);
-                    } else if (which == 9) {
-                        openInstallPage();
-                    } else if (which == 10) {
-                        createBugReport();
                     } else if (which == 11) {
-                        control("/stop", "Stop sent");
+                        openInstallPage();
                     } else if (which == 12) {
+                        createBugReport();
+                    } else if (which == 13) {
+                        control("/stop", "Stop sent");
+                    } else if (which == 14) {
                         showRenameCurrentTab();
                     }
                 })
@@ -1147,7 +1256,8 @@ public class MainActivity extends Activity {
     private void showCopyPasteControls() {
         String[] labels = new String[]{
                 "Paste phone clipboard into terminal",
-                "Copy visible terminal text"
+                "Copy visible terminal text",
+                "Upload media from phone"
         };
         new AlertDialog.Builder(this)
                 .setTitle("Copy/Paste")
@@ -1156,6 +1266,8 @@ public class MainActivity extends Activity {
                         pasteClipboardIntoTerminal();
                     } else if (which == 1) {
                         copyVisibleTerminalToClipboard();
+                    } else if (which == 2) {
+                        pickMediaForUpload();
                     }
                 })
                 .setNegativeButton("Cancel", null)
@@ -1221,17 +1333,250 @@ public class MainActivity extends Activity {
         });
     }
 
+    private void pickMediaForUpload() {
+        // WHY: screenshots/media should move from the phone to the desktop over
+        // the same Tailscale control channel as Copy/Paste. ACTION_OPEN_DOCUMENT
+        // gives WEzTerm one user-selected URI instead of broad storage access, so
+        // Android does not need READ_MEDIA_* permissions and future agents cannot
+        // turn this into a background gallery scraper.
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
+                "image/*",
+                "video/*",
+                "application/pdf",
+                "text/*",
+                "application/octet-stream"
+        });
+        try {
+            startActivityForResult(intent, REQUEST_UPLOAD_MEDIA);
+        } catch (Exception exc) {
+            toast("No Android file picker available");
+        }
+    }
+
+    private void handleIncomingMediaShare(Intent intent) {
+        if (intent == null) {
+            return;
+        }
+        String action = intent.getAction();
+        if (Intent.ACTION_SEND.equals(action)) {
+            Uri uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+            if (uri != null) {
+                uploadMediaUri(uri, true);
+            }
+        } else if (Intent.ACTION_SEND_MULTIPLE.equals(action)) {
+            ArrayList<Uri> uris = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+            if (uris == null || uris.isEmpty()) {
+                return;
+            }
+            toast("Uploading " + uris.size() + " files");
+            for (Uri uri : uris) {
+                if (uri != null) {
+                    uploadMediaUri(uri, true);
+                }
+            }
+        }
+    }
+
+    private void uploadMediaUri(Uri uri, boolean fromShare) {
+        String displayName = queryMediaDisplayName(uri);
+        String contentType = getContentResolver().getType(uri);
+        if (contentType == null || contentType.trim().isEmpty()) {
+            contentType = "application/octet-stream";
+        }
+        long declaredSize = queryMediaSize(uri);
+        if (declaredSize > MAX_MEDIA_UPLOAD_BYTES) {
+            toast("Media is too large for phone upload: " + humanBytes(declaredSize));
+            return;
+        }
+        toast(fromShare ? "Uploading shared media" : "Uploading media");
+        String finalContentType = contentType;
+        new Thread(() -> {
+            HttpURLConnection connection = null;
+            try {
+                URL url = new URL(CONTROL_URL + "/upload-media?filename=" + urlEncode(displayName));
+                connection = (HttpURLConnection) url.openConnection();
+                connection.setRequestMethod("POST");
+                connection.setDoOutput(true);
+                connection.setConnectTimeout(10000);
+                connection.setReadTimeout(10 * 60 * 1000);
+                connection.setRequestProperty("Content-Type", finalContentType);
+                connection.setRequestProperty("X-WEzTerm-Filename", displayName);
+                if (declaredSize >= 0) {
+                    // WHY: Android's HttpURLConnection docs warn that POST bodies are
+                    // buffered in memory unless a streaming mode is selected. For
+                    // videos, fixed-length streaming is the fastest safe path when
+                    // OpenableColumns.SIZE is available because it sends the selected
+                    // URI straight to the desktop without building a giant byte[].
+                    connection.setFixedLengthStreamingMode(declaredSize);
+                } else {
+                    // WHY: some content providers do not expose a size. Chunked
+                    // streaming keeps the upload video-safe instead of falling back
+                    // to HttpURLConnection's full-body memory buffer.
+                    connection.setChunkedStreamingMode(MEDIA_UPLOAD_STREAM_CHUNK_BYTES);
+                }
+                long uploadedBytes;
+                try (OutputStream outputStream = connection.getOutputStream()) {
+                    uploadedBytes = streamUriToOutput(uri, outputStream);
+                }
+                if (uploadedBytes <= 0) {
+                    throw new IllegalArgumentException("Selected media is empty");
+                }
+                int code = connection.getResponseCode();
+                InputStream stream = code >= 200 && code < 400
+                        ? connection.getInputStream()
+                        : connection.getErrorStream();
+                String body = readAll(stream);
+                JSONObject payload = new JSONObject(body);
+                uiHandler.post(() -> showUploadedMediaResult(payload));
+            } catch (Exception exc) {
+                uiHandler.post(() -> toast("Media upload failed: " + exc.getMessage()));
+            } finally {
+                if (connection != null) {
+                    connection.disconnect();
+                }
+            }
+        }).start();
+    }
+
+    private long streamUriToOutput(Uri uri, OutputStream outputStream) throws Exception {
+        InputStream inputStream = getContentResolver().openInputStream(uri);
+        if (inputStream == null) {
+            throw new IllegalArgumentException("Cannot open selected media");
+        }
+        try (InputStream input = inputStream) {
+            byte[] buffer = new byte[MEDIA_UPLOAD_STREAM_CHUNK_BYTES];
+            int read;
+            long total = 0;
+            while ((read = input.read(buffer)) != -1) {
+                total += read;
+                if (total > MAX_MEDIA_UPLOAD_BYTES) {
+                    throw new IllegalArgumentException("Media is too large for phone upload");
+                }
+                outputStream.write(buffer, 0, read);
+            }
+            outputStream.flush();
+            return total;
+        }
+    }
+
+    private String queryMediaDisplayName(Uri uri) {
+        String name = queryOpenableColumn(uri, OpenableColumns.DISPLAY_NAME);
+        if (name == null || name.trim().isEmpty()) {
+            String lastSegment = uri.getLastPathSegment();
+            name = lastSegment == null || lastSegment.trim().isEmpty()
+                    ? "phone-media"
+                    : lastSegment;
+        }
+        return name;
+    }
+
+    private long queryMediaSize(Uri uri) {
+        String value = queryOpenableColumn(uri, OpenableColumns.SIZE);
+        if (value == null || value.trim().isEmpty()) {
+            return -1;
+        }
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException ignored) {
+            return -1;
+        }
+    }
+
+    private String queryOpenableColumn(Uri uri, String column) {
+        Cursor cursor = null;
+        try {
+            cursor = getContentResolver().query(uri, new String[]{column}, null, null, null);
+            if (cursor != null && cursor.moveToFirst()) {
+                int index = cursor.getColumnIndex(column);
+                if (index >= 0 && !cursor.isNull(index)) {
+                    return cursor.getString(index);
+                }
+            }
+        } catch (Exception ignored) {
+            return null;
+        } finally {
+            if (cursor != null) {
+                cursor.close();
+            }
+        }
+        return null;
+    }
+
+    private void showUploadedMediaResult(JSONObject payload) {
+        if (!payload.optBoolean("ok", false)) {
+            toast(payload.optString("error", "Media upload failed"));
+            return;
+        }
+        String path = payload.optString("path", "");
+        if (path.isEmpty()) {
+            toast("Media uploaded, but no path returned");
+            return;
+        }
+        ClipboardManager clipboardManager =
+                (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboardManager != null) {
+            clipboardManager.setPrimaryClip(ClipData.newPlainText("WEzterm uploaded media path", path));
+        }
+        String filename = payload.optString("filename", "uploaded media");
+        String message = filename + "\n" + humanBytes(payload.optLong("bytes", 0)) + "\n\n" + path;
+        new AlertDialog.Builder(this)
+                .setTitle("Uploaded media")
+                .setMessage(message)
+                .setPositiveButton("Paste path", (dialog, which) -> postText("/paste", path, pastePayload -> {
+                    if (!pastePayload.optBoolean("ok", false)) {
+                        toast(pastePayload.optString("error", "Paste path failed"));
+                        return;
+                    }
+                    toast("Uploaded path pasted");
+                    focusTerminalInputSoon();
+                }, exc -> toast("WEzterm control is not reachable")))
+                .setNegativeButton("Copy path", (dialog, which) -> toast("Uploaded path copied"))
+                .setNeutralButton("OK", null)
+                .show();
+    }
+
+    private String humanBytes(long bytes) {
+        if (bytes < 0) {
+            return "unknown size";
+        }
+        if (bytes < 1024) {
+            return bytes + " B";
+        }
+        double kib = bytes / 1024.0;
+        if (kib < 1024) {
+            return String.format("%.1f KB", kib);
+        }
+        double mib = kib / 1024.0;
+        if (mib < 1024) {
+            return String.format("%.1f MB", mib);
+        }
+        return String.format("%.1f GB", mib / 1024.0);
+    }
+
     private void showTabs() {
-        getJson("/sessions", payload -> showTabsDialog(payload, "Sessions", true), exc ->
-                getJson("/tabs", payload -> showTabsDialog(payload, "Tabs", false))
+        showActiveSessions();
+    }
+
+    private void showActiveSessions() {
+        getJson("/sessions", payload -> showActiveSessionsDialog(payload, "Active Sessions", true), exc ->
+                getJson("/tabs", payload -> showActiveSessionsDialog(payload, "Active Sessions", false))
+        );
+    }
+
+    private void showOldSessions() {
+        getJson("/sessions", this::showOldSessionsDialog, exc ->
+                toast("WEzterm control is not reachable")
         );
     }
 
     private void showNeedsAttention() {
-        getJson("/needs-attention", payload -> showTabsDialog(payload, "Needs Attention", false));
+        getJson("/needs-attention", payload -> showActiveSessionsDialog(payload, "Needs Attention", false));
     }
 
-    private void showTabsDialog(JSONObject payload, String title, boolean preferGroups) throws Exception {
+    private void showActiveSessionsDialog(JSONObject payload, String title, boolean preferGroups) throws Exception {
         String session = payload.optString("session", "main");
         String viewSession = payload.optString("viewSession", "main_phone");
         ScrollView scrollView = new ScrollView(this);
@@ -1243,7 +1588,7 @@ public class MainActivity extends Activity {
         scrollView.addView(list);
 
         TextView header = new TextView(this);
-        header.setText("Session: " + viewSession + " (" + session + ")");
+        header.setText("Active: " + viewSession + " (" + session + ")");
         header.setTextSize(14);
         header.setTextColor(Color.rgb(205, 214, 244));
         header.setPadding(0, 0, 0, dp(8));
@@ -1273,15 +1618,76 @@ public class MainActivity extends Activity {
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle(title)
                 .setView(scrollView)
-                .setPositiveButton("New tab", (d, which) -> control("/new?fast=1", "New tab"))
-                .setNeutralButton("Rename current tab", (d, which) -> showRenameCurrentTab())
+                .setPositiveButton("New session", (d, which) -> control("/new?fast=1", "New session"))
+                .setNeutralButton("Rename current", (d, which) -> showRenameCurrentTab())
                 .setNegativeButton("Cancel", null)
                 .show();
         dialogRef[0] = dialog;
         // WHY: Android AlertDialog can focus a child row or preserve a measured
-        // scroll position, which made Tabs open in the middle. The phone picker
+        // scroll position, which made Active Sessions open in the middle. The phone picker
         // is always a "start from the newest/attention section" surface.
         scrollView.post(() -> scrollView.scrollTo(0, 0));
+    }
+
+    private void showOldSessionsDialog(JSONObject payload) throws Exception {
+        JSONArray oldSessions = payload.optJSONArray("oldSessions");
+        if (oldSessions == null) {
+            oldSessions = payload.optJSONArray("recentCodexSessions");
+        }
+        ScrollView scrollView = new ScrollView(this);
+        scrollView.setFocusable(false);
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        list.setFocusable(false);
+        list.setPadding(dp(8), dp(6), dp(8), dp(6));
+        scrollView.addView(list);
+
+        final AlertDialog[] dialogRef = new AlertDialog[1];
+        if (oldSessions == null || oldSessions.length() == 0) {
+            addSectionHeader(list, "No old sessions found", 0);
+        } else {
+            String currentDate = "";
+            for (int i = 0; i < oldSessions.length(); i++) {
+                JSONObject session = oldSessions.getJSONObject(i);
+                // WHY: old-session recovery is for user-owned parent Codex
+                // threads. Showing subagent/explorer/worker threads here was
+                // explicitly confusing because those are implementation helpers,
+                // not sessions the user expects to resume from the phone.
+                if (!"user".equals(session.optString("threadSource", "user"))) {
+                    continue;
+                }
+                String dateLabel = session.optString("dateLabel", session.optString("updatedGroup", "Older"));
+                if (!dateLabel.equals(currentDate)) {
+                    currentDate = dateLabel;
+                    addSectionHeader(list, currentDate, countOldSessionsForDate(oldSessions, currentDate));
+                }
+                addOldSessionRow(list, session, dialogRef);
+            }
+        }
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Old Sessions")
+                .setView(scrollView)
+                .setPositiveButton("Active Sessions", (d, which) -> showActiveSessions())
+                .setNegativeButton("Cancel", null)
+                .show();
+        dialogRef[0] = dialog;
+        scrollView.post(() -> scrollView.scrollTo(0, 0));
+    }
+
+    private int countOldSessionsForDate(JSONArray oldSessions, String dateLabel) throws Exception {
+        int count = 0;
+        for (int i = 0; i < oldSessions.length(); i++) {
+            JSONObject session = oldSessions.getJSONObject(i);
+            if (!"user".equals(session.optString("threadSource", "user"))) {
+                continue;
+            }
+            String sessionDate = session.optString("dateLabel", session.optString("updatedGroup", "Older"));
+            if (dateLabel.equals(sessionDate)) {
+                count++;
+            }
+        }
+        return count;
     }
 
     private List<JSONObject> sortedWindows(JSONArray windows) throws Exception {
@@ -1439,7 +1845,7 @@ public class MainActivity extends Activity {
         ));
 
         Button close = new Button(this);
-        close.setText("X Close");
+        close.setText("Close");
         close.setAllCaps(false);
         close.setTextSize(12);
         close.setTextColor(Color.rgb(30, 30, 46));
@@ -1467,29 +1873,133 @@ public class MainActivity extends Activity {
         list.addView(row);
     }
 
+    private void addOldSessionRow(
+            LinearLayout list,
+            JSONObject session,
+            AlertDialog[] dialogRef
+    ) {
+        String sessionId = session.optString("id", "");
+        String title = session.optString("title", sessionId);
+        String cwd = session.optString("cwd", "");
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(0, dp(3), 0, dp(3));
+
+        LinearLayout openPanel = new LinearLayout(this);
+        openPanel.setOrientation(LinearLayout.VERTICAL);
+        openPanel.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        openPanel.setPadding(dp(10), dp(8), dp(10), dp(8));
+        openPanel.setBackgroundColor(Color.rgb(49, 50, 68));
+        openPanel.setClickable(true);
+        openPanel.setOnClickListener(v -> {
+            if (dialogRef[0] != null) {
+                dialogRef[0].dismiss();
+            }
+            confirmResumeOldSession(sessionId, cwd, title);
+        });
+
+        TextView titleText = new TextView(this);
+        titleText.setText(title);
+        titleText.setTextSize(15);
+        titleText.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        titleText.setTextColor(Color.rgb(205, 214, 244));
+        titleText.setSingleLine(false);
+        titleText.setMaxLines(Integer.MAX_VALUE);
+        titleText.setEllipsize(null);
+        titleText.setIncludeFontPadding(false);
+        titleText.setHorizontallyScrolling(false);
+        titleText.setOnLongClickListener(v -> {
+            ClipboardManager clipboardManager =
+                    (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            if (clipboardManager != null) {
+                clipboardManager.setPrimaryClip(
+                        ClipData.newPlainText("WEzterm old session title", title)
+                );
+                toast("Old session title copied");
+            }
+            return true;
+        });
+
+        // WHY: the user asked for old sessions "just by date and the name of
+        // each." Do not add process names, subagent labels, pane IDs, or tmux
+        // details here. The Resume button is the action; the row content stays
+        // the saved parent session name so the phone list reads like a normal
+        // recent-session picker.
+        openPanel.addView(titleText, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+
+        Button resume = new Button(this);
+        resume.setText("Resume");
+        resume.setAllCaps(false);
+        resume.setTextSize(12);
+        resume.setTextColor(Color.rgb(30, 30, 46));
+        resume.setBackgroundColor(Color.rgb(166, 227, 161));
+        resume.setPadding(dp(3), 0, dp(3), 0);
+        resume.setOnClickListener(v -> {
+            if (dialogRef[0] != null) {
+                dialogRef[0].dismiss();
+            }
+            confirmResumeOldSession(sessionId, cwd, title);
+        });
+
+        row.addView(openPanel, new LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1
+        ));
+        LinearLayout.LayoutParams resumeParams = new LinearLayout.LayoutParams(
+                dp(92),
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        resume.setMinHeight(dp(72));
+        resumeParams.setMargins(dp(6), 0, 0, 0);
+        row.addView(resume, resumeParams);
+        list.addView(row);
+    }
+
+    private void confirmResumeOldSession(String sessionId, String cwd, String title) {
+        if (sessionId == null || sessionId.trim().isEmpty()) {
+            toast("Old session id missing");
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Resume old session?")
+                .setMessage(title)
+                .setPositiveButton("Resume", (dialog, which) -> {
+                    String path = "/resume-session?fast=1&sessionId=" + urlEncode(sessionId)
+                            + "&cwd=" + urlEncode(cwd);
+                    control(path, "Old session opened");
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
     private void confirmClose() {
-        // WHY: closing the active tab should not rebuild the whole Tabs dialog
+        // WHY: closing the active session should not rebuild the whole picker
         // payload. `/tabs` now includes per-window status checks, which are useful
         // for the picker but made the main Close button feel disconnected.
         getJson("/active", payload -> {
             JSONObject window = payload.optJSONObject("window");
             if (window == null) {
-                confirmClose(-1, "", "current tab");
+                confirmClose(-1, "", "current session");
                 return;
             }
-            confirmClose(window.getInt("index"), window.optString("windowId", ""), window.optString("title", "current tab"));
+            confirmClose(window.getInt("index"), window.optString("windowId", ""), window.optString("title", "current session"));
         });
     }
 
     private void confirmClose(int index, String windowId, String title) {
         new AlertDialog.Builder(this)
                 .setTitle("Close " + title + "?")
-                .setMessage("This kills that tmux tab and whatever is running inside it.")
+                .setMessage("This closes that active session and whatever is running inside it.")
                 .setPositiveButton("Close", (dialog, which) -> {
                     String path = index >= 0
                             ? "/close?fast=1&windowId=" + urlEncode(windowId) + "&index=" + index
                             : "/close?fast=1";
-                    control(path, "Closed tab");
+                    control(path, "Closed session");
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
@@ -1513,18 +2023,18 @@ public class MainActivity extends Activity {
                 int pad = dp(16);
                 input.setPadding(pad, pad / 2, pad, pad / 2);
                 new AlertDialog.Builder(this)
-                        .setTitle("Rename current tab")
-                        .setMessage("Use a short name that describes the work in this tab.")
+                        .setTitle("Rename current session")
+                        .setMessage("Use a short name that describes this work.")
                         .setView(input)
                         .setPositiveButton("Save", (dialog, which) -> {
                             String name = input.getText().toString().trim();
-                            control("/rename?windowId=" + urlEncode(windowId) + "&index=" + index + "&name=" + urlEncode(name), "Renamed tab");
+                            control("/rename?windowId=" + urlEncode(windowId) + "&index=" + index + "&name=" + urlEncode(name), "Renamed session");
                         })
                         .setNegativeButton("Cancel", null)
                         .show();
                 return;
             }
-            toast("No current tab found");
+            toast("No current session found");
         });
     }
 
@@ -1535,13 +2045,12 @@ public class MainActivity extends Activity {
         String path = window.optString("shortPath", "");
         return state + title
                 + "\nSession " + session
-                + " · Tab " + window.getInt("index")
                 + " · " + detail
                 + " · " + path;
     }
 
     private String tabDetail(JSONObject window, String session) throws Exception {
-        String state = window.getBoolean("active") ? "Current tab" : "Tap to open";
+        String state = window.getBoolean("active") ? "Current session" : "Tap to open";
         String status = window.optString("statusLabel", "Done");
         String attention = window.optString("attentionReason", "");
         String activity = window.optString("activityGroup", "");
@@ -1551,8 +2060,6 @@ public class MainActivity extends Activity {
                 + (attention.isEmpty() ? "" : " - " + attention)
                 + " - " + state
                 + (activity.isEmpty() ? "" : " - " + activity)
-                + " - Session " + session
-                + " - Tab " + window.getInt("index")
                 + " - " + detail
                 + (path.isEmpty() ? "" : " - " + path);
     }

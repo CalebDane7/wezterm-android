@@ -10,15 +10,16 @@ does not have to remember SSH hosts, tmux shortcuts, or terminal key chords.
 
 - Opens as a real Android app named `WEzterm`, not a Chrome shortcut.
 - Connects to the desktop terminal over Tailscale.
-- Shows a bottom toolbar with the primary work controls: `Tabs`, `New Tab`,
-  `Refresh`, `Scroll`, `Copy/Paste`, `Steer`, and `Close Tab`.
-- Uses stable tmux window IDs for selecting and closing tabs.
-- Orders the tab picker newest-first by tmux activity and snaps the picker to
+- Shows a bottom toolbar with the primary work controls: `Active`, `Old`,
+  `New`, `Refresh`, `Scroll`, `Copy/Paste`, `Upload`, `Steer`, and `Close`.
+- Uses stable tmux window IDs for selecting and closing active sessions.
+- Orders the Active Sessions picker newest-first by tmux activity and snaps it to
   the top when opened.
-- Shows a green pulsing dot for tabs with visible active work and a grey dot
-  for idle/done tabs.
-- Groups the session picker by `Needs Attention`, `Today`, `Yesterday`,
-  `This Week`, and `Older` so old work can be found without closing the app.
+- Shows a green pulsing dot for active sessions with visible active work and a
+  grey dot for idle/done sessions.
+- Shows `Active Sessions` for currently open desktop/phone sessions.
+- Shows `Old Sessions` as saved parent Codex sessions grouped by exact date,
+  with subagent sessions filtered out so helper agents do not pollute the list.
 - Keeps `Refresh` visible so the current tmux window can reattach to ttyd after
   upgrades or stale WebView state without closing the Android task or losing the
   selected session.
@@ -27,6 +28,10 @@ does not have to remember SSH hosts, tmux shortcuts, or terminal key chords.
 - Provides a visible `Copy/Paste` menu so phone clipboard text can be pasted
   into the active desktop pane and visible terminal text can be copied back to
   the phone clipboard.
+- Lets the phone upload screenshots/media to the desktop over Tailscale through
+  a direct `Upload` toolbar button, Android's file picker, or the system Share
+  sheet, then copies the desktop path so it can be pasted into the active
+  terminal.
 - Keeps `Steer` visible so a running Codex task can be interrupted and steered
   from the phone without opening a secondary menu.
 - Uses a read-only Codex session reader for true full-session history when tmux
@@ -63,7 +68,7 @@ The title-sync service continuously renames tmux windows from live pane evidence
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=51`, `versionName=1.50`.
+- Built checkpoint: `versionCode=54`, `versionName=1.53`.
 - v1.29 fixes the black-screen resume case where Android focused WEzterm but
   the WebView never opened a fresh ttyd HTTP/WebSocket connection.
 - The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a
@@ -166,12 +171,36 @@ The title-sync service continuously renames tmux windows from live pane evidence
   `setSingleLine(true)`/ellipsis hid the part the user needed. The open row now
   grows vertically inside the dialog ScrollView, and long-pressing a title copies
   the full session title to the phone clipboard.
+- v1.51 separates Active Sessions from Old Sessions. WHY: the phone UI used
+  `Tabs` and `Sessions by date` for open tmux windows while the server's saved
+  Codex-session metadata was never rendered, so the old-session picker felt
+  missing. The toolbar now has `Active` for open sessions and `Old` for saved
+  parent Codex sessions by date/name only. The server filters old sessions to
+  `thread_source=user`, `source=cli`, and no agent nickname so subagent sessions
+  cannot appear in the phone picker.
+- v1.52 adds no-USB phone media uploads. WHY: screenshots and reference media
+  need to reach the desktop where Codex can read them without USB, cloud
+  detours, or broad Android storage permissions. `Copy/Paste` now includes
+  `Upload media from phone`, WEzterm appears as an Android Share target for
+  media, and the control server saves files under `~/phone-uploads/YYYY-MM-DD/`
+  with sanitized filenames before returning a pasteable desktop path.
+- v1.53 smooths the one-finger down-scroll return path and adds a direct
+  `Upload` toolbar button. WHY: upward flicks need to move quickly through old
+  output, but downward flicks approach the live-bottom edge where large delayed
+  bursts can hit tmux bottom before the WebView repaint catches up, which looks
+  like a refresh/jump. Downward touch batches are now smaller, stale scroll
+  replies are gesture-generation ignored, and only upward full flings keep the
+  delayed second burst. The direct Upload button uses the same all-media
+  Tailscale upload path as the Copy/Paste menu and Android Share target. Media
+  uploads now stream from Android's selected URI to the desktop instead of
+  buffering the whole file in APK memory, and the desktop server streams to disk with a 2 GB cap
+  so phone videos are a supported path rather than a screenshot-only shortcut.
 - v1.33 also adds fast control-server responses for select/new/close/active
   actions so those controls do not rebuild the full `/tabs` payload and pane
-  status dots unless the Tabs picker is actually opened.
+  status dots unless the Active Sessions picker is actually opened.
 - Latest no-USB package proof used the Tailscale ADB relay
   `127.0.0.1:5556 -> 100.77.22.120:5555` and reported phone model
-  `SM-S938U1`. v1.50 must be installed through that relay after every APK
+  `SM-S938U1`. v1.53 must be installed through that relay after every APK
   rebuild; the generated install page carries the current APK SHA-256.
   Future builds must use that no-USB relay unless the relay is
   unavailable and the user explicitly permits USB fallback.
@@ -197,12 +226,33 @@ Run the live runtime proof when checking the full phone regression matrix:
 scripts/prove-phone-runtime-regression.sh
 ```
 
-This creates and closes a disposable tmux tab, then restores the original phone
-tab. It proves the live control server, no-USB package state, sessions/date
-data, Needs Attention endpoint, tmux-owned touch scroll, bottom/live recovery,
-Copy/Paste endpoints, and stable `windowId` close/select. It does not replace
-unlocked on-phone visual proof for toolbar dialogs, pinch gestures, or keyboard
-layout.
+This creates and closes a disposable tmux session window, then restores the
+original phone session. It proves the live control server, no-USB package state, Active Sessions,
+Old Sessions parent-only date data, Needs Attention endpoint, tmux-owned touch
+scroll, bottom/live recovery, Copy/Paste endpoints, phone media upload endpoint,
+safe old-session resume, and stable `windowId` close/select.
+
+Run the installed-phone menu proof after installing an APK:
+
+```bash
+scripts/prove-phone-menu-ui.sh
+```
+
+Run it with WEzterm already foregrounded, or explicitly allow the proof to take
+foreground focus:
+
+```bash
+WEZTERM_UI_ALLOW_FOCUS_STEAL=1 scripts/prove-phone-menu-ui.sh
+```
+
+It uses UIAutomator and ADB input against the real phone UI. It verifies the
+bottom toolbar labels, opens the `Read current session` reader, opens `Old
+Sessions` and `Active Sessions`, checks date-grouped old sessions with visible
+`Resume` actions, confirms subagent/explorer/worker wording is absent, proves
+physical one-finger slow drag versus fast flick, pixel-checks Refresh repaint,
+opens the command palette, round-trips `Copy/Paste`, proves tap-to-type sends
+one token without duplication, verifies `Steer`, and closes only a disposable
+session.
 
 ## Install To Phone
 

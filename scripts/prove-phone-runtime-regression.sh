@@ -20,6 +20,7 @@ new_window=""
 ENTER_FILE=""
 SUBMIT_FILE=""
 STOP_FILE=""
+PASTE_FILE=""
 
 cleanup() {
     # WHY: this script creates a disposable tmux window to prove destructive
@@ -37,7 +38,7 @@ cleanup() {
     if [ -n "${orig_window:-}" ] && tmux list-windows -t "$TMUX_SESSION:" -F '#{window_id}' 2>/dev/null | grep -Fxq "$orig_window"; then
         curl -fsS "$CONTROL_URL/select?fast=1&windowId=${orig_window//@/%40}" >/dev/null || true
     fi
-    rm -f "${ENTER_FILE:-}" "${SUBMIT_FILE:-}" "${STOP_FILE:-}" 2>/dev/null || true
+    rm -f "${ENTER_FILE:-}" "${SUBMIT_FILE:-}" "${STOP_FILE:-}" "${PASTE_FILE:-}" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -214,6 +215,8 @@ curl -fsS "$CONTROL_URL/touch-scroll?where=lineUp&repeat=7" | json_assert "touch
 curl -fsS "$CONTROL_URL/touch-scroll?where=lineDown&repeat=3" | json_assert "touch line down is tmux-owned" "p.get('ok') is True and p.get('layer') == 'tmux' and p.get('action') == 'tmux-linedown' and p.get('paneMode') == 'copy-mode'"
 curl -fsS "$CONTROL_URL/scroll?where=top&mode=touch" | json_assert "touch top reaches tmux history top" "p.get('ok') is True and p.get('layer') == 'tmux' and p.get('action') == 'tmux-top' and p.get('paneMode') == 'copy-mode' and ('PREG_0001' in p.get('visible', {}).get('copyCursorLine', '') or any('PREG_0001' in line for line in p.get('visible', {}).get('head', []) + p.get('visible', {}).get('tail', [])))"
 curl -fsS "$CONTROL_URL/scroll?where=bottom" | json_assert "bottom restores live mode" "p.get('ok') is True and p.get('layer') == 'tmux' and p.get('action') == 'tmux-bottom' and not p.get('paneMode')"
+curl -fsS "$CONTROL_URL/touch-scroll?where=lineUp&repeat=4" | json_assert "pre-live-bottom fast path enters copy mode" "p.get('ok') is True and p.get('paneMode') == 'copy-mode'"
+curl -fsS "$CONTROL_URL/live-bottom" | json_assert "live-bottom fast endpoint" "p.get('ok') is True and p.get('paneMode') == '' and p.get('action') in {'fast-tmux-copy-mode-bottom', 'fast-live-bottom'}"
 curl -fsS "$CONTROL_URL/touch-scroll?where=lineDown&repeat=8" | json_assert "extra down at live bottom stays stopped" "p.get('ok') is True and p.get('layer') == 'tmux' and p.get('action') == 'tmux-linedown' and p.get('atLiveBottom') is True and p.get('paneMode') == 'copy-mode'"
 curl -fsS "$CONTROL_URL/touch-scroll?where=bottom" | json_assert "finger-up bottom restore exits copy mode" "p.get('ok') is True and p.get('layer') == 'tmux' and p.get('action') == 'tmux-bottom' and not p.get('paneMode')"
 
@@ -269,10 +272,28 @@ PY
 rm -f "$ENTER_FILE" "$SUBMIT_FILE" "$STOP_FILE"
 
 echo "copy paste"
-printf 'PHONE_PASTE_REGRESSION_OK' | curl -fsS -X POST --data-binary @- "$CONTROL_URL/paste" | json_assert "paste endpoint" "p.get('ok') is True and p.get('action') == 'pasted'"
-sleep 0.4
-tmux capture-pane -p -t "$TMUX_SESSION:$proof_window" -S -20 | grep -Fq 'PHONE_PASTE_REGRESSION_OK'
-curl -fsS "$CONTROL_URL/copy-visible" | json_assert "copy-visible endpoint" "p.get('ok') is True and p.get('action') == 'copied-visible' and 'PHONE_PASTE_REGRESSION_OK' in p.get('text', '')"
+PASTE_FILE="/tmp/wezterm-runtime-paste-proof.$$"
+PASTE_TEXT="PHONE PASTE FULL TEXT OK $(date +%s) with spaces"
+rm -f "$PASTE_FILE"
+tmux send-keys -t "$TMUX_SESSION:$proof_window" "rm -f '$PASTE_FILE'; cat > '$PASTE_FILE'" Enter
+for _ in $(seq 1 30); do
+    [ "$(tmux display-message -p -t "$TMUX_SESSION:$proof_window" '#{pane_current_command}')" = "cat" ] && break
+    sleep 0.1
+done
+# WHY: this proof runs `cat > file` in tmux. A no-newline paste can be visible on
+# screen but not flushed to the file before the check, which falsely looks like
+# text truncation. Send a normal multi-word line with a newline so the proof
+# verifies terminal delivery instead of only the HTTP/tmux-buffer acceptance.
+printf '%s\n' "$PASTE_TEXT" | curl -fsS -X POST --data-binary @- "$CONTROL_URL/paste" | json_assert "paste endpoint full text" "p.get('ok') is True and p.get('action') == 'pasted' and p.get('chars', 0) >= 20"
+for _ in $(seq 1 30); do
+    [ -f "$PASTE_FILE" ] && grep -Fq "$PASTE_TEXT" "$PASTE_FILE" && break
+    sleep 0.1
+done
+grep -Fq "$PASTE_TEXT" "$PASTE_FILE"
+curl -fsS "$CONTROL_URL/copy-visible" | json_assert "copy-visible endpoint" "p.get('ok') is True and p.get('action') == 'copied-visible' and 'PHONE PASTE FULL TEXT OK' in p.get('text', '')"
+tmux send-keys -t "$TMUX_SESSION:$proof_window" C-c
+rm -f "$PASTE_FILE"
+PASTE_FILE=""
 
 echo "media upload"
 media_payload="$(printf 'PHONE_MEDIA_UPLOAD_REGRESSION_OK\n' | curl -fsS -X POST -H 'Content-Type: image/png' -H 'X-WEzTerm-Filename: proof screenshot../bad.png' --data-binary @- "$CONTROL_URL/upload-media?filename=proof%20screenshot..%2Fbad.png")"

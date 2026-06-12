@@ -69,7 +69,7 @@ The title-sync service continuously renames tmux windows from live pane evidence
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=55`, `versionName=1.54`.
+- Built checkpoint: `versionCode=68`, `versionName=1.67`.
 - v1.29 fixes the black-screen resume case where Android focused WEzterm but
   the WebView never opened a fresh ttyd HTTP/WebSocket connection.
 - The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a
@@ -213,12 +213,132 @@ The title-sync service continuously renames tmux windows from live pane evidence
   server-side `/select-live` endpoint so Active Sessions switching does one
   select+bottom restore round trip instead of a slow select followed by a second
   Android bottom request.
+- v1.55 restores phone voice input by removing the Android
+  visible-password/private-learning IME flags from both the terminal WebView and
+  native safe prompt. WHY: those flags stopped some keyboards from learning or
+  showing suggestions, but they also made the keyboard enter private/incognito
+  mode and hid dictation. The safe prompt still submits through the controlled
+  tmux paste+Enter route, so long dictated prompts do not depend on fragile live
+  terminal composition.
+- v1.55 tried to make Active Sessions switching repaint the phone immediately by
+  reloading only the WebView transport after `/select-live` succeeds.
+  v1.57 removes the WebView reload from Active Sessions switching because real
+  phone use showed it looked like a refresh, delayed row taps, and restarted
+  focus/scroll helpers. `/select-live` remains the server-side select+bottom
+  path; Android now keeps the WebSocket transport alive, lets ttyd paint the
+  newly selected tmux window, and makes the title/detail/status text itself use
+  the same one-tap open action so a long-press title-copy target cannot swallow
+  normal Active row taps.
+- v1.56 removed the automatic gesture-end live-bottom restore that made
+  one-finger down-scroll look like a rapid refresh/reset loop at the bottom.
+  v1.57 exits tmux copy-mode quietly at one-finger live bottom through the
+  lightweight `/touch-scroll?where=bottom` path. WHY: stopping at tmux
+  `scroll_position=0` still leaves the user at the `[0/N]` copy-mode footer; the
+  quiet path returns to the real live composer without WebView reload,
+  xterm.scrollToBottom, scrollIntoView, or IME focus bursts.
+- v1.57 also moves normal `Scroll -> Go to live bottom / type` and tap-to-type
+  history return onto the server's fast `/live-bottom` route. WHY: the full
+  `/scroll?where=bottom` endpoint remains useful for proof because it collects
+  visible pane evidence, but using that proof path for everyday typing recovery
+  caused the rapid top/bottom refresh loop. The phone now asks the server to
+  return tmux/Codex/reader state to live bottom, then focuses the terminal
+  without running xterm.scrollToBottom or scrollIntoView bursts.
+- v1.57 makes the visible `Scroll` dialog scroll-only again: live bottom, true
+  history top, current-session reader, page up, and page down. Command Palette
+  stays available on long-press `Scroll`, but it no longer appears inside the
+  scroll fallback. WHY: a large mixed controls menu made the emergency scroll
+  fallback slow, confusing, and easy to regress into the old Terminal Controls
+  dialog.
+- v1.57 makes passive Android lifecycle callbacks passive. `onResume`, window
+  focus, and `onPageFinished` may check for reconnect state, but they do not
+  request the keyboard or run live-input visibility bursts. Returning from the
+  media picker also suppresses the blank-terminal watchdog briefly so Upload
+  does not trigger a reload/focus loop while Android hands the app back.
+- v1.58 makes tap-to-type a single keyboard focus burst. WHY: v1.57 still
+  allowed one tap to run immediate focus plus delayed keyboard retries, and
+  Android/Gboard/Samsung composition could be restarted while the user was
+  typing or dictating. Deliberate typing focus now cancels queued
+  scroll-to-bottom/visibility retries, shows the IME only after the xterm focus
+  probe, skips repeated native WebView focus when it is already focused, and
+  cancels stale delayed tap focus if a new finger gesture starts.
+- v1.58 also makes tap-to-type live-bottom recovery hide the history overlay
+  quietly until `/live-bottom` succeeds. WHY: running the full html/body
+  viewport pin before the server finished returning tmux to live bottom made the
+  phone look like it was refreshing or scrolling up/down when the user tapped
+  the cursor area.
+- v1.59 increases the one-finger downward return-to-live cap while keeping it
+  single-burst and tmux-only. WHY: physical proof showed slow and fast upward
+  history movement worked, but a real finger-up return swipe could stall in
+  tmux copy-mode several lines above the prompt. Downward MOVE batches now cap
+  at 8 lines and release bursts at 16 lines, still without the delayed second
+  downward fling that previously caused bottom-edge bounce/refresh.
+- v1.60 raises the downward return cap to the control server's supported
+  20-line touch batch. WHY: landscape real-device proof showed the app received
+  physical swipes and fast upward scrollback reached deep history, but one
+  return flick still stopped dozens of lines above live bottom. Downward return
+  now has the same server-supported batch size as upward flicking while still
+  forbidding the delayed second downward burst that caused old refresh loops.
+- v1.61 treats a tiny tmux `lineDown` remainder as the live-bottom edge. WHY:
+  real-device proof showed the return flick could still land four lines above
+  the prompt, leaving copy-mode active even though the user had visually reached
+  the bottom area. Android now uses the server's `scrollPosition` for tmux
+  `lineDown` and quietly exits copy-mode when the remaining distance is within
+  six lines; it still does not reload WebView or run xterm scroll bursts.
+- v1.62 widens that quiet near-bottom restore band to 16 lines. WHY: the same
+  landscape physical proof still landed 12 lines above bottom after a fast
+  return flick, which looked like the bottom area but stayed trapped in
+  copy-mode. The wider band is still restricted to tmux `lineDown` responses
+  with explicit `scrollPosition`, and still uses the quiet copy-mode exit path.
+- v1.63 removes the unconditional delayed keyboard retry from tap-to-type. WHY:
+  a live tap that already focused xterm's helper textarea must not run another
+  editor-focus/showSoftInput cycle 180 ms later while Samsung/Gboard/voice input
+  is composing, because that can recommit the same text and look like the user
+  typed every word twice. The only remaining keyboard-path retry is conditional:
+  it runs once only when the first probe proves the helper textarea did not exist
+  yet.
+- v1.64 removes activity-start keyboard requests and guards late generic control callbacks.
+  WHY: Android's `stateVisible` asks the system to show the IME when
+  the activity starts, which is not a deliberate terminal typing action. WEzterm
+  now keeps `adjustResize` for keyboard layout but only asks for the IME through
+  explicit typing flows. Generic async controls also verify their mode generation
+  before refocusing, and `showSoftInput` is skipped when the keyboard is already
+  visible for the focused WebView so a stale callback cannot recommit composing
+  Samsung/Gboard/voice text.
+- v1.65 makes terminal-body taps single-owner and keeps keyboard height out of
+  the toolbar's own layout height. WHY: v1.64 could still forward a body tap to
+  xterm and then run a delayed native focus/showSoftInput fallback, which gave
+  Samsung/Gboard two editor-focus transitions and duplicated words. It also
+  added the IME inset to the two-row toolbar itself, creating a huge blank bottom
+  bar that made live-bottom content look covered by the buttons. Top tmux/status
+  taps still forward to WebView so existing top-tab switching is preserved.
+- v1.66 moves normal phone typing into a docked native composer and adds a
+  direct `Bottom` toolbar button. WHY: real Android Chrome/WebView+xterm typing
+  still duplicated Samsung/Gboard/voice text after v1.65, which means normal
+  body taps must not reopen xterm's hidden textarea at all. Terminal-body taps
+  now open a native `EditText`; text stays local until Send/Start posts one
+  `/submit-text` paste+Enter to the control server. The new Bottom button calls
+  the fast `/live-bottom` path directly so the user is not forced through the
+  Scroll fallback menu when one-finger return-to-bottom misses the prompt.
+  v1.66 also extends the WebView viewer-pan grace window after two-finger zoom
+  so delayed viewport cleanup does not snap the zoomed section away.
+- v1.67 removes the stale hidden composer action row from the live APK and
+  guards full multi-word phone clipboard paste. WHY: the earlier v1.66 build
+  still showed duplicate-looking Send/Cancel controls below the toolbar, and
+  Copy/Paste proof only used a single-token string. The corrected build keeps
+  one visible action path by relabeling the existing Start button to Send while
+  the native composer is open, and the paste path now joins every Android
+  ClipData text item before sending the complete clipboard through the tmux
+  paste-buffer endpoint.
+- v1.56 also makes the toolbar two rows with ripple/tap feedback, raises the
+  default terminal font to 12, shrinks the Scroll menu to scroll-only recovery,
+  and adds bounded retry for safe control calls such as Active Sessions,
+  Refresh, Needs Attention, and `/select-live`.
 - v1.33 also adds fast control-server responses for select/new/close/active
   actions so those controls do not rebuild the full `/tabs` payload and pane
   status dots unless the Active Sessions picker is actually opened.
 - Latest no-USB package proof used the Tailscale ADB relay
   `127.0.0.1:5556 -> 100.77.22.120:5555` and reported phone model
-  `SM-S938U1`. v1.54 must be installed through that relay after every APK
+  `SM-S938U1`. v1.67 must be installed through that relay after every APK
   rebuild; the generated install page carries the current APK SHA-256.
   Future builds must use that no-USB relay unless the relay is
   unavailable and the user explicitly permits USB fallback.

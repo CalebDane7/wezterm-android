@@ -89,7 +89,7 @@ Safari/Add to Home Screen today; Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=68`, `versionName=1.67`.
+- Built checkpoint: `versionCode=72`, `versionName=1.71`.
 - v1.29 fixes the black-screen resume case where Android focused WEzterm but
   the WebView never opened a fresh ttyd HTTP/WebSocket connection.
 - The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a
@@ -349,6 +349,29 @@ Safari/Add to Home Screen today; Android users use the native APK.
   the native composer is open, and the paste path now joins every Android
   ClipData text item before sending the complete clipboard through the tmux
   paste-buffer endpoint.
+- v1.68 refits ttyd/xterm after Android WebView layout changes and retries only
+  the zoomed Android viewer's true-bottom position after native composer or
+  one-finger live-bottom recovery. WHY: the v1.67 proof showed tmux content was
+  healthy while the phone could still expose dotted/blank canvas below the
+  prompt and stop above the real bottom when zoomed. The fix dispatches a
+  lightweight WebView resize/redraw and preserves the prior no-reload,
+  no-xterm-IME, no-duplicate-typing, Copy/Paste, Upload, Active/Old, Start/Stop,
+  and Scroll-menu behavior instead of reviving the old refresh loop.
+- v1.69 makes plain toolbar buttons consume their own in-bounds tap and call
+  `performClick()` exactly once. WHY: real phone proof showed the center of the
+  visible `Active` button could miss while an offset tap inside that same button
+  opened Active Sessions. Scroll, Copy/Paste, and Start keep normal Button
+  handling because their long-press actions are protected behavior.
+- v1.70 pins the current active tmux window at the top of Active Sessions before
+  the grouped rows. WHY: the grouped needs-attention/date order can push the
+  active row below the phone viewport, making the picker look like it opened but
+  did not identify or switch the current session. The current row is rendered
+  once, then skipped from the grouped sections below.
+- v1.71 moves the Active Sessions actions into a compact in-dialog row. WHY:
+  Android's stock three-button AlertDialog footer stacked and clipped New
+  session/Rename/Cancel on the phone, so users could not see all actions at once.
+  The row lives inside the scrollable dialog content and preserves the visible
+  current-first session list.
 - v1.56 also makes the toolbar two rows with ripple/tap feedback, raises the
   default terminal font to 12, shrinks the Scroll menu to scroll-only recovery,
   and adds bounded retry for safe control calls such as Active Sessions,
@@ -358,7 +381,7 @@ Safari/Add to Home Screen today; Android users use the native APK.
   status dots unless the Active Sessions picker is actually opened.
 - Latest no-USB package proof used the Tailscale ADB relay
   `127.0.0.1:5556 -> 100.77.22.120:5555` and reported phone model
-  `SM-S938U1`. v1.67 must be installed through that relay after every APK
+  `SM-S938U1`. v1.71 must be installed through that relay after every APK
   rebuild; the generated install page carries the current APK SHA-256.
   Future builds must use that no-USB relay unless the relay is
   unavailable and the user explicitly permits USB fallback.

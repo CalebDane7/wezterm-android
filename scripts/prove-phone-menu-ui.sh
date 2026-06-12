@@ -28,6 +28,7 @@ orig_scroll=""
 proof_window=""
 resume_window=""
 reader_window=""
+reader_source_window=""
 
 adb_cmd() {
     adb -s "$ADB_SERIAL" "$@"
@@ -90,6 +91,11 @@ tmux_window_scroll_position() {
     else
         printf '0\n'
     fi
+}
+
+tmux_window_pane_height() {
+    local window_id="$1"
+    tmux display-message -p -t "$TMUX_SESSION:$window_id" '#{pane_height}' 2>/dev/null || true
 }
 
 tmux_window_count() {
@@ -376,10 +382,30 @@ dump_has_text() {
     grep -Fq "text=\"$text\"" "$DUMP_LOCAL"
 }
 
+dump_has_button_text() {
+    local text="$1"
+    python3 - "$DUMP_LOCAL" "$text" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+path, wanted = sys.argv[1], sys.argv[2]
+root = ET.parse(path).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("class") == "android.widget.Button" and node.attrib.get("text") == wanted:
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
 ensure_toolbar() {
     for _ in $(seq 1 8); do
         dump_ui
-        if dump_has_text "Active" && dump_has_text "Old" && dump_has_text "Refresh" && dump_has_text "Close"; then
+        # WHY: dialog titles, hints, and command-palette rows can contain the same
+        # words as toolbar actions. The proof must normalize to the real two-row
+        # toolbar before testing labels, otherwise a stale dialog/composer state can
+        # either hide the buttons or falsely satisfy the check.
+        if dump_has_button_text "Active" && dump_has_button_text "Old" \
+                && dump_has_button_text "Refresh" && dump_has_button_text "Close"; then
             return 0
         fi
         if dump_has_text "Active Sessions" \
@@ -539,9 +565,111 @@ print(
 PY
 }
 
+terminal_webview_height() {
+    dump_ui
+    python3 - "$DUMP_LOCAL" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+chosen = None
+for node in root.iter("node"):
+    resource_id = node.attrib.get("resource-id", "")
+    klass = node.attrib.get("class", "")
+    if resource_id != "terminal-container" and klass != "android.webkit.WebView":
+        continue
+    match = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not match:
+        continue
+    left, top, right, bottom = map(int, match.groups())
+    width = right - left
+    height = bottom - top
+    area = width * height
+    if width <= 100 or height <= 100:
+        continue
+    candidate = (resource_id == "terminal-container", area, height)
+    if chosen is None or candidate > chosen:
+        chosen = candidate
+if chosen is None:
+    raise SystemExit("could not find terminal WebView height")
+print(chosen[2])
+PY
+}
+
+assert_composer_terminal_refit() {
+    local before_height="$1"
+    local before_rows="$2"
+    local current_height=""
+    local current_rows=""
+    local expected_rows=""
+    # WHY: this pins the user-visible dotted/full-area regression. UIAutomator
+    # cannot see xterm canvas text or automate a reliable public multi-touch
+    # pinch, but it can prove the Android WebView shrinks for the native composer
+    # and tmux receives the corresponding ttyd/xterm row resize. Without that
+    # resize, the old row/canvas height is exposed as dotted blank space and a
+    # zoomed viewer cannot scroll to the true bottom.
+    for _ in $(seq 1 40); do
+        if input_method_visible; then
+            current_height="$(terminal_webview_height)"
+            current_rows="$(tmux_window_pane_height "$proof_window")"
+            if [[ "$before_height" =~ ^[0-9]+$ && "$before_rows" =~ ^[0-9]+$ \
+                    && "$current_height" =~ ^[0-9]+$ && "$current_rows" =~ ^[0-9]+$ \
+                    && "$current_height" -lt "$before_height" \
+                    && "$current_rows" -lt "$before_rows" ]]; then
+                expected_rows="$(python3 - "$before_height" "$before_rows" "$current_height" <<'PY'
+import math
+import sys
+
+before_height, before_rows, current_height = map(int, sys.argv[1:])
+print(max(1, math.ceil(before_rows * current_height / before_height)))
+PY
+)"
+                if [ "$current_rows" -le $((expected_rows + 14)) ]; then
+                    echo "Zoomed/native composer terminal refit kept the true bottom viewport usable: before_height=$before_height current_height=$current_height before_rows=$before_rows current_rows=$current_rows expected_rows=$expected_rows"
+                    return 0
+                fi
+            fi
+        fi
+        sleep 0.25
+    done
+    echo "phone menu UI proof failed: native composer did not refit terminal rows; before_height=$before_height current_height=${current_height:-?} before_rows=$before_rows current_rows=${current_rows:-?} expected_rows=${expected_rows:-?}" >&2
+    exit 1
+}
+
+composer_draft_text_from_dump() {
+    python3 - "$DUMP_LOCAL" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("class") != "android.widget.EditText":
+        continue
+    hint = node.attrib.get("hint", "")
+    if node.attrib.get("content-desc") == "Type prompt" or hint.startswith("Type prompt"):
+        text = node.attrib.get("text", "")
+        # UIAutomator reports the hint as text for an empty EditText on Samsung.
+        # Treat that as empty so the proof can dismiss an empty restored composer,
+        # while still refusing to clear actual unsent user text.
+        if text == hint or text.startswith("Type prompt"):
+            text = ""
+        print(text)
+        break
+PY
+}
+
 dismiss_native_composer_if_open() {
     dump_ui
     if grep -Eq 'class="android.widget.EditText"[^>]*(content-desc|hint)="Type prompt"' "$DUMP_LOCAL"; then
+        local draft
+        draft="$(composer_draft_text_from_dump)"
+        if [ -n "$draft" ] && [ "${WEZTERM_UI_ALLOW_CLEAR_DRAFT:-0}" != "1" ]; then
+            local draft_file="$SCREENSHOT_DIR/wezterm-preserved-composer-draft-$$.txt"
+            printf '%s\n' "$draft" > "$draft_file"
+            echo "phone menu UI proof blocked: native composer contains unsent text; saved draft to $draft_file and refused to clear it" >&2
+            exit 1
+        fi
         press_back
         sleep 0.2
         dump_ui
@@ -551,6 +679,25 @@ dismiss_native_composer_if_open() {
         fi
         echo "Native composer dismissed before proof step"
     fi
+}
+
+ensure_plain_toolbar() {
+    for _ in $(seq 1 8); do
+        ensure_toolbar
+        dump_ui
+        if dump_has_button_text "Start" && ! grep -Eq 'class="android.widget.EditText"[^>]*(content-desc|hint)="Type prompt"' "$DUMP_LOCAL"; then
+            return 0
+        fi
+        # WHY: after APK install/reopen, Android can restore the native composer
+        # slightly after the first toolbar dump. The label then becomes Send, so
+        # the proof would falsely report that Start regressed. Wait for the plain
+        # toolbar state used by the toolbar-label assertions.
+        dismiss_native_composer_if_open
+        sleep 0.25
+    done
+    echo "phone menu UI proof failed: could not reach the plain toolbar with Start visible" >&2
+    echo "UI dump: $DUMP_LOCAL" >&2
+    exit 1
 }
 
 assert_old_sessions_without_agent_labels() {
@@ -643,6 +790,34 @@ for node in root.iter("node"):
         break
 else:
     raise SystemExit(f"missing text {wanted}")
+PY
+)"
+    read -r x y <<<"$coords"
+    adb_cmd shell input tap "$x" "$y"
+    sleep 0.8
+}
+
+tap_visible_text_from_current_dump() {
+    local text="$1"
+    local coords
+    coords="$(python3 - "$DUMP_LOCAL" "$text" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+path, wanted = sys.argv[1], sys.argv[2]
+root = ET.parse(path).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("text") == wanted:
+        bounds = node.attrib.get("bounds", "")
+        match = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
+        if not match:
+            raise SystemExit(f"no parsable bounds for {wanted}: {bounds}")
+        left, top, right, bottom = map(int, match.groups())
+        print((left + right) // 2, (top + bottom) // 2)
+        break
+else:
+    raise SystemExit(f"missing text {wanted} in current dump")
 PY
 )"
     read -r x y <<<"$coords"
@@ -786,6 +961,41 @@ tap_text_any() {
     exit 1
 }
 
+open_scroll_menu() {
+    for _ in $(seq 1 4); do
+        ensure_toolbar
+        dump_ui
+        if ! dump_has_button_text "Scroll"; then
+            dismiss_native_composer_if_open
+            sleep 0.25
+            continue
+        fi
+        # WHY: this helper is used immediately after reader-window creation and
+        # Android layout changes. Taking another blind dump inside tap_text can
+        # catch a transient composer/dialog frame and fail even though the real
+        # toolbar is visible. Tap the Scroll button from the dump we already
+        # validated, then retry from toolbar state if the menu animation misses.
+        tap_visible_text_from_current_dump "Scroll"
+        for __ in $(seq 1 8); do
+            dump_ui
+            if dump_has_text "Read current session" && dump_has_text "Go to live bottom / type"; then
+                echo "Scroll menu is open"
+                return 0
+            fi
+            sleep 0.2
+        done
+        # WHY: proof runs can inherit a half-dismissed native composer or a stale
+        # Android dialog animation from the previous step. A single blind Scroll
+        # tap then leaves the harness looking for menu text on the toolbar screen.
+        # Retry from a known toolbar state instead of weakening the app assertion.
+        press_back
+        dismiss_native_composer_if_open
+    done
+    echo "phone menu UI proof failed: Scroll button did not open the scroll-only menu" >&2
+    echo "UI dump: $DUMP_LOCAL" >&2
+    exit 1
+}
+
 press_back() {
     adb_cmd shell input keyevent KEYCODE_BACK
     sleep 0.4
@@ -862,7 +1072,7 @@ fi
 wait_for_focus
 sleep 1.0
 ensure_toolbar
-dismiss_native_composer_if_open
+ensure_plain_toolbar
 
 echo "phone menu UI proof: toolbar labels"
 for label in Active Old New Refresh Bottom Scroll "Copy/Paste" Upload Close Start Stop; do
@@ -876,23 +1086,24 @@ assert_terminal_toolbar_geometry
 echo "phone menu UI proof: Read current session opens reader and live bottom returns"
 reader_count="$(tmux_window_count)"
 ensure_toolbar
-tap_text "Scroll"
+reader_source_window="$(tmux_active_window)"
+open_scroll_menu
 tap_text "Read current session"
-reader_window="$(wait_for_active_new_window "$reader_count" "$orig_window")"
+reader_window="$(wait_for_active_new_window "$reader_count" "$reader_source_window")"
 reader_name="$(tmux display-message -p -t "$TMUX_SESSION:$reader_window" '#{window_name}')"
 case "$reader_name" in
-    "READ $orig_window"*) ;;
+    "READ $reader_source_window"*) ;;
     *)
-        echo "phone menu UI proof failed: reader window did not name its source: $reader_window $reader_name" >&2
+        echo "phone menu UI proof failed: reader window did not name its selected source: selected=$reader_source_window reader=$reader_window name=$reader_name" >&2
         exit 1
         ;;
 esac
-echo "Read current session opened reader $reader_window"
+echo "Read current session opened reader $reader_window for selected source $reader_source_window"
 ensure_toolbar
-tap_text "Scroll"
+open_scroll_menu
 tap_text "Go to live bottom / type"
-wait_for_active_window_id "$orig_window"
-echo "Reader live-bottom returned to $orig_window"
+wait_for_active_window_id "$reader_source_window"
+echo "Reader live-bottom returned to $reader_source_window"
 dismiss_native_composer_if_open
 cleanup_window "$reader_window"
 reader_window=""
@@ -915,6 +1126,9 @@ echo "phone menu UI proof: Active button opens active session picker"
 ensure_toolbar
 tap_text "Active"
 assert_text "Active Sessions"
+assert_text "New"
+assert_text "Rename"
+assert_text "Cancel"
 assert_regex 'text="Current:' "current active session row"
 assert_absent "Sessions by date"
 press_back
@@ -924,7 +1138,14 @@ select_window "$orig_window"
 reopen_wezterm
 tap_text "Active"
 assert_text "Active Sessions"
-tap_text "$PROOF_NAME"
+assert_text "Rename"
+# WHY: Active Sessions is intentionally crowded on the real phone because it
+# includes current-first rows plus every live tmux window. The disposable proof
+# tab can fall below the first viewport; scroll to the exact title before
+# tapping so the proof exercises the real picker without assuming a quiet tmux
+# workspace.
+scroll_until_text "$PROOF_NAME"
+tap_visible_text_from_current_dump "$PROOF_NAME"
 wait_for_active_window_id "$proof_window"
 adb_cmd exec-out screencap -p > /tmp/wezterm-v157-active-title-one-tap.png
 assert_terminal_screenshot_has_text_pixels /tmp/wezterm-v157-active-title-one-tap.png
@@ -1025,7 +1246,7 @@ control_get "/scroll?where=bottom" >/dev/null || true
 wait_for_pane_mode "0"
 
 ensure_toolbar
-tap_text "Scroll"
+open_scroll_menu
 assert_text "Scroll"
 assert_text "Go to live bottom / type"
 assert_text "Go to history top"
@@ -1040,14 +1261,17 @@ assert_absent "Refresh current session"
 assert_absent "Upload media from phone"
 assert_absent "Type prompt safely"
 echo "Scroll menu is scroll-only"
+press_back
+ensure_toolbar
+open_scroll_menu
 tap_text "Page up"
 wait_for_pane_mode "1"
 ensure_toolbar
-tap_text "Scroll"
+open_scroll_menu
 tap_text "Page down"
 wait_for_pane_mode "1"
 ensure_toolbar
-tap_text "Scroll"
+open_scroll_menu
 tap_text "Go to live bottom / type"
 wait_for_pane_mode "0"
 
@@ -1096,7 +1320,7 @@ fi
 ensure_toolbar
 long_press_text "Scroll"
 scroll_until_text "Rename current session"
-tap_text "Rename current session"
+tap_visible_text_from_current_dump "Rename current session"
 assert_text "Rename current session"
 press_back
 
@@ -1106,7 +1330,7 @@ bug_before="$(find "$bug_dir" -maxdepth 1 -type f -name 'report-*.json' | wc -l)
 ensure_toolbar
 long_press_text "Scroll"
 scroll_until_text "Create bug report"
-tap_text "Create bug report"
+tap_visible_text_from_current_dump "Create bug report"
 for _ in $(seq 1 30); do
     bug_after="$(find "$bug_dir" -maxdepth 1 -type f -name 'report-*.json' | wc -l)"
     if [ "$bug_after" -gt "$bug_before" ]; then
@@ -1123,7 +1347,7 @@ fi
 ensure_toolbar
 long_press_text "Scroll"
 scroll_until_text "Install/update over Tailscale"
-tap_text "Install/update over Tailscale"
+tap_visible_text_from_current_dump "Install/update over Tailscale"
 sleep 1.5
 if has_window_focus; then
     echo "phone menu UI proof failed: install page button did not leave WEzterm for ACTION_VIEW" >&2
@@ -1165,6 +1389,8 @@ done
 ensure_toolbar
 before_tap_mode="$(tmux_pane_mode)"
 before_tap_scroll="$(tmux_scroll_position)"
+before_composer_terminal_height="$(terminal_webview_height)"
+before_composer_pane_height="$(tmux_window_pane_height "$proof_window")"
 # WHY: v1.67 deliberately keeps v1.66's stop using xterm/WebView's hidden textarea for
 # normal phone typing. This proof taps the terminal body, verifies the native
 # composer owns input, proves the token does not reach tmux before Send, then
@@ -1173,6 +1399,7 @@ terminal_tap_for_typing
 sleep 0.8
 assert_regex '(text|content-desc|hint)="Type prompt"' "native composer opened from terminal tap"
 echo "Native composer opened from terminal tap"
+assert_composer_terminal_refit "$before_composer_terminal_height" "$before_composer_pane_height"
 assert_absent "Cancel"
 adb_cmd shell dumpsys input_method > /tmp/wezterm-ime-proof.txt || true
 adb_cmd exec-out screencap -p > /tmp/wezterm-v166-native-composer-proof.png

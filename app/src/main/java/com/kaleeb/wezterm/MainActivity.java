@@ -73,7 +73,7 @@ public class MainActivity extends Activity {
     private static final String PREFS = "wezterm";
     private static final String PREF_PIN_REQUESTED = "pin_requested";
     private static final String PREF_FONT_SIZE = "font_size";
-    private static final String APP_VERSION_NAME = "1.67";
+    private static final String APP_VERSION_NAME = "1.71";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
             | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
@@ -120,6 +120,7 @@ public class MainActivity extends Activity {
     private long lastLiveInputVisibilityBurstAtMs = 0;
     private long lastLiveInputVisibilityBurstModeGeneration = -1;
     private long liveInputVisibilityGeneration = 0;
+    private long terminalFitGeneration = 0;
     private long nativePickerQuietUntilMs = 0;
     private boolean readModeSuppressesKeyboard = false;
     private boolean terminalHistoryViewportActive = false;
@@ -418,6 +419,9 @@ public class MainActivity extends Activity {
 
     private Button toolbarButton(String label, View.OnClickListener listener) {
         Button button = button(label, listener);
+        if (!"Scroll".equals(label) && !"Copy/Paste".equals(label) && !"Start".equals(label)) {
+            installPlainToolbarTapHandler(button);
+        }
         button.setTextSize(label.length() > 9 ? 10 : 11);
         button.setSingleLine(true);
         button.setIncludeFontPadding(false);
@@ -458,6 +462,37 @@ public class MainActivity extends Activity {
         params.setMargins(dp(4), 0, dp(4), 0);
         button.setLayoutParams(params);
         return button;
+    }
+
+    private void installPlainToolbarTapHandler(Button button) {
+        // WHY: real phone proof showed center taps on the `Active` toolbar button
+        // could be ignored while an offset tap inside the same visible button
+        // worked. Plain toolbar buttons have no protected long-press secondary
+        // action, so consume their in-bounds DOWN/UP sequence and call
+        // performClick exactly once. Do not install this on Scroll, Copy/Paste,
+        // or Start; those buttons intentionally keep long-press behavior.
+        button.setOnTouchListener((view, event) -> {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    view.setPressed(true);
+                    return true;
+                case MotionEvent.ACTION_UP:
+                    boolean inside = event.getX() >= 0
+                            && event.getX() <= view.getWidth()
+                            && event.getY() >= 0
+                            && event.getY() <= view.getHeight();
+                    view.setPressed(false);
+                    if (inside) {
+                        view.performClick();
+                    }
+                    return true;
+                case MotionEvent.ACTION_CANCEL:
+                    view.setPressed(false);
+                    return true;
+                default:
+                    return true;
+            }
+        });
     }
 
     private void setTouchableBackground(View view, int baseColor, int rippleColor) {
@@ -506,6 +541,18 @@ public class MainActivity extends Activity {
         // is refreshing or fighting the user's finger. The terminal already has
         // explicit Live/Read controls, so native overscroll feedback is noise.
         view.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        view.addOnLayoutChangeListener((changedView, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            if ((right - left) == (oldRight - oldLeft) && (bottom - top) == (oldBottom - oldTop)) {
+                return;
+            }
+            // WHY: Android can shrink the WebView for the native composer,
+            // keyboard, or system bars without a ttyd page reload. If xterm keeps
+            // painting against the previous row/canvas height, the phone exposes a
+            // dotted blank field and a zoomed viewer cannot pan to the true prompt
+            // bottom. Dispatch a lightweight resize/redraw only; do not revive
+            // xterm scrollToBottom, WebView reload, or IME focus bursts here.
+            fitTerminalToCurrentViewSoon("webview-layout");
+        });
         view.setOnScrollChangeListener((changedView, scrollX, scrollY, oldScrollX, oldScrollY) -> {
             if (scrollX != 0 || scrollY != 0) {
                 if (isViewerPanAllowed()) {
@@ -1302,7 +1349,8 @@ public class MainActivity extends Activity {
         if (inputMethodManager != null) {
             inputMethodManager.showSoftInput(promptComposerInput, InputMethodManager.SHOW_IMPLICIT);
         }
-        scrollViewerToTypingPosition();
+        fitTerminalToCurrentViewSoon("composer-show");
+        scrollViewerToTypingPositionSoon("composer-show");
     }
 
     private void submitDockedPrompt() {
@@ -1330,6 +1378,7 @@ public class MainActivity extends Activity {
                 inputMethodManager.hideSoftInputFromWindow(promptComposerInput.getWindowToken(), 0);
             }
         }
+        fitTerminalToCurrentViewSoon("composer-hide");
     }
 
     private void updateStartButtonLabel() {
@@ -1459,6 +1508,8 @@ public class MainActivity extends Activity {
             }
             leaveReadModeAfterTouchBottom();
             pinTerminalViewportLocal();
+            fitTerminalToCurrentViewSoon("touch-bottom");
+            scrollViewerToTypingPositionSoon("touch-bottom");
         }, exc -> {
             terminalBottomRestoreInFlight = false;
             toast("WEzterm control is not reachable");
@@ -2097,6 +2148,16 @@ public class MainActivity extends Activity {
         list.addView(header);
 
         final AlertDialog[] dialogRef = new AlertDialog[1];
+        addActiveDialogActions(list, dialogRef);
+        JSONObject activeWindow = activeWindowFromPayload(payload);
+        if (activeWindow != null) {
+            // WHY: Active Sessions must immediately show where the phone is now.
+            // Grouping by "Needs Attention" or date can otherwise push the current
+            // tmux window below the fold, making the picker feel like the tap did
+            // not switch or that the current session disappeared.
+            addSectionHeader(list, "Current", 1);
+            addTabRow(list, activeWindow, session, dialogRef);
+        }
         JSONArray groups = payload.optJSONArray("groups");
         if (preferGroups && groups != null && groups.length() > 0) {
             for (int i = 0; i < groups.length(); i++) {
@@ -2105,30 +2166,85 @@ public class MainActivity extends Activity {
                 if (windows == null || windows.length() == 0) {
                     continue;
                 }
-                addSectionHeader(list, group.optString("label", "Sessions"), windows.length());
-                addTabRows(list, sortedWindows(windows), session, dialogRef);
+                List<JSONObject> groupRows = sortedWindows(windows, activeWindow);
+                if (groupRows.isEmpty()) {
+                    continue;
+                }
+                addSectionHeader(list, group.optString("label", "Sessions"), groupRows.size());
+                addTabRows(list, groupRows, session, dialogRef);
             }
         } else {
             JSONArray windows = payload.getJSONArray("windows");
-            if (windows.length() == 0) {
+            List<JSONObject> rows = sortedWindows(windows, activeWindow);
+            if (rows.isEmpty() && activeWindow == null) {
                 addSectionHeader(list, "Nothing needs attention", 0);
             } else {
-                addTabRows(list, sortedWindows(windows), session, dialogRef);
+                addTabRows(list, rows, session, dialogRef);
             }
         }
 
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle(title)
                 .setView(scrollView)
-                .setPositiveButton("New session", (d, which) -> control("/new?fast=1", "New session"))
-                .setNeutralButton("Rename current", (d, which) -> showRenameCurrentTab())
-                .setNegativeButton("Cancel", null)
                 .show();
         dialogRef[0] = dialog;
         // WHY: Android AlertDialog can focus a child row or preserve a measured
         // scroll position, which made Active Sessions open in the middle. The phone picker
         // is always a "start from the newest/attention section" surface.
         scrollView.post(() -> scrollView.scrollTo(0, 0));
+    }
+
+    private void addActiveDialogActions(LinearLayout list, AlertDialog[] dialogRef) {
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.setPadding(0, 0, 0, dp(8));
+        // WHY: the stock AlertDialog three-button footer can stack or disappear
+        // below the phone viewport in Active Sessions, exactly as the user
+        // reported. Keep these actions inside the scrollable dialog content as a
+        // compact row so New/Rename/Cancel are all visible and scroll with the
+        // session list instead of being clipped by Android's button panel.
+        actions.addView(activeDialogActionButton("New", v -> {
+            if (dialogRef[0] != null) {
+                dialogRef[0].dismiss();
+            }
+            control("/new?fast=1", "New session");
+        }));
+        actions.addView(activeDialogActionButton("Rename", v -> {
+            if (dialogRef[0] != null) {
+                dialogRef[0].dismiss();
+            }
+            showRenameCurrentTab();
+        }));
+        actions.addView(activeDialogActionButton("Cancel", v -> {
+            if (dialogRef[0] != null) {
+                dialogRef[0].dismiss();
+            }
+        }));
+        list.addView(actions);
+    }
+
+    private Button activeDialogActionButton(String label, View.OnClickListener listener) {
+        Button action = new Button(this);
+        action.setText(label);
+        action.setAllCaps(false);
+        action.setTextSize(12);
+        action.setSingleLine(true);
+        action.setTextColor(Color.rgb(205, 214, 244));
+        action.setGravity(android.view.Gravity.CENTER);
+        action.setPadding(dp(4), 0, dp(4), 0);
+        setTouchableBackground(action, Color.rgb(49, 50, 68), Color.rgb(137, 180, 250));
+        action.setOnClickListener(v -> {
+            flashTap(v);
+            listener.onClick(v);
+        });
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                0,
+                dp(48),
+                1
+        );
+        params.setMargins(dp(2), 0, dp(2), 0);
+        action.setLayoutParams(params);
+        return action;
     }
 
     private void showOldSessionsDialog(JSONObject payload) throws Exception {
@@ -2192,10 +2308,44 @@ public class MainActivity extends Activity {
         return count;
     }
 
+    private JSONObject activeWindowFromPayload(JSONObject payload) throws Exception {
+        JSONArray windows = payload.optJSONArray("windows");
+        if (windows == null) {
+            return null;
+        }
+        for (int i = 0; i < windows.length(); i++) {
+            JSONObject window = windows.getJSONObject(i);
+            if (window.optBoolean("active", false)) {
+                return window;
+            }
+        }
+        return null;
+    }
+
+    private boolean sameWindow(JSONObject left, JSONObject right) {
+        if (left == null || right == null) {
+            return false;
+        }
+        String leftId = left.optString("windowId", "");
+        String rightId = right.optString("windowId", "");
+        if (!leftId.isEmpty() && leftId.equals(rightId)) {
+            return true;
+        }
+        return left.optInt("index", -1) == right.optInt("index", -2);
+    }
+
     private List<JSONObject> sortedWindows(JSONArray windows) throws Exception {
+        return sortedWindows(windows, null);
+    }
+
+    private List<JSONObject> sortedWindows(JSONArray windows, JSONObject skipWindow) throws Exception {
         List<JSONObject> sorted = new ArrayList<>();
         for (int i = 0; i < windows.length(); i++) {
-            sorted.add(windows.getJSONObject(i));
+            JSONObject window = windows.getJSONObject(i);
+            if (sameWindow(window, skipWindow)) {
+                continue;
+            }
+            sorted.add(window);
         }
         // WHY: tmux window indexes are old-to-new and shift after closes. The
         // phone picker should start with the work touched most recently. Use
@@ -2842,7 +2992,7 @@ public class MainActivity extends Activity {
             return;
         }
         webView.evaluateJavascript(liveInputVisibilityScript(isViewerPanAllowed()), null);
-        scrollViewerToTypingPosition();
+        scrollViewerToTypingPositionSoon(reason);
     }
 
     private String liveInputVisibilityScript(boolean preserveViewerPan) {
@@ -2876,6 +3026,61 @@ public class MainActivity extends Activity {
                 + "return 'visible';"
                 + "}catch(e){return 'err';}"
                 + "})()";
+    }
+
+    private void fitTerminalToCurrentViewSoon(String reason) {
+        if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            return;
+        }
+        long generation = ++terminalFitGeneration;
+        fitTerminalToCurrentView(reason, generation);
+        uiHandler.postDelayed(() -> fitTerminalToCurrentView(reason, generation), 140);
+        uiHandler.postDelayed(() -> fitTerminalToCurrentView(reason, generation), 420);
+    }
+
+    private void fitTerminalToCurrentView(String reason, long generation) {
+        if (webView == null
+                || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT
+                || generation != terminalFitGeneration
+                || readModeSuppressesKeyboard
+                || terminalHistoryViewportActive
+                || liveRestoreInFlight
+                || terminalBottomRestoreInFlight) {
+            return;
+        }
+        // WHY: ttyd's xterm instance is inside the WebView and already listens
+        // for browser resize events. The Android shell is the layer that knows
+        // when the native toolbar/composer/IME changes the available height, so
+        // this script only normalizes the container height and emits resize. It
+        // intentionally avoids xterm scrollToBottom/scrollIntoView/focus because
+        // those were the root of the rapid refresh loop and duplicate typing.
+        webView.evaluateJavascript(
+                "(function(){"
+                        + "try{"
+                        + "var html=document.documentElement,body=document.body;"
+                        + "if(html){html.style.height='100%';html.style.minHeight='0';html.style.overflow='hidden';}"
+                        + "if(body){body.style.height='100%';body.style.minHeight='0';body.style.margin='0';body.style.overflow='hidden';}"
+                        + "var nodes=document.querySelectorAll('#terminal,.terminal-container,.xterm,.xterm-screen,.xterm-viewport');"
+                        + "for(var i=0;i<nodes.length;i++){nodes[i].style.minHeight='0';nodes[i].style.maxHeight='100%';}"
+                        + "window.dispatchEvent(new Event('resize'));"
+                        + "var t=window.term||window.terminal;"
+                        + "if(t&&typeof t.refresh==='function'&&typeof t.rows==='number'){t.refresh(0,Math.max(0,t.rows-1));}"
+                        + "return 'fit:" + reason + "';"
+                        + "}catch(e){return 'err';}"
+                + "})()",
+                null
+        );
+    }
+
+    private void scrollViewerToTypingPositionSoon(String reason) {
+        // WHY: this is WebView-viewer positioning only. It is used after Android
+        // has already decided to show the native composer or return a one-finger
+        // down-scroll to live bottom. Retrying at paint-sized delays fixes the
+        // zoomed "cannot reach the bottom" case without reviving xterm
+        // scrollToBottom, document scroll reset, keyboard focus, or reload loops.
+        scrollViewerToTypingPosition();
+        uiHandler.postDelayed(this::scrollViewerToTypingPosition, 140);
+        uiHandler.postDelayed(this::scrollViewerToTypingPosition, 420);
     }
 
     private void scrollViewerToTypingPosition() {

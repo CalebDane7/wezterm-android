@@ -50,7 +50,11 @@ wake_and_dismiss_overlays() {
     adb_cmd shell wm dismiss-keyguard >/dev/null 2>&1 || true
     adb_cmd shell cmd statusbar collapse >/dev/null 2>&1 || true
     adb_cmd shell input keyevent KEYCODE_ESCAPE >/dev/null 2>&1 || true
-    adb_cmd shell input swipe 540 2100 540 500 120 >/dev/null 2>&1 || true
+    # WHY: this proof runs on the same phone the user rotates while working.
+    # A hard-coded portrait unlock swipe can land outside the landscape app
+    # bounds and scroll the terminal behind the proof, leaving tmux in `[old]`
+    # history mode before the Active-switch check even starts.
+    adb_cmd shell input swipe 540 1200 540 260 120 >/dev/null 2>&1 || true
     sleep 0.35
 }
 
@@ -236,6 +240,55 @@ tap_text() {
     adb_cmd shell input tap $center
 }
 
+dialog_scroll_swipe_points() {
+    local direction="$1"
+    python3 - "$LOCAL_XML" "$direction" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+xml_path, direction = sys.argv[1], sys.argv[2]
+root = ET.parse(xml_path).getroot()
+
+def bounds(node):
+    match = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not match:
+        return None
+    return tuple(map(int, match.groups()))
+
+scroll_views = [
+    b for node in root.iter("node")
+    if node.attrib.get("class") == "android.widget.ScrollView"
+    for b in [bounds(node)]
+    if b
+]
+if scroll_views:
+    x1, y1, x2, y2 = max(scroll_views, key=lambda b: (b[2] - b[0]) * (b[3] - b[1]))
+else:
+    root_bounds = bounds(root)
+    if not root_bounds:
+        raise SystemExit(1)
+    x1, y1, x2, y2 = root_bounds
+
+width = max(1, x2 - x1)
+height = max(1, y2 - y1)
+x = x1 + width // 2
+upper = y1 + max(12, height // 5)
+lower = y2 - max(12, height // 5)
+if lower <= upper:
+    upper = y1 + height // 3
+    lower = y1 + (height * 2) // 3
+
+# WHY: swipe inside the current dialog bounds, not at fixed portrait
+# coordinates. In landscape, old `540 2450` swipes missed the dialog and
+# scrolled the underlying terminal into tmux history, masking the real bug.
+if direction == "toward-top":
+    print(x, upper, x, lower)
+else:
+    print(x, lower, x, upper)
+PY
+}
+
 wait_for_text() {
     local text="$1"
     for _ in $(seq 1 30); do
@@ -295,10 +348,10 @@ select_active_target() {
     # visible rows depending on which session was active before proof. Search both
     # directions; a one-way swipe let the proof miss real `/tabs` entries and
     # tempted agents to weaken the visual check instead of fixing the harness.
-    local direction label attempt
-    for direction in "540 850 540 2450" "540 2450 540 850"; do
+    local direction label attempt swipe_points
+    for direction in "toward-top" "toward-bottom"; do
         label="toward-top"
-        [ "$direction" = "540 2450 540 850" ] && label="toward-bottom"
+        [ "$direction" = "toward-bottom" ] && label="toward-bottom"
         for attempt in $(seq 0 8); do
             dump_ui
             if dump_has_text "$TARGET_TITLE"; then
@@ -308,7 +361,9 @@ select_active_target() {
                 return 0
             fi
             echo "target '$TARGET_TITLE' not visible yet; scrolling Active Sessions picker $label ($attempt)"
-            adb_cmd shell input swipe $direction 420 >/dev/null
+            swipe_points="$(dialog_scroll_swipe_points "$direction")" \
+                || fail "could not calculate Active Sessions dialog scroll bounds"
+            adb_cmd shell input swipe $swipe_points 420 >/dev/null
             sleep 0.35
         done
     done

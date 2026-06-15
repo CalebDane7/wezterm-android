@@ -946,6 +946,10 @@ if [ -f "$ACTIVE_DOT_GRID_PROOF" ]; then
     require "$ACTIVE_DOT_GRID_PROOF" 'for attempt in 1 2 3' "targeted dot-grid proof must retry bounded Android UI dump stalls"
     require "$ACTIVE_DOT_GRID_PROOF" 'ADB_PULL_TIMEOUT_SECONDS' "targeted dot-grid proof must bound UIAutomator XML pulls instead of hanging"
     require "$ACTIVE_DOT_GRID_PROOF" 'UIAutomator dump pull timed out' "targeted dot-grid proof must report ADB pull stalls clearly"
+    require "$ACTIVE_DOT_GRID_PROOF" 'dialog_scroll_swipe_points' "targeted dot-grid proof must use current dialog bounds for Active picker scrolling"
+    require "$ACTIVE_DOT_GRID_PROOF" 'hard-coded portrait unlock swipe' "targeted dot-grid proof must document why fixed portrait gestures break landscape proof"
+    require "$ACTIVE_DOT_GRID_PROOF" 'old `540 2450` swipes missed the dialog' "targeted dot-grid proof WHY comment must preserve the landscape proof regression"
+    require_absent "$ACTIVE_DOT_GRID_PROOF" 'for direction in "540 850 540 2450" "540 2450 540 850"' "targeted dot-grid proof must not use fixed portrait Active-picker swipes"
     require "$ACTIVE_DOT_GRID_PROOF" 'background_counts = Counter()' "targeted dot-grid proof must stream sampled paint analysis instead of materializing all pixels"
     require_absent "$ACTIVE_DOT_GRID_PROOF" 'list(crop.getdata())' "targeted dot-grid proof must not recreate the memory-heavy pixel list that caused v1.97 proof kills"
 fi

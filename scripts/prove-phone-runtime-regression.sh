@@ -4,6 +4,7 @@ set -euo pipefail
 CONTROL_URL="${PHONE_CONTROL_URL:-http://100.113.254.7:8089}"
 INSTALL_URL="${PHONE_INSTALL_URL:-http://100.113.254.7:8091/install.html}"
 ADB_SERIAL="${ADB_SERIAL:-127.0.0.1:5556}"
+ADB_TIMEOUT_SECONDS="${ADB_TIMEOUT_SECONDS:-20}"
 TMUX_SESSION="${PHONE_TMUX_SESSION:-main_phone}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MANIFEST="$ROOT/app/src/main/AndroidManifest.xml"
@@ -12,6 +13,16 @@ EXPECTED_VERSION_NAME="${EXPECTED_VERSION_NAME:-$(grep -o 'android:versionName="
 EXPECTED_VERSION_CODE="${EXPECTED_VERSION_CODE:-$(grep -o 'android:versionCode="[0-9]*"' "$MANIFEST" | head -n 1 | cut -d'"' -f2)}"
 EXPECTED_SHA="${EXPECTED_SHA:-$(sha256sum "$APK" | awk '{print $1}')}"
 
+assert_title_sync_stopped() {
+    local pids
+    pids="$(pgrep -f '/home/cabule/phone-title-sync/main.py' || true)"
+    if [ -n "$pids" ]; then
+        echo "runtime regression proof blocked: phone-title-sync is running: $pids" >&2
+        echo "WHY: proof must not run while another process can rename real tmux tabs and hide session-title regressions." >&2
+        exit 2
+    fi
+}
+
 orig_window=""
 orig_mode=""
 orig_scroll=""
@@ -19,6 +30,7 @@ proof_window=""
 new_window=""
 ENTER_FILE=""
 SUBMIT_FILE=""
+DRAFT_FILE=""
 STOP_FILE=""
 PASTE_FILE=""
 
@@ -38,7 +50,7 @@ cleanup() {
     if [ -n "${orig_window:-}" ] && tmux list-windows -t "$TMUX_SESSION:" -F '#{window_id}' 2>/dev/null | grep -Fxq "$orig_window"; then
         curl -fsS "$CONTROL_URL/select?fast=1&windowId=${orig_window//@/%40}" >/dev/null || true
     fi
-    rm -f "${ENTER_FILE:-}" "${SUBMIT_FILE:-}" "${STOP_FILE:-}" "${PASTE_FILE:-}" 2>/dev/null || true
+    rm -f "${ENTER_FILE:-}" "${SUBMIT_FILE:-}" "${DRAFT_FILE:-}" "${STOP_FILE:-}" "${PASTE_FILE:-}" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -73,11 +85,20 @@ urlencode() {
 }
 
 echo "health"
+assert_title_sync_stopped
 curl -fsS "$CONTROL_URL/health" | json_assert "control health" "p.get('ok') is True"
 
 echo "no-usb package"
-adb -s "$ADB_SERIAL" get-state | grep -Fxq "device"
-adb -s "$ADB_SERIAL" shell dumpsys package com.kaleeb.wezterm > /tmp/wezterm-package-proof.txt
+if ! timeout "$ADB_TIMEOUT_SECONDS"s adb -s "$ADB_SERIAL" get-state | grep -Fxq "device"; then
+    echo "runtime regression proof blocked: ADB device state was not reachable within ${ADB_TIMEOUT_SECONDS}s" >&2
+    echo "WHY: stale no-USB relay/ADB shell hangs must fail fast so proof cannot sit for minutes while phone UI regressions remain unverified." >&2
+    exit 3
+fi
+if ! timeout "$ADB_TIMEOUT_SECONDS"s adb -s "$ADB_SERIAL" shell dumpsys package com.kaleeb.wezterm > /tmp/wezterm-package-proof.txt; then
+    echo "runtime regression proof blocked: ADB package proof timed out after ${ADB_TIMEOUT_SECONDS}s" >&2
+    echo "WHY: installed-app proof is required, but an unbounded dumpsys hang previously masked whether the real phone package was verifiable." >&2
+    exit 3
+fi
 grep -Fq "versionCode=$EXPECTED_VERSION_CODE" /tmp/wezterm-package-proof.txt
 grep -Fq "versionName=$EXPECTED_VERSION_NAME" /tmp/wezterm-package-proof.txt
 
@@ -94,6 +115,57 @@ printf '%s' "$sessions_payload" > "$sessions_payload_file"
 printf '%s' "$sessions_payload" | json_assert "sessions activity groups" "p.get('ok') is True and p.get('viewSession') == 'main_phone' and any(w.get('activityGroup') for w in p.get('windows', []))"
 printf '%s' "$sessions_payload" | json_assert "old parent sessions by date" "p.get('ok') is True and isinstance(p.get('oldSessions'), list) and len(p.get('oldSessions')) > 0 and all(s.get('id') and s.get('title') and s.get('dateLabel') for s in p.get('oldSessions'))"
 printf '%s' "$sessions_payload" | json_assert "old sessions exclude subagents" "all(s.get('threadSource') == 'user' and s.get('source') == 'cli' and not s.get('agentNickname') for s in p.get('oldSessions', []))"
+curl -fsS "$CONTROL_URL/crashed-sessions?limit=5" | json_assert "crashed sessions endpoint" "p.get('ok') is True and isinstance(p.get('crashedSessions'), list) and p.get('definition') and all(s.get('restoreKind') == 'crashed' and s.get('cleanClosed') is False for s in p.get('crashedSessions', []))"
+
+echo "crash restore ledger and title cache"
+CONTROL_SERVER="${CONTROL_SERVER:-/home/cabule/.local/bin/phone-terminal-control-server}" python3 <<'PY'
+import importlib.machinery
+import importlib.util
+import json
+import os
+import pathlib
+import tempfile
+
+server_path = os.environ["CONTROL_SERVER"]
+old_home = os.environ.get("HOME", "")
+with tempfile.TemporaryDirectory() as home:
+    os.environ["HOME"] = home
+    loader = importlib.machinery.SourceFileLoader("phone_terminal_control_server_proof", server_path)
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    server = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(server)
+
+    crashed_id = "33333333-3333-4333-8333-333333333333"
+    clean_id = "44444444-4444-4444-8444-444444444444"
+    server.append_ledger_event({"event": "seen-live-codex", "threadId": crashed_id})
+    server.append_ledger_event({"event": "seen-live-codex", "threadId": clean_id})
+    server.append_ledger_event({"event": "clean-close", "threadId": clean_id})
+
+    tracked = server.tracked_thread_ids()
+    clean = server.clean_close_thread_ids()
+    if crashed_id not in tracked or clean_id not in tracked:
+        raise SystemExit(f"clean-close ledger classifier failed: tracked={tracked}")
+    if clean_id not in clean or crashed_id in clean:
+        raise SystemExit(f"clean-close ledger classifier failed: clean={clean}")
+    print("clean-close ledger classifier: ok")
+
+    server.cache_session_title(crashed_id, "Latest Crash Restore Title", source="proof")
+    title = server.session_title_from_fields(
+        crashed_id,
+        "First prompt that should not win",
+        "First preview that should not win",
+        "fallback",
+    )
+    if title != "Latest Crash Restore Title":
+        raise SystemExit(f"title cache beats first prompt failed: {title!r}")
+    cache_path = pathlib.Path(home) / ".local/share/phone-terminal/session-title-cache.json"
+    cache_payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    if cache_payload["sessions"][crashed_id]["title"] != "Latest Crash Restore Title":
+        raise SystemExit(f"title cache persisted wrong payload: {cache_payload}")
+    print("title cache beats first prompt: ok")
+
+os.environ["HOME"] = old_home
+PY
 
 echo "old session JSONL fallback filter"
 CONTROL_SERVER="${CONTROL_SERVER:-/home/cabule/.local/bin/phone-terminal-control-server}" python3 <<'PY'
@@ -223,8 +295,9 @@ curl -fsS "$CONTROL_URL/touch-scroll?where=bottom" | json_assert "finger-up bott
 echo "start stop safe prompt"
 ENTER_FILE="/tmp/wezterm-runtime-enter-proof.$$"
 SUBMIT_FILE="/tmp/wezterm-runtime-submit-proof.$$"
+DRAFT_FILE="/tmp/wezterm-runtime-draft-proof.$$"
 STOP_FILE="/tmp/wezterm-runtime-stop-proof.$$"
-rm -f "$ENTER_FILE" "$SUBMIT_FILE" "$STOP_FILE"
+rm -f "$ENTER_FILE" "$SUBMIT_FILE" "$DRAFT_FILE" "$STOP_FILE"
 tmux send-keys -t "$TMUX_SESSION:$proof_window" "rm -f '$ENTER_FILE'; cat > '$ENTER_FILE'" Enter
 for _ in $(seq 1 30); do
     [ "$(tmux display-message -p -t "$TMUX_SESSION:$proof_window" '#{pane_current_command}')" = "cat" ] && break
@@ -252,6 +325,24 @@ done
 grep -Fq "PHONE_SUBMIT_TEXT_OK" "$SUBMIT_FILE"
 tmux send-keys -t "$TMUX_SESSION:$proof_window" C-c
 
+tmux send-keys -t "$TMUX_SESSION:$proof_window" "rm -f '$DRAFT_FILE'; cat > '$DRAFT_FILE'" Enter
+for _ in $(seq 1 30); do
+    [ "$(tmux display-message -p -t "$TMUX_SESSION:$proof_window" '#{pane_current_command}')" = "cat" ] && break
+    sleep 0.1
+done
+# WHY: the docked Android composer mirrors edits into the live tmux prompt before
+# Send, so the PC can continue from the same half-written draft. This proof keeps
+# Enter out of `/draft-delta`, edits the visible prompt with backspaces, and uses
+# a final newline only as normal typed content so `cat` flushes the proof file.
+printf 'PHONE_DRAFT_HELLO' | curl -fsS -X POST --data-binary @- "$CONTROL_URL/draft-delta" | json_assert "draft-delta append endpoint" "p.get('ok') is True and p.get('action') == 'draft-delta' and p.get('backspaces') == 0"
+printf 'WORLD\n' | curl -fsS -X POST --data-binary @- "$CONTROL_URL/draft-delta?backspace=5" | json_assert "draft-delta edit endpoint" "p.get('ok') is True and p.get('action') == 'draft-delta' and p.get('backspaces') == 5"
+for _ in $(seq 1 30); do
+    [ -f "$DRAFT_FILE" ] && grep -Fq "PHONE_DRAFT_WORLD" "$DRAFT_FILE" && break
+    sleep 0.1
+done
+grep -Fq "PHONE_DRAFT_WORLD" "$DRAFT_FILE"
+tmux send-keys -t "$TMUX_SESSION:$proof_window" C-c
+
 tmux send-keys -t "$TMUX_SESSION:$proof_window" "rm -f '$STOP_FILE'; python3 -c 'import sys,pathlib,termios,tty; fd=sys.stdin.fileno(); old=termios.tcgetattr(fd); tty.setraw(fd); data=sys.stdin.buffer.read(1); termios.tcsetattr(fd, termios.TCSADRAIN, old); pathlib.Path(\"$STOP_FILE\").write_bytes(data)'" Enter
 for _ in $(seq 1 30); do
     [ "$(tmux display-message -p -t "$TMUX_SESSION:$proof_window" '#{pane_current_command}')" = "python3" ] && break
@@ -269,7 +360,7 @@ if not data.startswith(b"\x1b"):
     raise SystemExit(f"stop did not deliver Escape bytes: {data!r}")
 print("stop delivered Escape bytes: ok")
 PY
-rm -f "$ENTER_FILE" "$SUBMIT_FILE" "$STOP_FILE"
+rm -f "$ENTER_FILE" "$SUBMIT_FILE" "$DRAFT_FILE" "$STOP_FILE"
 
 echo "copy paste"
 PASTE_FILE="/tmp/wezterm-runtime-paste-proof.$$"

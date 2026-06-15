@@ -89,7 +89,7 @@ Safari/Add to Home Screen today; Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=72`, `versionName=1.71`.
+- Built checkpoint: `versionCode=100`, `versionName=1.99`.
 - v1.29 fixes the black-screen resume case where Android focused WEzterm but
   the WebView never opened a fresh ttyd HTTP/WebSocket connection.
 - The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a
@@ -372,6 +372,208 @@ Safari/Add to Home Screen today; Android users use the native APK.
   session/Rename/Cancel on the phone, so users could not see all actions at once.
   The row lives inside the scrollable dialog content and preserves the visible
   current-first session list.
+- v1.72 smooths two-finger WebView movement after the v1.71 full-area fix. WHY:
+  holding ACTION_DOWN until WEzterm classified the gesture meant native WebView
+  pinch/pan received a stale first-finger start point once the second finger
+  appeared, and delayed zoomed true-bottom retries could still fire after the
+  user started moving the viewer. The fix synthesizes viewer-owned DOWN at the
+  current handoff coordinate and cancels stale viewer-bottom retries when native
+  pinch or horizontal pan starts, while preserving tmux-owned one-finger history
+  scrolling and the v1.71 dotted/full-area refit.
+- v1.74 smooths one-finger downward live-bottom return after v1.72. WHY: the
+  full 20-line downward batch could queue behind an in-flight touch-scroll
+  request and then repaint only after the gesture reached bottom, which feels
+  like the phone froze and then appeared at live bottom. v1.73's smaller cap
+  alone failed real-phone proof by stalling in copy-mode above bottom, so v1.74
+  keeps only the latest bounded pending lineDown step for normal drags and sends
+  long fast return flicks through the quiet tmux bottom restore. Upward history
+  flicks keep the larger fast-scroll cap, and near-bottom tmux restore still
+  exits copy-mode without WebView reloads.
+- v1.75 hides the docked native composer after a successful Active Sessions row
+  selection. WHY: Active switching is navigation, not typing. Leaving the
+  composer focused kept the IME open, relabeled `Start` to `Send`, and exposed a
+  dotted xterm canvas after opening an active tab. The switch now hides the
+  composer and keyboard without clearing any unsent draft text, preserves the
+  no-reload `/select-live` path, and refits ttyd/xterm after the layout returns
+  to the plain toolbar.
+- v1.76 hides the docked native composer when entering scrollback/read mode.
+  WHY: one-finger history scroll and Scroll-menu history actions are reading
+  actions, not typing. Keeping the composer visible while tmux is in copy-mode
+  shrank the terminal, left the toolbar in `Send` state, and made scrollback look
+  improperly displayed. Read mode now hides the composer and keyboard without
+  clearing draft text, then lets the existing tmux-owned scroll path continue.
+- v1.77 hardens native composer dismissal so the WebView/xterm hidden textarea
+  cannot keep the keyboard alive after the composer is hidden. WHY: the toolbar
+  can correctly return to `Start` while Android is still serving xterm's hidden
+  input, which shrinks the terminal and blocks reliable long-press controls. The
+  app now blurs xterm and hides IME from the WebView and decor tokens whenever a
+  caller hides the composer without explicitly preserving keyboard state.
+- v1.78 hides the docked native composer before opening Active, Old, Scroll, or
+  command-palette dialogs. WHY: these controls are navigation/reading controls,
+  not typing controls. Opening them while a draft is focused keeps the keyboard
+  up, shrinks the terminal/dialog, and makes session rows or scrollback look
+  clipped. The draft is preserved and returns on the next deliberate typing tap.
+- v1.79 makes passive Active switching and Back/IME dismissal reclaim the full
+  terminal area even if Android delivers stale tap/focus callbacks. WHY: the
+  movie tab could be selected successfully while an in-flight generation guard
+  skipped composer cleanup, leaving the selected tab clipped by the native
+  composer or Samsung keyboard. Successful `/select-live` now hides the
+  composer before the stale-generation return, and the docked EditText consumes
+  Back before the IME can hide only the keyboard. Draft text is preserved.
+- v1.80 fixes the live-tab/bottom/send composer race without touching the
+  protected one-finger/two-finger gesture system. WHY: Active switching could
+  succeed server-side while Android skipped the passive fit that clears ttyd's
+  dotted canvas, and Bottom/tap/Send could enqueue repeated zoomed-viewer
+  bottom retries that looked like rapid up/down refreshes. The app now passively
+  refits every successful `/select-live`, uses one-shot bottom settling for
+  Bottom/finger-up/Send, mirrors docked composer draft deltas into the tmux
+  prompt through `/draft-delta` so the PC can continue typing, and shows a tiny
+  toolbar status dot that reuses the same Working/Ready/Problem/Done color and
+  pulse rules as Active Sessions.
+- v1.81 fixes the remaining Active-switch dotted-canvas entry state. WHY: a
+  successful `/select-live` could still leave xterm's own viewport parked above
+  the live buffer bottom, so the phone showed a large field of dotted blank
+  canvas below the Codex prompt even though tmux captured no dot characters.
+  The app now runs a bounded Active-switch-only xterm viewport-bottom settle
+  that does not reload WebView, does not open the composer/keyboard, does not
+  call `scrollIntoView`, and does not touch one-finger or two-finger gesture
+  ownership.
+- v1.82 fixes the `Phone Crash Restore` counterexample that v1.81 missed.
+  WHY: proving only KAI tabs let the old hotfix pass while the user-reported
+  tab still rendered dotted blank canvas rows. Active switching now forces the
+  xterm canvas/theme backing to black, clears xterm's canvas texture atlas when
+  the API is available, repaints rows, and includes a targeted real-phone proof
+  script for `Phone Crash Restore`. It still does not reload WebView, focus
+  xterm's hidden textarea, open the native composer/keyboard, or touch the
+  protected one-finger/two-finger scroll/zoom gesture code.
+- v1.83 fixes the foreground/resume black-WebView counterexample that v1.82 did
+  not cover. WHY: a valid ttyd/xterm DOM and nonzero canvas size can still paint
+  as an almost fully black canvas after Android foregrounds the app. The blank
+  watchdog now samples same-origin xterm canvas pixels and reloads only the
+  WebView transport when there is effectively no painted terminal output,
+  matching the manual Refresh recovery without touching tmux windows, titles,
+  scroll/zoom gestures, or IME focus.
+- v1.84 samples the visible Android WebView bitmap after foreground/load/focus.
+  WHY: v1.83's internal xterm-canvas probe still missed the user-visible state
+  where the toolbar was alive but the WebView pane itself was black except for
+  tiny cursor/scrollbar pixels. The visible-paint watchdog fails open when the
+  bitmap cannot be sampled, avoids typing/reading/gesture/file-picker states,
+  and reloads only the WebView transport through the same proven Refresh-style
+  recovery path.
+- v1.85 fixes the composer-open black/cursor-only WebView regression that v1.84
+  introduced. WHY: v1.84 skipped visible-paint recovery whenever the native
+  composer or keyboard was open, which is exactly when the user's phone could
+  show a black terminal body with only one cursor after text briefly appeared.
+  The native composer draft lives outside the WebView, so the app can reload
+  only the ttyd/WebView transport without clearing typed text or touching tmux.
+  The reload path now preserves native composer focus, and the phone proof crops
+  the real `android.webkit.WebView` bounds so composer/toolbar/keyboard pixels
+  cannot falsely count as terminal output. v1.85 also cancels stale visible-paint
+  checks during Active-switch settle because v1.82 intentionally paints xterm's
+  blank backing black there; re-arming v1.84's bitmap watchdog in that window
+  can mistake a valid dark settle for a blank terminal and start a WebView
+  reload loop after text first appears.
+- v1.86 removes the unproven automatic visible-paint reload loop that v1.83,
+  v1.84, and v1.85 layered onto foreground/load/focus/composer paths. WHY: real
+  Codex panes often sit at a mostly blank black live bottom, and the runtime
+  bitmap watchdog treated that valid state as a blank terminal, repeatedly
+  reloading ttyd until the phone showed only a cursor. Runtime auto-recovery now
+  reloads only when the xterm renderer is missing or zero-sized; visible bitmap
+  paint checks are enforced in the real-phone proof scripts, and the user-facing
+  Refresh button remains the explicit transport reconnect.
+- v1.86 also adds no forced-black xterm canvas/theme mutation: it removes the
+  passive JavaScript that forced every xterm canvas and theme layer to black
+  during layout/Active-switch settle. WHY: the terminal
+  background is already black from ttyd/WebView, but forcing canvas/theme black
+  during Android repaint can hide glyphs and turn a dotted-canvas fix into the
+  black/cursor-only regression. Active switch still pins xterm to live bottom,
+  refreshes rows, and preserves the targeted `Phone Crash Restore` proof.
+- v1.87 fixes the remaining live-bottom dotted xterm canvas grid seen after
+  v1.86. WHY: v1.86 correctly removed the automatic low-paint reload loop, but
+  it also left Android keyboard/composer layout refits with only a row refresh.
+  The user's real screenshot proved that stale xterm texture-atlas cells can
+  still show a repeated dot grid below real terminal text. Layout refits now
+  clear xterm's texture atlas before redraw and repeat the redraw on the next
+  animation frame, without reloading WebView, focusing xterm, opening IME, or
+  forcing every canvas/theme layer black. The proof detector now catches both
+  the old full-width dotted bands and the newer repeated short-column dot grid.
+- v1.88 delays Active Sessions dialog dismissal until one server-owned
+  `/live-bottom` confirmation returns. WHY: the v1.87 proof showed the terminal
+  could still display the dotted xterm field during the short "Opening Phone
+  Crash Restore" transition even though it settled cleanly afterward. Keeping
+  the picker visible until live-bottom confirmation prevents the user from
+  seeing stale dotted cells on entry without reloading WebView, focusing xterm,
+  forcing black canvas/theme layers, or touching Android scroll/zoom gestures.
+- v1.89 adds a read-only local history viewer behind
+  `Scroll -> Local history search`. WHY: it uses the C4 `/scrollback/chunk`
+  endpoint and keeps cached rows inside the Android dialog for local
+  fling/search, so reading history does not enter tmux copy-mode, select
+  windows, send keys, reload WebView, or touch one-finger gestures/Bottom.
+- v1.90 fixes the remaining Active-switch dotted canvas field with an
+  Active-switch-only transparent xterm canvas-layer clear followed by xterm's
+  own redraw. WHY: real tmux capture showed blank pane rows where the phone
+  screenshot showed dots, so the dots were stale canvas pixels, not session
+  output. This does not reload WebView, focus xterm, force black canvas/theme
+  layers, or touch Android scroll/zoom gestures.
+- v1.91 tightens that fix with an Active-switch-only blank-tail scrub below the
+  current xterm cursor row. WHY: the v1.90 proof threshold was too weak and
+  visual inspection still showed dots in the blank tail below the prompt. The
+  scrub blacks out only rows that should be empty at live bottom, not the whole
+  canvas/theme, so it removes stale dot pixels without reviving the old
+  black-with-cursor regression.
+- v1.92 adds a native Active-switch paint shield over only the terminal frame
+  while `/select-live`, `/live-bottom`, and xterm repaint settle. WHY: the
+  2026-06-15 user screenshot still showed a full dotted blank canvas when
+  opening a stale `Cabule Kaleeblaptop Codex Openai Model` session, before the
+  WebView had a clean frame to show. The shield blocks that stale transition
+  without reloading WebView, mutating xterm theme/canvas colors, stealing IME
+  focus, or touching scroll/zoom behavior. v1.92 also keeps compact Old Sessions titles.
+  It derives names from the latest non-coordination user
+  prompt and rejects machine labels, stale first-prompt text, and `Codex
+  Openai Model` placeholders.
+- v1.93 keeps the colored Working/Ready/Problem dots but makes the animation
+  dot-only and lifecycle-scoped. WHY: the desktop tmux cursor/typing lag was
+  fixed by redrawing only the fixed-width dot instead of the whole label; the
+  APK had the same shape of problem because every running row could start an
+  infinite native alpha animation and keep invalidating while xterm/WebView was
+  trying to paint. Running dots now use one hardware-layer property pulse per
+  dot, static rows never animate, and all dot pulses are canceled when the row detaches or the Activity pauses, so background WEzTerm cannot keep making the
+  cursor look like it jumps.
+- v1.94 fixes the real-phone Active-switch dotted canvas that survived v1.93.
+  WHY: the failed screenshot proved transparent `clearRect` could still expose
+  stale compositor dot pixels under xterm's canvas. Active switching now fills xterm canvas layers black once before xterm refreshes real rows and the
+  blank-tail scrub blacks out only rows below the cursor.
+- v1.95 moves the APK WebView terminal to `rendererType=dom`. WHY: the same
+  real-phone proof still showed the dotted field after v1.94's canvas fill,
+  which proves Android's canvas renderer/compositor could repaint the stale
+  layer after our cleanup. The APK now bypasses that canvas layer while keeping tmux, ttyd, Active/Old sessions, and Start/Stop semantics unchanged.
+- v1.96 preserves and reasserts native composer focus across Android
+  resume/window-focus/layout settle. WHY: the real phone can keep input alive
+  while a passive WebView/xterm focus probe steals ownership back toward the
+  hidden textarea, making the typing menu look missing or stale. Passive focus
+  now keeps the visible native `Type prompt` composer as the single typing owner.
+- v1.97 makes navigation toolbar buttons dismiss the native composer before
+  running Active, Old, New, Refresh, Bottom, Scroll, Copy/Paste, Upload, or
+  Close. WHY: those controls are not text entry; leaving the IME/composer active
+  can route taps through a stale keyboard/share state or keep dialogs compressed.
+  Plain toolbar taps now fire on ACTION_DOWN before Samsung can cancel the
+  ACTION_UP during IME/layout settle. Draft text is preserved, and `Start`/`Send`
+  keeps the existing submit path. Active row selection also suppresses the
+  fall-through terminal-body ACTION_UP that could reopen the composer after the
+  selected session is already visible.
+- v1.98 makes APK entry/resume use the same live-bottom ownership as the manual
+  Bottom recovery, without opening the composer. WHY: the 2026-06-15 real-phone
+  screenshot proved first entry could show dotted stale xterm blank rows until
+  the user pressed Bottom. Page-finished/resume now ask the control server for
+  `/live-bottom`, then passively resize and repaint xterm at the full toolbar
+  viewport. It does not reload WebView, focus the IME, or disturb zoom/pan.
+- v1.99 covers the remaining live-bottom blank-tail dots without opening the
+  keyboard. WHY: v1.98 moved tmux to live bottom, but real-phone visual proof
+  still showed dot rows below the prompt until the manual Bottom path opened the
+  composer and keyboard. The APK now installs a WebView-side black blank-tail
+  mask below xterm's live cursor after entry/Active settle, updates it from
+  xterm mutations, and removes it before read/history mode so real scrollback is
+  never hidden.
 - v1.56 also makes the toolbar two rows with ripple/tap feedback, raises the
   default terminal font to 12, shrinks the Scroll menu to scroll-only recovery,
   and adds bounded retry for safe control calls such as Active Sessions,
@@ -381,7 +583,7 @@ Safari/Add to Home Screen today; Android users use the native APK.
   status dots unless the Active Sessions picker is actually opened.
 - Latest no-USB package proof used the Tailscale ADB relay
   `127.0.0.1:5556 -> 100.77.22.120:5555` and reported phone model
-  `SM-S938U1`. v1.71 must be installed through that relay after every APK
+  `SM-S938U1`. v1.99 must be installed through that relay after every APK
   rebuild; the generated install page carries the current APK SHA-256.
   Future builds must use that no-USB relay unless the relay is
   unavailable and the user explicitly permits USB fallback.

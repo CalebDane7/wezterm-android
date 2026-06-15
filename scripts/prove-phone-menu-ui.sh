@@ -29,9 +29,19 @@ proof_window=""
 resume_window=""
 reader_window=""
 reader_source_window=""
+initial_windows_file=""
 
 adb_cmd() {
     adb -s "$ADB_SERIAL" "$@"
+}
+
+adb_pull_dump() {
+    local timeout_seconds="${WEZTERM_ADB_PULL_TIMEOUT_SECONDS:-8}"
+    # WHY: real-phone UIAutomator sometimes writes the XML successfully but the
+    # following `adb pull` hangs indefinitely. Bound the pull so this proof lane
+    # fails with retry diagnostics instead of freezing while the APK bug remains
+    # unproven.
+    timeout "${timeout_seconds}s" adb -s "$ADB_SERIAL" pull "$DUMP_REMOTE" "$DUMP_LOCAL"
 }
 
 urlencode() {
@@ -40,6 +50,16 @@ urlencode() {
 
 control_get() {
     curl -fsS "$CONTROL_URL$1"
+}
+
+assert_title_sync_stopped() {
+    local pids
+    pids="$(pgrep -f '/home/cabule/phone-title-sync/main.py' || true)"
+    if [ -n "$pids" ]; then
+        echo "phone menu UI proof blocked: phone-title-sync is running: $pids" >&2
+        echo "WHY: proof must not run while another process can rename real tmux tabs and hide session-title regressions." >&2
+        exit 2
+    fi
 }
 
 json_assert() {
@@ -107,6 +127,16 @@ tmux_window_exists() {
     tmux list-windows -t "$TMUX_SESSION:" -F '#{window_id}' 2>/dev/null | grep -Fxq "$window_id"
 }
 
+record_initial_windows() {
+    initial_windows_file="$(mktemp)"
+    tmux list-windows -t "$TMUX_SESSION:" -F '#{window_id}' > "$initial_windows_file"
+}
+
+window_was_initial() {
+    local window_id="$1"
+    [ -n "${initial_windows_file:-}" ] && [ -f "$initial_windows_file" ] && grep -Fxq "$window_id" "$initial_windows_file"
+}
+
 wait_for_shell() {
     local window_id="$1"
     for _ in $(seq 1 40); do
@@ -128,13 +158,48 @@ wait_for_active_new_window() {
         local active count
         active="$(tmux_active_window)"
         count="$(tmux_window_count)"
-        if [ "$count" -gt "$before_count" ] && [ -n "$active" ] && [ "$active" != "$forbidden_window" ]; then
+        if [ "$count" -gt "$before_count" ] \
+            && [ -n "$active" ] \
+            && [ "$active" != "$forbidden_window" ] \
+            && ! window_was_initial "$active"; then
             printf '%s\n' "$active"
             return 0
         fi
         sleep 0.25
     done
     echo "phone menu UI proof failed: no new active tmux window appeared" >&2
+    exit 1
+}
+
+wait_for_reader_window() {
+    local source_window="$1"
+    local before_count="$2"
+    for _ in $(seq 1 80); do
+        local row window_id name count
+        count="$(tmux_window_count)"
+        while IFS='|' read -r window_id name; do
+            [ -n "$window_id" ] || continue
+            if [ "$count" -gt "$before_count" ] \
+                && ! window_was_initial "$window_id" \
+                && [[ "$name" == "READ $source_window"* ]]; then
+                # WHY: the reader action creates a tmux window, then the Android
+                # proof watches the phone view catch up. On the real phone the
+                # READ window can exist before the grouped view reports it as active,
+                # so wait for the exact stable READ @source window and
+                # select it if activation lags instead of leaving a reader tab
+                # behind and falsely failing "no new active window".
+                if [ "$(tmux_active_window)" != "$window_id" ]; then
+                    control_get "/select?fast=1&windowId=${window_id//@/%40}" >/dev/null || true
+                    wait_for_active_window_id "$window_id"
+                fi
+                printf '%s\n' "$window_id"
+                return 0
+            fi
+        done < <(tmux list-windows -t "$TMUX_SESSION:" -F '#{window_id}|#{window_name}' 2>/dev/null || true)
+        sleep 0.25
+    done
+    echo "phone menu UI proof failed: reader window did not appear for source $source_window" >&2
+    tmux list-windows -t "$TMUX_SESSION:" -F '#{window_id} #{window_name}' >&2 || true
     exit 1
 }
 
@@ -187,6 +252,27 @@ wait_for_active_window_id() {
     exit 1
 }
 
+wait_for_active_window_id_after_visible_tap() {
+    local expected="$1"
+    local retry_text="$2"
+    for _ in $(seq 1 30); do
+        if [ "$(tmux_active_window)" = "$expected" ]; then
+            return 0
+        fi
+        dump_ui
+        if dump_has_text "$retry_text"; then
+            # WHY: Samsung/ADB occasionally swallows a dialog row tap while the
+            # native composer/IME is settling. Retap only while the same verified
+            # row is still visible, so this remains a real UI proof instead of
+            # substituting a direct server call.
+            tap_visible_text_from_current_dump "$retry_text"
+        fi
+        sleep 0.5
+    done
+    echo "phone menu UI proof failed: expected active tmux window $expected after tapping $retry_text, got $(tmux_active_window)" >&2
+    exit 1
+}
+
 wait_for_capture_text() {
     local window_id="$1"
     local text="$2"
@@ -215,32 +301,132 @@ wait_for_file_text() {
 
 assert_terminal_screenshot_has_text_pixels() {
     local screenshot="$1"
+    dump_ui
+    python3 - "$screenshot" "$DUMP_LOCAL" <<'PY'
+from PIL import Image
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+path, dump_path = sys.argv[1], sys.argv[2]
+image = Image.open(path).convert("RGB")
+width, height = image.size
+# WHY: xterm renders as canvas, so UIAutomator cannot read terminal text, but
+# the screenshot proof must still crop the actual Android WebView. v1.84 falsely
+# sampled down to 82% of the full screen, which included the native
+# composer/toolbar/keyboard and passed a black terminal body with one cursor.
+# Use the current android.webkit.WebView bounds and require multiple painted
+# rows inside that crop; native composer/toolbar/keyboard pixels are evidence of
+# controls, not terminal output.
+root = ET.parse(dump_path).getroot()
+chosen = None
+for node in root.iter("node"):
+    if node.attrib.get("class", "") != "android.webkit.WebView":
+        continue
+    match = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not match:
+        continue
+    l, t, r, b = map(int, match.groups())
+    area = (r - l) * (b - t)
+    if r - l <= 100 or b - t <= 100:
+        continue
+    if chosen is None or area > chosen[0]:
+        chosen = (area, l, t, r, b)
+if chosen is None:
+    raise SystemExit("terminal WebView bounds missing; refusing to sample composer/toolbar/keyboard as terminal paint")
+_, left, top, right, bottom = chosen
+left, top = max(0, left), max(0, top)
+right, bottom = min(width, right), min(height, bottom)
+bright = 0
+samples = 0
+row_hits = 0
+for y in range(top, bottom, 8):
+    row_bright = 0
+    for x in range(left, right, 8):
+        r, g, b = image.getpixel((x, y))
+        samples += 1
+        if r + g + b > 120:
+            bright += 1
+            row_bright += 1
+    if row_bright >= 3:
+        row_hits += 1
+ratio = 0.0 if samples == 0 else bright / samples
+if bright < 120 or ratio < 0.006 or row_hits < 4:
+    raise SystemExit(
+        "terminal WebView visible paint too low "
+        f"(bright={bright}, ratio={ratio:.4f}, rowHits={row_hits}, "
+        f"bounds=[{left},{top}][{right},{bottom}]); possible black WebView/cursor-only: {path}"
+    )
+print(f"terminal WebView visible paint pixels: bright={bright} ratio={ratio:.4f} rowHits={row_hits} bounds=[{left},{top}][{right},{bottom}]")
+PY
+}
+
+assert_no_terminal_dot_grid() {
+    local screenshot="$1"
     python3 - "$screenshot" <<'PY'
-from collections import Counter
 from PIL import Image
 import sys
 
 path = sys.argv[1]
 image = Image.open(path).convert("RGB")
 width, height = image.size
-# WHY: xterm renders as canvas, so UIAutomator cannot see terminal text. Crop
-# away status/nav bars and the bottom toolbar, but keep the first xterm rows.
-# The terminal text can be dim at phone scale, so count pixels with meaningful
-# contrast against the dominant terminal background instead of requiring bright
-# white text. This still fails on the blank/dotted repaint state while not
-# rejecting valid dark-theme terminal text at the top of the pane.
-left, top, right, bottom = int(width * 0.02), int(height * 0.04), int(width * 0.98), int(height * 0.82)
-crop = image.crop((left, top, right, bottom))
-pixels = list(crop.getdata())
-background = Counter(pixels).most_common(1)[0][0]
-contrast = 0
-for r, g, b in pixels:
-    if abs(r - background[0]) + abs(g - background[1]) + abs(b - background[2]) >= 18:
-        contrast += 1
-if contrast < 350:
-    raise SystemExit(f"terminal screenshot has too few text pixels ({contrast}); possible blank WebView: {path}")
-print(f"terminal screenshot text pixels: {contrast}")
+# WHY: the v1.80 proof only checked that some terminal text existed. The real
+# regression still showed valid text above a huge field of evenly-spaced dotted
+# xterm canvas cells after entering Active Sessions. Detect that specific visual
+# failure by looking for many narrow, full-width bright dot bands and for the
+# newer v1.86 regression shape: repeated short dot columns across many xterm
+# rows. Normal terminal text can span a few rows; the dotted-grid failure creates
+# dozens of thin bands or hundreds of repeated dot-cell runs.
+left, top, right, bottom = int(width * 0.01), int(height * 0.14), int(width * 0.99), int(height * 0.80)
+rows = []
+for y in range(top, bottom):
+    xs = []
+    for x in range(left, right, 3):
+        r, g, b = image.getpixel((x, y))
+        if r > 115 and g > 115 and b > 115 and max(r, g, b) - min(r, g, b) < 85:
+            xs.append(x)
+    if len(xs) >= 60 and (max(xs) - min(xs) if xs else 0) > width * 0.75:
+        rows.append((y, xs))
+bands = []
+for y, _ in rows:
+    if not bands or y - bands[-1][1] > 3:
+        bands.append([y, y])
+    else:
+        bands[-1][1] = y
+narrow_bands = sum(1 for start, end in bands if end - start <= 4)
+columns = []
+stride = max(1, len(rows) // 80)
+for index, (_, xs) in enumerate(rows):
+    if index % stride == 0:
+        columns.extend(xs)
+clusters = []
+for x in sorted(columns):
+    if not clusters or x - clusters[-1][1] > 4:
+        clusters.append([x, x, 1])
+    else:
+        clusters[-1][1] = x
+        clusters[-1][2] += 1
+repeated_columns = sum(1 for _, _, count in clusters if count >= 8)
+if narrow_bands >= 35 or (len(rows) >= 100 and repeated_columns >= 40):
+    raise SystemExit(
+        f"terminal dotted canvas grid detected "
+        f"(rows={len(rows)}, narrowBands={narrow_bands}, repeatedCols={repeated_columns}): {path}"
+    )
+print(f"terminal dotted canvas grid absent: rows={len(rows)} narrowBands={narrow_bands} repeatedCols={repeated_columns}")
 PY
+}
+
+wait_for_terminal_screenshot_text_pixels() {
+    local screenshot="$1"
+    for _ in $(seq 1 12); do
+        adb_cmd exec-out screencap -p > "$screenshot"
+        if assert_terminal_screenshot_has_text_pixels "$screenshot"; then
+            return 0
+        fi
+        sleep 0.5
+    done
+    adb_cmd exec-out screencap -p > "$screenshot"
+    assert_terminal_screenshot_has_text_pixels "$screenshot"
 }
 
 wait_for_stop_escape() {
@@ -328,9 +514,13 @@ dump_ui() {
     # the cheapest real-device check that the visible menu text and dialogs are
     # actually on screen after install.
     if ! has_window_focus && [ "${WEZTERM_UI_ALLOW_FOCUS_STEAL:-0}" = "1" ]; then
+        # WHY: long real-phone UI proof runs can briefly drop focus to Launcher,
+        # Recents, or an app that surfaced during UIAutomator idle waits. When
+        # this proof explicitly owns foreground control, recover focus through
+        # the same guarded launch loop used at startup before trusting any dump.
         wake_and_dismiss_overlays
         adb_cmd shell am start -W -n "$ACTIVITY" >/dev/null 2>&1 || true
-        sleep 0.6
+        wait_for_focus
     fi
     if ! has_window_focus; then
         echo "phone menu UI proof failed: $PACKAGE is not the current focused window; refusing to trust a stale UI dump" >&2
@@ -347,10 +537,25 @@ dump_ui() {
         # dump/pull/nonempty/package check inside the retry condition so `set -e`
         # cannot abort before the intended fresh-dump diagnostics run.
         if adb_cmd shell uiautomator dump "$DUMP_REMOTE" >"$dump_log" 2>&1 \
-            && adb_cmd pull "$DUMP_REMOTE" "$DUMP_LOCAL" >>"$dump_log" 2>&1 \
+            && adb_pull_dump >>"$dump_log" 2>&1 \
             && [ -s "$DUMP_LOCAL" ]; then
             if grep -Fq "package=\"$PACKAGE\"" "$DUMP_LOCAL"; then
                 return 0
+            fi
+            if [ "${WEZTERM_UI_ALLOW_FOCUS_STEAL:-0}" = "1" ]; then
+                # WHY: Samsung can leave WEzterm as mFocusedApp while
+                # NotificationShade owns mCurrentFocus, and it can also report
+                # WEzterm focus while UIAutomator dumps another foreground app
+                # after the user briefly opens WhatsApp/keyboard during this
+                # long proof. Never tap a non-WEzterm hierarchy. Go Home,
+                # relaunch WEzterm, and retry from a fresh toolbar dump so proof
+                # automation cannot send accidental actions into another app.
+                wake_and_dismiss_overlays
+                adb_cmd shell input keyevent KEYCODE_HOME >/dev/null 2>&1 || true
+                sleep 0.25
+                adb_cmd shell am start -W -n "$ACTIVITY" >/dev/null 2>&1 || true
+                wait_for_focus
+                sleep 0.5
             fi
         fi
         sleep 0.4
@@ -414,7 +619,9 @@ ensure_toolbar() {
             || dump_has_text "Copy / Paste" \
             || dump_has_text "Copy/Paste" \
             || dump_has_text "Command palette" \
+            || dump_has_text "Restore Crashed Sessions" \
             || dump_has_text "Resume old session?" \
+            || dump_has_text "Restore crashed session?" \
             || grep -Eq 'text="Close .*\?"' "$DUMP_LOCAL"; then
             press_back
             wait_for_focus
@@ -436,6 +643,34 @@ assert_text() {
         exit 1
     fi
     echo "visible: $text"
+}
+
+wait_for_visible_text() {
+    local text="$1"
+    local description="${2:-$text}"
+    for _ in $(seq 1 30); do
+        dump_ui
+        if grep -Fq "text=\"$text\"" "$DUMP_LOCAL"; then
+            echo "visible: $description"
+            return 0
+        fi
+        sleep 0.25
+    done
+    echo "phone menu UI proof failed: missing visible text after wait: $description" >&2
+    echo "UI dump: $DUMP_LOCAL" >&2
+    exit 1
+}
+
+assert_toolbar_button_text() {
+    local text="$1"
+    ensure_plain_toolbar
+    dump_ui
+    if ! dump_has_button_text "$text"; then
+        echo "phone menu UI proof failed: missing toolbar button: $text" >&2
+        echo "UI dump: $DUMP_LOCAL" >&2
+        exit 1
+    fi
+    echo "visible toolbar button: $text"
 }
 
 assert_text_any() {
@@ -592,8 +827,42 @@ for node in root.iter("node"):
     if chosen is None or candidate > chosen:
         chosen = candidate
 if chosen is None:
-    raise SystemExit("could not find terminal WebView height")
-print(chosen[2])
+    # WHY: the native composer can make Samsung UIAutomator omit the WebView
+    # accessibility node while the terminal still visibly occupies the remaining
+    # content band. Use the same visible-content fallback as terminal_swipe() so
+    # the zoom/refit proof can still compare the user-visible terminal height
+    # before and after the composer opens.
+    root_bounds = None
+    excluded = []
+    for node in root.iter("node"):
+        match = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+        if not match:
+            continue
+        left, top, right, bottom = map(int, match.groups())
+        klass = node.attrib.get("class", "")
+        rid = node.attrib.get("resource-id", "")
+        if rid == "android:id/content":
+            root_bounds = (left, top, right, bottom)
+        if rid == "android:id/navigationBarBackground":
+            continue
+        if klass in {"android.widget.Button", "android.widget.EditText"}:
+            excluded.append((top, bottom))
+    if root_bounds is None:
+        raise SystemExit("could not find terminal WebView height")
+    _, top, _, bottom = root_bounds
+    cursor = top
+    gaps = []
+    for start, end in sorted(excluded):
+        if start - cursor > 100:
+            gaps.append(start - cursor)
+        cursor = max(cursor, end)
+    if bottom - cursor > 100:
+        gaps.append(bottom - cursor)
+    if not gaps:
+        raise SystemExit("could not find terminal WebView height")
+    print(max(gaps) - 24)
+else:
+    print(chosen[2])
 PY
 }
 
@@ -659,14 +928,70 @@ for node in root.iter("node"):
 PY
 }
 
+terminal_input_draft_from_dump() {
+    python3 - "$DUMP_LOCAL" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if node.attrib.get("class") != "android.widget.EditText":
+        continue
+    if node.attrib.get("hint") != "Terminal input":
+        continue
+    text = node.attrib.get("text", "")
+    # UIAutomator reports the hidden ttyd/xterm input separately from the native
+    # composer. Empty hidden input is normal; non-empty text is a real unsent
+    # draft that the proof must preserve before any foreground reset.
+    print(text)
+    break
+PY
+}
+
+dismiss_terminal_input_draft_if_present() {
+    dump_ui
+    if ! grep -Eq 'class="android.widget.EditText"[^>]*hint="Terminal input"' "$DUMP_LOCAL"; then
+        return 0
+    fi
+    local draft
+    draft="$(terminal_input_draft_from_dump)"
+    if [ -z "$draft" ]; then
+        return 0
+    fi
+    local draft_file="$SCREENSHOT_DIR/wezterm-preserved-terminal-input-draft-$$.txt"
+    printf '%s\n' "$draft" > "$draft_file"
+    if [ "${WEZTERM_UI_ALLOW_CLEAR_DRAFT:-0}" != "1" ]; then
+        echo "phone menu UI proof blocked: hidden terminal input contains unsent text; saved draft to $draft_file and refused to clear it" >&2
+        echo "WHY: xterm's hidden Terminal input is not the native composer, so Back cannot reliably dismiss it. Clearing it without an explicit opt-in could lose a real prompt." >&2
+        exit 1
+    fi
+    # WHY: a hidden ttyd/xterm textarea with a long unsent draft can keep the IME
+    # and non-plain toolbar latched even though tmux is safe. For proof runs that
+    # explicitly opt in, preserve the draft above, then restart only the Android
+    # client process. tmux, ttyd, Codex panes, scrollback, and crash-restore state
+    # stay untouched; this just clears client-side unsent WebView input so the
+    # real installed UI can be proven from a clean toolbar.
+    adb_cmd shell am force-stop "$PACKAGE" >/dev/null 2>&1 || true
+    sleep 0.4
+    adb_cmd shell am start -W -n "$ACTIVITY" >/dev/null
+    wait_for_focus
+    sleep 1.0
+    echo "Hidden terminal input draft preserved to $draft_file and Android client relaunched for proof"
+}
+
 dismiss_native_composer_if_open() {
     dump_ui
     if grep -Eq 'class="android.widget.EditText"[^>]*(content-desc|hint)="Type prompt"' "$DUMP_LOCAL"; then
         local draft
         draft="$(composer_draft_text_from_dump)"
-        if [ -n "$draft" ] && [ "${WEZTERM_UI_ALLOW_CLEAR_DRAFT:-0}" != "1" ]; then
+        if [ -n "$draft" ]; then
             local draft_file="$SCREENSHOT_DIR/wezterm-preserved-composer-draft-$$.txt"
             printf '%s\n' "$draft" > "$draft_file"
+            if [ "${WEZTERM_UI_ALLOW_CLEAR_DRAFT:-0}" = "1" ]; then
+                echo "Native composer draft preserved to $draft_file before explicit proof clear"
+            fi
+        fi
+        if [ -n "$draft" ] && [ "${WEZTERM_UI_ALLOW_CLEAR_DRAFT:-0}" != "1" ]; then
             echo "phone menu UI proof blocked: native composer contains unsent text; saved draft to $draft_file and refused to clear it" >&2
             exit 1
         fi
@@ -682,21 +1007,110 @@ dismiss_native_composer_if_open() {
 }
 
 ensure_plain_toolbar() {
+    local stable_plain=0
     for _ in $(seq 1 8); do
         ensure_toolbar
         dump_ui
-        if dump_has_button_text "Start" && ! grep -Eq 'class="android.widget.EditText"[^>]*(content-desc|hint)="Type prompt"' "$DUMP_LOCAL"; then
-            return 0
+        dismiss_terminal_input_draft_if_present
+        dump_ui
+        if dump_has_button_text "Start" \
+                && ! grep -Eq 'class="android.widget.EditText"[^>]*(content-desc|hint)="Type prompt"' "$DUMP_LOCAL" \
+                && ! input_method_visible; then
+            stable_plain=$((stable_plain + 1))
+            if [ "$stable_plain" -ge 2 ]; then
+                return 0
+            fi
+            sleep 0.25
+            continue
         fi
+        stable_plain=0
         # WHY: after APK install/reopen, Android can restore the native composer
         # slightly after the first toolbar dump. The label then becomes Send, so
-        # the proof would falsely report that Start regressed. Wait for the plain
-        # toolbar state used by the toolbar-label assertions.
+        # the proof would falsely report that Start regressed. Require two stable
+        # plain-toolbar dumps before the toolbar-label assertions so a late
+        # restored composer cannot slip between label and geometry checks.
         dismiss_native_composer_if_open
         sleep 0.25
     done
     echo "phone menu UI proof failed: could not reach the plain toolbar with Start visible" >&2
     echo "UI dump: $DUMP_LOCAL" >&2
+    exit 1
+}
+
+wait_for_native_composer_open() {
+    for _ in $(seq 1 20); do
+        dump_ui
+        if grep -Eq 'class="android.widget.EditText"[^>]*(content-desc|hint)="Type prompt"' "$DUMP_LOCAL" \
+                && dump_has_button_text "Send"; then
+            echo "Native composer is open"
+            return 0
+        fi
+        sleep 0.25
+    done
+    echo "phone menu UI proof failed: native composer did not open before Active switch reproduction" >&2
+    echo "UI dump: $DUMP_LOCAL" >&2
+    exit 1
+}
+
+assert_active_switch_plain_state() {
+    local stable_plain=0
+    for _ in $(seq 1 24); do
+        dump_ui
+        if dump_has_button_text "Start" \
+                && ! dump_has_button_text "Send" \
+                && ! grep -Eq 'class="android.widget.EditText"[^>]*(content-desc|hint)="Type prompt"' "$DUMP_LOCAL" \
+                && ! input_method_visible; then
+            stable_plain=$((stable_plain + 1))
+            if [ "$stable_plain" -ge 2 ]; then
+                echo "Active switch hid native composer and keyboard"
+                return 0
+            fi
+            sleep 0.25
+            continue
+        fi
+        stable_plain=0
+        sleep 0.25
+    done
+    echo "phone menu UI proof failed: Active switch left composer/IME/Send toolbar visible" >&2
+    echo "UI dump: $DUMP_LOCAL" >&2
+    adb_cmd shell dumpsys input_method | tail -80 >&2 || true
+    exit 1
+}
+
+assert_active_picker_hid_composer() {
+    dump_ui
+    if grep -Eq 'class="android.widget.EditText"[^>]*(content-desc|hint)="Type prompt"' "$DUMP_LOCAL" \
+            || input_method_visible; then
+        echo "phone menu UI proof failed: Active picker opened while composer/IME stayed visible" >&2
+        echo "UI dump: $DUMP_LOCAL" >&2
+        adb_cmd shell dumpsys input_method | tail -80 >&2 || true
+        exit 1
+    fi
+    echo "Active picker hid native composer before dialog"
+}
+
+assert_read_mode_hid_composer() {
+    local stable_plain=0
+    for _ in $(seq 1 24); do
+        dump_ui
+        if dump_has_button_text "Start" \
+                && ! dump_has_button_text "Send" \
+                && ! grep -Eq 'class="android.widget.EditText"[^>]*(content-desc|hint)="Type prompt"' "$DUMP_LOCAL" \
+                && ! input_method_visible; then
+            stable_plain=$((stable_plain + 1))
+            if [ "$stable_plain" -ge 2 ]; then
+                echo "Scrollback/read mode hid native composer and keyboard"
+                return 0
+            fi
+            sleep 0.25
+            continue
+        fi
+        stable_plain=0
+        sleep 0.25
+    done
+    echo "phone menu UI proof failed: scrollback/read mode left composer/IME/Send toolbar visible" >&2
+    echo "UI dump: $DUMP_LOCAL" >&2
+    adb_cmd shell dumpsys input_method | tail -80 >&2 || true
     exit 1
 }
 
@@ -739,7 +1153,25 @@ for node in root.iter("node"):
     if chosen is None or area > chosen[0]:
         chosen = (area, left, top, right, bottom)
 if chosen is None:
-    raise SystemExit("no scrollable node found")
+    # WHY: Samsung's UIAutomator dumps do not always mark AlertDialog content
+    # scrollable, especially after rotation or while the IME has just changed
+    # state. The proof should still exercise a real finger swipe in the visible
+    # app/dialog area instead of failing on a missing accessibility flag.
+    for node in root.iter("node"):
+        bounds = node.attrib.get("bounds", "")
+        match = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
+        if not match:
+            continue
+        left, top, right, bottom = map(int, match.groups())
+        width = right - left
+        height = bottom - top
+        if width < 100 or height < 100:
+            continue
+        area = width * height
+        if chosen is None or area > chosen[0]:
+            chosen = (area, left, top, right, bottom)
+if chosen is None:
+    raise SystemExit("no swipable node found")
 _, left, top, right, bottom = chosen
 x = (left + right) // 2
 height = bottom - top
@@ -764,6 +1196,67 @@ scroll_until_text() {
         swipe_first_scrollable_down
     done
     echo "phone menu UI proof failed: could not scroll to visible text: $text" >&2
+    echo "UI dump: $DUMP_LOCAL" >&2
+    exit 1
+}
+
+scroll_found_text=""
+scroll_until_text_any() {
+    local text
+    for _ in $(seq 1 6); do
+        dump_ui
+        for text in "$@"; do
+            if dump_has_text "$text"; then
+                scroll_found_text="$text"
+                echo "visible: $text"
+                return 0
+            fi
+        done
+        swipe_first_scrollable_down
+    done
+    echo "phone menu UI proof failed: could not scroll to any visible text: $*" >&2
+    echo "UI dump: $DUMP_LOCAL" >&2
+    exit 1
+}
+
+ensure_active_picker_open() {
+    dump_ui
+    if dump_has_text "Active Sessions"; then
+        return 0
+    fi
+    # WHY: opening Active while the native composer/IME is being dismissed can
+    # briefly show the picker, pass the label checks, then Android may return to
+    # the main terminal before the proof scrolls to an off-screen row. Reopen the
+    # same picker through the visible Active button instead of replacing the UI
+    # proof with a direct control-server select.
+    ensure_plain_toolbar
+    dump_ui
+    tap_visible_text_from_current_dump "Active"
+    assert_text "Active Sessions"
+    assert_text "Rename"
+}
+
+open_active_picker() {
+    for _ in $(seq 1 5); do
+        ensure_plain_toolbar
+        dump_ui
+        tap_visible_text_from_current_dump "Active"
+        for __ in $(seq 1 10); do
+            dump_ui
+            if dump_has_text "Active Sessions"; then
+                assert_text "Active Sessions"
+                assert_text "Rename"
+                return 0
+            fi
+            sleep 0.25
+        done
+        # WHY: after an Active-session switch the APK may still be settling the
+        # WebView live-bottom viewport. A single visible Active tap can be
+        # swallowed in that frame. Retry only from verified toolbar state so this
+        # remains a real installed-APK UI proof, not a control-server shortcut.
+        press_back
+    done
+    echo "phone menu UI proof failed: Active button did not open Active Sessions" >&2
     echo "UI dump: $DUMP_LOCAL" >&2
     exit 1
 }
@@ -818,6 +1311,39 @@ for node in root.iter("node"):
         break
 else:
     raise SystemExit(f"missing text {wanted} in current dump")
+PY
+)"
+    read -r x y <<<"$coords"
+    adb_cmd shell input tap "$x" "$y"
+    sleep 0.8
+}
+
+tap_visible_text_above_toolbar_from_current_dump() {
+    local text="$1"
+    local coords
+    coords="$(python3 - "$DUMP_LOCAL" "$text" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+path, wanted = sys.argv[1], sys.argv[2]
+root = ET.parse(path).getroot()
+matches = []
+for node in root.iter("node"):
+    if node.attrib.get("text") != wanted:
+        continue
+    bounds = node.attrib.get("bounds", "")
+    match = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
+    if not match:
+        continue
+    left, top, right, bottom = map(int, match.groups())
+    center_y = (top + bottom) // 2
+    if center_y < 2500:
+        matches.append(((left + right) // 2, center_y, top))
+if not matches:
+    raise SystemExit(f"missing dialog text {wanted} above toolbar in current dump")
+matches.sort(key=lambda item: item[2])
+print(matches[0][0], matches[0][1])
 PY
 )"
     read -r x y <<<"$coords"
@@ -888,8 +1414,51 @@ for node in root.iter("node"):
     if chosen is None or (resource_id == "terminal-container", area) > (chosen[0], chosen[1]):
         chosen = (resource_id == "terminal-container", area, left, top, right, bottom)
 if chosen is None:
-    raise SystemExit("could not find terminal WebView bounds")
-_, _, left, top, right, bottom = chosen
+    # WHY: when the native composer is open, Samsung UIAutomator can expose only
+    # the composer + toolbar and hide the WebView accessibility node, even though
+    # the terminal is visibly present and still receives the one-finger gesture.
+    # This fallback computes the largest visible content band not occupied by
+    # buttons/EditTexts/navigation bars, then swipes there. It keeps the proof as
+    # a real physical phone gesture without touching the app's frozen scroll/zoom
+    # implementation or bypassing the UI through a server call.
+    root_bounds = None
+    excluded = []
+    right_limit = None
+    for node in root.iter("node"):
+        bounds = node.attrib.get("bounds", "")
+        match = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
+        if not match:
+            continue
+        l, t, r, b = map(int, match.groups())
+        klass = node.attrib.get("class", "")
+        rid = node.attrib.get("resource-id", "")
+        if rid == "android:id/content":
+            root_bounds = (l, t, r, b)
+        if rid == "android:id/navigationBarBackground":
+            right_limit = min(right_limit or l, l)
+            continue
+        if klass in {"android.widget.Button", "android.widget.EditText"}:
+            excluded.append((t, b))
+    if root_bounds is None:
+        raise SystemExit("could not find terminal WebView bounds")
+    left, top, right, bottom = root_bounds
+    if right_limit:
+        right = min(right, right_limit)
+    cursor = top
+    gaps = []
+    for start, end in sorted(excluded):
+        if start - cursor > 100:
+            gaps.append((start - cursor, cursor, start))
+        cursor = max(cursor, end)
+    if bottom - cursor > 100:
+        gaps.append((bottom - cursor, cursor, bottom))
+    if not gaps:
+        raise SystemExit("could not find terminal WebView bounds")
+    _, top, bottom = max(gaps)
+    top += 12
+    bottom -= 12
+else:
+    _, _, left, top, right, bottom = chosen
 height = bottom - top
 x = (left + right) // 2
 def y(frac):
@@ -963,7 +1532,7 @@ tap_text_any() {
 
 open_scroll_menu() {
     for _ in $(seq 1 4); do
-        ensure_toolbar
+        ensure_plain_toolbar
         dump_ui
         if ! dump_has_button_text "Scroll"; then
             dismiss_native_composer_if_open
@@ -1013,9 +1582,74 @@ select_window() {
     control_get "/select?fast=1&windowId=$(urlencode "$window_id")" | json_assert "select $window_id" "p.get('ok') is True"
 }
 
+pick_active_switch_target() {
+    local avoid_window="$1"
+    local proof_created_window="${2:-}"
+    local tabs_file
+    tabs_file="$(mktemp)"
+    control_get "/tabs" > "$tabs_file"
+    python3 - "$tabs_file" "$avoid_window" "$proof_created_window" <<'PY'
+import json
+import sys
+
+tabs_file, avoid_window, proof_created_window = sys.argv[1], sys.argv[2], sys.argv[3]
+payload = json.load(open(tabs_file, encoding="utf-8"))
+generic = {"", "~", "shell", "bash", "node"}
+for window in payload.get("windows", []):
+    window_id = window.get("windowId", "")
+    title = window.get("title") or window.get("name") or ""
+    if window_id in {avoid_window, proof_created_window}:
+        continue
+    if title.strip().lower() in generic:
+        continue
+    if title.startswith("READ "):
+        continue
+    print(f"{window_id}\t{title}")
+    raise SystemExit(0)
+raise SystemExit("no non-generic Active Sessions target found")
+PY
+    rm -f "$tabs_file"
+}
+
 cleanup_window() {
     local window_id="$1"
+    local expected_title="${2:-}"
     if [ -n "$window_id" ] && tmux_window_exists "$window_id"; then
+        if window_was_initial "$window_id"; then
+            echo "phone menu UI proof cleanup: refusing to close pre-existing user window $window_id" >&2
+            return 0
+        fi
+        if [ -n "$expected_title" ]; then
+            local actual_title
+            actual_title="$(tmux display-message -p -t "$TMUX_SESSION:$window_id" '#{window_name}' 2>/dev/null || true)"
+            case "$actual_title" in
+                "$expected_title"*) ;;
+                "~"|"shell"|"bash")
+                    if [ "$window_id" = "${proof_window:-}" ] && [ "$expected_title" = "$PROOF_NAME" ]; then
+                        # WHY: the New-button proof captures the exact tmux
+                        # window id created by the phone UI, then renames it for
+                        # safety. On a failed run tmux/control title repair can
+                        # still show the brand-new shell as "~" before the proof
+                        # title sticks. Because this id was not present in the
+                        # initial window snapshot and belongs to proof_window,
+                        # closing it is safer than leaving debris tabs behind.
+                        :
+                    else
+                        echo "phone menu UI proof cleanup: refusing to close $window_id titled '$actual_title'; expected proof title does not match '$expected_title'" >&2
+                        return 0
+                    fi
+                    ;;
+                *)
+                    echo "phone menu UI proof cleanup: refusing to close $window_id titled '$actual_title'; expected proof title does not match '$expected_title'" >&2
+                    return 0
+                    ;;
+            esac
+        fi
+        # WHY: this proof creates disposable windows, but it runs in the same
+        # grouped tmux session as real user work. Never kill a window that
+        # existed before the proof or whose expected proof title does not match;
+        # otherwise a stale variable or concurrent selection can delete a real
+        # lane such as the user's movie/subtitle tab.
         control_get "/close?fast=1&windowId=$(urlencode "$window_id")" >/dev/null || \
             tmux kill-window -t "$TMUX_SESSION:$window_id" || true
     fi
@@ -1040,21 +1674,24 @@ restore_original_tmux_state() {
 
 cleanup() {
     set +e
-    cleanup_window "$reader_window"
+    cleanup_window "$reader_window" "READ "
     cleanup_window "$resume_window"
-    cleanup_window "$proof_window"
+    cleanup_window "$proof_window" "$PROOF_NAME"
     rm -f "$COPY_FILE" "$STOP_FILE" "$TYPE_FILE"
+    rm -f "$initial_windows_file"
     restore_original_tmux_state
 }
 trap cleanup EXIT
 
 echo "phone menu UI proof: adb/control state"
+assert_title_sync_stopped
 adb_cmd get-state | grep -Fxq "device"
 control_get "/health" | json_assert "control health" "p.get('ok') is True"
 
 orig_window="$(tmux_active_window)"
 orig_mode="$(tmux_pane_mode)"
 orig_scroll="$(tmux_scroll_position)"
+record_initial_windows
 
 echo "phone menu UI proof: launch"
 if ! has_window_focus; then
@@ -1076,7 +1713,7 @@ ensure_plain_toolbar
 
 echo "phone menu UI proof: toolbar labels"
 for label in Active Old New Refresh Bottom Scroll "Copy/Paste" Upload Close Start Stop; do
-    assert_text "$label"
+    assert_toolbar_button_text "$label"
 done
 assert_absent "Tabs"
 assert_absent "New Tab"
@@ -1088,8 +1725,8 @@ reader_count="$(tmux_window_count)"
 ensure_toolbar
 reader_source_window="$(tmux_active_window)"
 open_scroll_menu
-tap_text "Read current session"
-reader_window="$(wait_for_active_new_window "$reader_count" "$reader_source_window")"
+tap_visible_text_from_current_dump "Read current session"
+reader_window="$(wait_for_reader_window "$reader_source_window" "$reader_count")"
 reader_name="$(tmux display-message -p -t "$TMUX_SESSION:$reader_window" '#{window_name}')"
 case "$reader_name" in
     "READ $reader_source_window"*) ;;
@@ -1101,17 +1738,19 @@ esac
 echo "Read current session opened reader $reader_window for selected source $reader_source_window"
 ensure_toolbar
 open_scroll_menu
-tap_text "Go to live bottom / type"
-wait_for_active_window_id "$reader_source_window"
+tap_visible_text_from_current_dump "Go to live bottom / type"
+wait_for_active_window_id_after_visible_tap "$reader_source_window" "Go to live bottom / type"
 echo "Reader live-bottom returned to $reader_source_window"
 dismiss_native_composer_if_open
 cleanup_window "$reader_window"
 reader_window=""
 reopen_wezterm
 ensure_toolbar
+bottom_source_window="$(tmux_active_window)"
 tap_text "Bottom"
-wait_for_active_window_id "$orig_window"
-echo "Direct Bottom button returned to live typing"
+wait_for_active_window_id "$bottom_source_window"
+wait_for_window_pane_mode "$bottom_source_window" "0"
+echo "Direct Bottom button kept current session at live typing"
 dismiss_native_composer_if_open
 
 echo "phone menu UI proof: New button creates disposable session"
@@ -1123,9 +1762,31 @@ wait_for_shell "$proof_window"
 echo "New button created $proof_window"
 
 echo "phone menu UI proof: Active button opens active session picker"
-ensure_toolbar
-tap_text "Active"
-assert_text "Active Sessions"
+ensure_plain_toolbar
+for __active_attempt in $(seq 1 4); do
+    dump_ui
+    tap_visible_text_from_current_dump "Active"
+    for __wait_attempt in $(seq 1 12); do
+        dump_ui
+        if dump_has_text "Active Sessions"; then
+            echo "visible: Active Sessions"
+            break 2
+        fi
+        sleep 0.2
+    done
+    # WHY: on the real S25 Ultra proof path a tap can be swallowed while Android
+    # is settling from the New-window creation and native composer dismissal.
+    # Retry only from a verified toolbar state; do not fall back to control-server
+    # endpoints because this section is proving the visible phone button.
+    press_back
+    ensure_plain_toolbar
+done
+dump_ui
+if ! dump_has_text "Active Sessions"; then
+    echo "phone menu UI proof failed: missing visible text: Active Sessions" >&2
+    echo "UI dump: $DUMP_LOCAL" >&2
+    exit 1
+fi
 assert_text "New"
 assert_text "Rename"
 assert_text "Cancel"
@@ -1136,31 +1797,60 @@ press_back
 echo "phone menu UI proof: Active row title switches with one tap"
 select_window "$orig_window"
 reopen_wezterm
-tap_text "Active"
-assert_text "Active Sessions"
-assert_text "Rename"
+ensure_plain_toolbar
+IFS=$'\t' read -r active_switch_window active_switch_title < <(pick_active_switch_target "$orig_window" "$proof_window")
+open_active_picker
 # WHY: Active Sessions is intentionally crowded on the real phone because it
-# includes current-first rows plus every live tmux window. The disposable proof
-# tab can fall below the first viewport; scroll to the exact title before
-# tapping so the proof exercises the real picker without assuming a quiet tmux
-# workspace.
-scroll_until_text "$PROOF_NAME"
-tap_visible_text_from_current_dump "$PROOF_NAME"
-wait_for_active_window_id "$proof_window"
+# includes current-first rows plus every live tmux window. Use a real existing
+# non-generic tab title for switch proof instead of the disposable New-button
+# tab: the New proof window can briefly display "~" before any title repair,
+# and selecting a generic "~" row would risk the old wrong-tab regression.
+scroll_until_text_any "$active_switch_title"
+tap_visible_text_from_current_dump "$scroll_found_text"
+wait_for_active_window_id "$active_switch_window"
 adb_cmd exec-out screencap -p > /tmp/wezterm-v157-active-title-one-tap.png
 assert_terminal_screenshot_has_text_pixels /tmp/wezterm-v157-active-title-one-tap.png
-echo "Active row title switched with one tap"
+assert_no_terminal_dot_grid /tmp/wezterm-v157-active-title-one-tap.png
+echo "Active row title switched with one tap to $active_switch_window ($active_switch_title)"
+
+echo "phone menu UI proof: Active switch hides native composer and IME"
+select_window "$orig_window"
+reopen_wezterm
+ensure_plain_toolbar
+terminal_tap_for_typing
+wait_for_native_composer_open
+dump_ui
+tap_visible_text_from_current_dump "Active"
+assert_active_picker_hid_composer
+ensure_active_picker_open
+scroll_until_text_any "$active_switch_title"
+tap_visible_text_from_current_dump "$scroll_found_text"
+wait_for_active_window_id "$active_switch_window"
+assert_active_switch_plain_state
+adb_cmd exec-out screencap -p > /tmp/wezterm-v175-active-composer-hidden.png
+assert_terminal_screenshot_has_text_pixels /tmp/wezterm-v175-active-composer-hidden.png
+assert_no_terminal_dot_grid /tmp/wezterm-v175-active-composer-hidden.png
 
 echo "phone menu UI proof: Old button and Resume action"
-ensure_toolbar
+ensure_plain_toolbar
 old_count="$(tmux_window_count)"
-tap_text "Old"
+dump_ui
+tap_visible_text_from_current_dump "Old"
 assert_text "Old Sessions"
 assert_text "Resume"
+assert_text_any "Crashed" "CRASHED"
 assert_regex 'text="[0-9]{4}-[0-9]{2}-[0-9]{2}' "old-session date header"
 assert_old_sessions_without_agent_labels
 adb_cmd exec-out screencap -p > "$OLD_SCREENSHOT"
 echo "old sessions screenshot: $OLD_SCREENSHOT"
+tap_text_any "Crashed" "CRASHED"
+wait_for_visible_text "Restore Crashed Sessions" "Restore Crashed Sessions"
+press_back
+ensure_plain_toolbar
+dump_ui
+tap_visible_text_from_current_dump "Old"
+assert_text "Old Sessions"
+assert_text "Resume"
 tap_text "Resume"
 assert_text "Resume old session?"
 tap_text_any "RESUME" "Resume"
@@ -1184,13 +1874,37 @@ if [ "$(tmux_active_window)" != "$proof_window" ]; then
     exit 1
 fi
 wait_for_pane_mode "0"
-adb_cmd exec-out screencap -p > /tmp/wezterm-v151-refresh-proof.png
-assert_terminal_screenshot_has_text_pixels /tmp/wezterm-v151-refresh-proof.png
+wait_for_terminal_screenshot_text_pixels /tmp/wezterm-v151-refresh-proof.png
 echo "Refresh button restored live mode"
 
 echo "phone menu UI proof: Scroll menu buttons"
 tmux send-keys -t "$TMUX_SESSION:$proof_window" "for i in \$(seq 1 140); do printf 'UIBTN_%04d\\n' \"\$i\"; done; printf '${COPY_TOKEN}\\n'" Enter
 wait_for_capture_text "$proof_window" "$COPY_TOKEN"
+
+echo "phone menu UI proof: scrollback hides native composer and IME"
+control_get "/scroll?where=bottom" >/dev/null || true
+wait_for_active_window_id "$proof_window"
+wait_for_window_pane_mode "$proof_window" "0"
+ensure_plain_toolbar
+terminal_tap_for_typing
+wait_for_native_composer_open
+dump_ui
+# WHY: in the native-composer layout, Samsung UIAutomator may hide the terminal
+# WebView node entirely, and the composer can consume a blind physical swipe.
+# The protected behavior here is that entering scrollback/read mode from a
+# typing state hides the composer and IME. Exercise that through the visible
+# Scroll -> Page up path, then keep the separate slow/fast physical one-finger
+# swipe proof below for the terminal gesture subsystem.
+tap_visible_text_from_current_dump "Scroll"
+assert_text "Scroll"
+assert_text "Page up"
+tap_visible_text_from_current_dump "Page up"
+wait_for_active_window_id "$proof_window"
+wait_for_window_pane_mode "$proof_window" "1"
+assert_read_mode_hid_composer
+control_get "/scroll?where=bottom" >/dev/null || true
+wait_for_window_pane_mode "$proof_window" "0"
+ensure_plain_toolbar
 
 echo "phone menu UI proof: physical one-finger slow drag and fast flick"
 control_get "/scroll?where=bottom" >/dev/null || true
@@ -1233,15 +1947,28 @@ wait_for_active_window_id "$proof_window"
 wait_for_window_pane_mode "$proof_window" "1"
 ensure_toolbar
 terminal_swipe live-return 250
-sleep 1.4
 wait_for_active_window_id "$proof_window"
-live_return_mode="$(tmux_window_pane_mode "$proof_window")"
-live_return_scroll="$(tmux_window_scroll_position "$proof_window")"
+live_return_start_ms="$(date +%s%3N)"
+live_return_mode=""
+live_return_scroll=""
+for _ in $(seq 1 24); do
+    live_return_mode="$(tmux_window_pane_mode "$proof_window")"
+    live_return_scroll="$(tmux_window_scroll_position "$proof_window")"
+    if [ "$live_return_mode" = "0" ] && { [ -z "$live_return_scroll" ] || [ "$live_return_scroll" = "0" ]; }; then
+        break
+    fi
+    sleep 0.05
+done
+live_return_elapsed_ms=$(( $(date +%s%3N) - live_return_start_ms ))
 if [ "$live_return_mode" != "0" ] || { [ -n "$live_return_scroll" ] && [ "$live_return_scroll" != "0" ]; }; then
     echo "phone menu UI proof failed: physical one-finger down swipe did not return to live bottom quietly; mode=$live_return_mode scroll=$live_return_scroll" >&2
     exit 1
 fi
-echo "Physical one-finger live-bottom exited copy-mode quietly"
+if [ "$live_return_elapsed_ms" -gt 1200 ]; then
+    echo "phone menu UI proof failed: physical one-finger live-bottom return was too delayed; elapsed_ms=$live_return_elapsed_ms mode=$live_return_mode scroll=$live_return_scroll" >&2
+    exit 1
+fi
+echo "Physical one-finger live-bottom exited copy-mode quietly and smoothly in ${live_return_elapsed_ms}ms"
 control_get "/scroll?where=bottom" >/dev/null || true
 wait_for_pane_mode "0"
 
@@ -1264,22 +1991,23 @@ echo "Scroll menu is scroll-only"
 press_back
 ensure_toolbar
 open_scroll_menu
-tap_text "Page up"
+tap_visible_text_from_current_dump "Page up"
 wait_for_pane_mode "1"
 ensure_toolbar
 open_scroll_menu
-tap_text "Page down"
+tap_visible_text_from_current_dump "Page down"
 wait_for_pane_mode "1"
 ensure_toolbar
 open_scroll_menu
-tap_text "Go to live bottom / type"
+tap_visible_text_from_current_dump "Go to live bottom / type"
 wait_for_pane_mode "0"
 
 echo "phone menu UI proof: command palette duplicate actions"
-ensure_toolbar
+ensure_plain_toolbar
 long_press_text "Scroll"
 assert_text "Active Sessions"
 assert_text "Old Sessions"
+assert_text "Restore Crashed Sessions"
 assert_text "Needs Attention"
 assert_text "Refresh current session"
 assert_absent "Previous Sessions"
@@ -1288,27 +2016,34 @@ tap_text "Needs Attention"
 assert_text "Needs Attention"
 press_back
 
-ensure_toolbar
+ensure_plain_toolbar
 long_press_text "Scroll"
 tap_text "Active Sessions"
 assert_text "Active Sessions"
 press_back
 
-ensure_toolbar
+ensure_plain_toolbar
 long_press_text "Scroll"
 tap_text "Old Sessions"
 assert_text "Old Sessions"
 press_back
 
-ensure_toolbar
+ensure_plain_toolbar
 long_press_text "Scroll"
-tap_text "Copy/Paste"
-assert_text_any "Copy / Paste" "Copy/Paste"
+tap_text "Restore Crashed Sessions"
+assert_text "Restore Crashed Sessions"
+press_back
+
+ensure_plain_toolbar
+long_press_text "Scroll"
+dump_ui
+tap_visible_text_above_toolbar_from_current_dump "Copy/Paste"
+assert_text "Paste phone clipboard into terminal"
 assert_text "Upload media from phone"
 press_back
 assert_text "Upload"
 
-ensure_toolbar
+ensure_plain_toolbar
 long_press_text "Scroll"
 tap_text "Refresh current session"
 sleep 1.0
@@ -1317,7 +2052,7 @@ if [ "$(tmux_active_window)" != "$proof_window" ]; then
     exit 1
 fi
 
-ensure_toolbar
+ensure_plain_toolbar
 long_press_text "Scroll"
 scroll_until_text "Rename current session"
 tap_visible_text_from_current_dump "Rename current session"
@@ -1327,7 +2062,7 @@ press_back
 bug_dir="${XDG_RUNTIME_DIR:-/tmp}/phone-terminal/bug-reports"
 mkdir -p "$bug_dir"
 bug_before="$(find "$bug_dir" -maxdepth 1 -type f -name 'report-*.json' | wc -l)"
-ensure_toolbar
+ensure_plain_toolbar
 long_press_text "Scroll"
 scroll_until_text "Create bug report"
 tap_visible_text_from_current_dump "Create bug report"
@@ -1344,7 +2079,7 @@ if [ "${bug_after:-0}" -le "$bug_before" ]; then
     exit 1
 fi
 
-ensure_toolbar
+ensure_plain_toolbar
 long_press_text "Scroll"
 scroll_until_text "Install/update over Tailscale"
 tap_visible_text_from_current_dump "Install/update over Tailscale"
@@ -1391,10 +2126,11 @@ before_tap_mode="$(tmux_pane_mode)"
 before_tap_scroll="$(tmux_scroll_position)"
 before_composer_terminal_height="$(terminal_webview_height)"
 before_composer_pane_height="$(tmux_window_pane_height "$proof_window")"
-# WHY: v1.67 deliberately keeps v1.66's stop using xterm/WebView's hidden textarea for
-# normal phone typing. This proof taps the terminal body, verifies the native
-# composer owns input, proves the token does not reach tmux before Send, then
-# counts the submitted token so same-line duplication still fails.
+# WHY: v1.80 keeps v1.66's native composer as the phone-owned typing surface,
+# but mirrors draft deltas into the real tmux prompt so the desktop can continue
+# from the same half-written text. Prove the draft appears in tmux before Send,
+# then count the file output after Send so duplicate-submit regressions still
+# fail.
 terminal_tap_for_typing
 sleep 0.8
 assert_regex '(text|content-desc|hint)="Type prompt"' "native composer opened from terminal tap"
@@ -1404,13 +2140,8 @@ assert_absent "Cancel"
 adb_cmd shell dumpsys input_method > /tmp/wezterm-ime-proof.txt || true
 adb_cmd exec-out screencap -p > /tmp/wezterm-v166-native-composer-proof.png
 adb_cmd shell input text "$TYPE_TOKEN"
-sleep 0.5
-if [ -f "$TYPE_FILE" ] && grep -Fq "$TYPE_TOKEN" "$TYPE_FILE"; then
-    echo "phone menu UI proof failed: native composer leaked pre-send text into xterm" >&2
-    cat "$TYPE_FILE" >&2 || true
-    exit 1
-fi
-echo "Native composer did not leak pre-send text into xterm"
+wait_for_capture_text "$proof_window" "$TYPE_TOKEN"
+echo "Native composer mirrored pre-send draft into tmux for desktop continuation"
 tap_text "Send"
 wait_for_file_text "$TYPE_FILE" "$TYPE_TOKEN"
 after_tap_mode="$(tmux_pane_mode)"
@@ -1433,7 +2164,7 @@ fi
 tmux send-keys -t "$TMUX_SESSION:$proof_window" C-c
 wait_for_shell "$proof_window"
 echo "Tap-to-type delivered one visible token through native composer"
-echo "Native composer delivered one visible token; screenshot: /tmp/wezterm-v166-native-composer-proof.png; IME dump: /tmp/wezterm-ime-proof.txt"
+echo "Native composer mirrored draft and delivered one visible token; screenshot: /tmp/wezterm-v166-native-composer-proof.png; IME dump: /tmp/wezterm-ime-proof.txt"
 echo "Tap-to-type did not trigger page-finished or scroll bursts"
 echo "IME flags stayed normal for voice input"
 

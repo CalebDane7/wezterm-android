@@ -2,3 +2,12 @@ build/
 *.idsig
 *.backups/
 .DS_Store
+.ai-controller/
+.ai-project/
+.claude/
+.tldr/
+.tldrignore
+.tmp/
+backups/
+scripts/backups/
+claude-audits/

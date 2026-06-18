@@ -158,7 +158,11 @@ with tempfile.TemporaryDirectory() as home:
     )
     if title != "Latest Crash Restore Title":
         raise SystemExit(f"title cache beats first prompt failed: {title!r}")
-    cache_path = pathlib.Path(home) / ".local/share/phone-terminal/session-title-cache.json"
+    # WHY: Mantis installs can relocate phone-terminal state under
+    # MANTIS_STATE_DIR. Assert against the imported server's configured cache
+    # path instead of the legacy pre-Mantis path, or this proof can fail even
+    # while the live cache behavior is correct.
+    cache_path = pathlib.Path(server.SESSION_TITLE_CACHE)
     cache_payload = json.loads(cache_path.read_text(encoding="utf-8"))
     if cache_payload["sessions"][crashed_id]["title"] != "Latest Crash Restore Title":
         raise SystemExit(f"title cache persisted wrong payload: {cache_payload}")
@@ -253,11 +257,18 @@ PY
 rm -f "$sessions_payload_file"
 curl -fsS "$CONTROL_URL/resume-session?fast=1&dryRun=1&sessionId=$(urlencode "$old_session_id")&cwd=$(urlencode "$old_session_cwd")" | json_assert "resume-session dry-run" "p.get('ok') is True and p.get('action') == 'resume-dry-run' and p.get('sessionId')"
 resume_payload="$(curl -fsS "$CONTROL_URL/resume-session?fast=1&sessionId=$(urlencode "$old_session_id")&cwd=$(urlencode "$old_session_cwd")")"
-proof_window="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("windowId",""))' "$resume_payload")"
-printf '%s' "$resume_payload" | json_assert "resume-session opens active session" "p.get('ok') is True and p.get('action') == 'resume-session-opened' and p.get('windowId', '').startswith('@')"
-tmux list-windows -t "$TMUX_SESSION:" -F '#{window_id}' | grep -Fxq "$proof_window"
-curl -fsS "$CONTROL_URL/close?fast=1&windowId=${proof_window//@/%40}" | json_assert "resume-session cleanup close" "p.get('ok') is True and p.get('action') == 'closed'"
-proof_window=""
+resume_window="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("windowId",""))' "$resume_payload")"
+resume_action="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("action",""))' "$resume_payload")"
+printf '%s' "$resume_payload" | json_assert "resume-session opens or selects active session" "p.get('ok') is True and p.get('action') in {'resume-session-opened', 'resume-session-selected-live'} and p.get('windowId', '').startswith('@')"
+tmux list-windows -t "$TMUX_SESSION:" -F '#{window_id}' | grep -Fxq "$resume_window"
+if [ "$resume_action" = "resume-session-opened" ]; then
+    # WHY: resume can now find an already-live session and select it instead of
+    # opening a disposable duplicate. Only close windows this proof created;
+    # a selected-live window belongs to the user and must survive the proof.
+    proof_window="$resume_window"
+    curl -fsS "$CONTROL_URL/close?fast=1&windowId=${proof_window//@/%40}" | json_assert "resume-session cleanup close" "p.get('ok') is True and p.get('action') == 'closed'"
+    proof_window=""
+fi
 curl -fsS "$CONTROL_URL/select?fast=1&windowId=${orig_window//@/%40}" | json_assert "restore after resume-session proof" "p.get('ok') is True"
 
 echo "new session cwd"
@@ -348,7 +359,7 @@ for _ in $(seq 1 30); do
     [ "$(tmux display-message -p -t "$TMUX_SESSION:$proof_window" '#{pane_current_command}')" = "python3" ] && break
     sleep 0.1
 done
-curl -fsS "$CONTROL_URL/stop" | json_assert "stop endpoint double escape" "p.get('ok') is True and p.get('keys') == ['Escape', 'Escape']"
+curl -fsS "$CONTROL_URL/stop" | json_assert "stop endpoint single desktop escape" "p.get('ok') is True and p.get('keys') == ['Escape']"
 for _ in $(seq 1 30); do
     [ -f "$STOP_FILE" ] && [ "$(wc -c < "$STOP_FILE")" -ge 1 ] && break
     sleep 0.1

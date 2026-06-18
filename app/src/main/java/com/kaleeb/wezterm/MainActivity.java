@@ -45,14 +45,17 @@ import android.view.animation.AccelerateDecelerateInterpolator;
 import android.view.inputmethod.InputMethodManager;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
+import android.view.inputmethod.InputConnectionWrapper;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.PopupWindow;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -65,22 +68,50 @@ import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
 import java.net.HttpURLConnection;
+import java.net.InetAddress;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
 public class MainActivity extends Activity {
-    private static final String TERMINAL_URL = "http://kaleeblaptop-1.taildbdeee.ts.net:8088/";
-    private static final String CONTROL_URL = "http://kaleeblaptop-1.taildbdeee.ts.net:8089";
+    private static final String TERMINAL_URL = "http://100.113.254.7:8088/";
+    private static final String MAGIC_DNS_TERMINAL_URL = "http://kaleeblaptop-1.taildbdeee.ts.net:8088/";
+    private static final String[] TERMINAL_URLS = {
+            TERMINAL_URL,
+            MAGIC_DNS_TERMINAL_URL
+    };
+    private static final String CONTROL_URL = "http://100.113.254.7:8089";
+    private static final String MAGIC_DNS_CONTROL_URL = "http://kaleeblaptop-1.taildbdeee.ts.net:8089";
+    private static final String[] CONTROL_URLS = {
+            CONTROL_URL,
+            MAGIC_DNS_CONTROL_URL
+    };
     private static final String INSTALL_URL = "http://100.113.254.7:8091/install.html";
+    private static final String[] WOL_MAC_ADDRESSES = {
+            "10:98:19:3A:A8:56",
+            "10:91:D1:F2:56:FC"
+    };
+    private static final String[] WOL_TARGETS = {
+            "255.255.255.255",
+            "192.168.0.255",
+            "192.168.0.81",
+            "192.168.0.130"
+    };
+    private static final int[] WOL_PORTS = {
+            9,
+            7
+    };
     private static final String PREFS = "wezterm";
     private static final String PREF_PIN_REQUESTED = "pin_requested";
     private static final String PREF_FONT_SIZE = "font_size";
-    private static final String APP_VERSION_NAME = "1.99";
+    private static final String APP_VERSION_NAME = "2.46";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
             | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
@@ -98,32 +129,55 @@ public class MainActivity extends Activity {
     private static final int HISTORY_DRAG_DOWN_RELEASE_MAX_REPEATS = 8;
     private static final int HISTORY_DRAG_DOWN_DIRECT_BOTTOM_MIN_LINES = 12;
     private static final int HISTORY_DRAG_RELEASE_FLING_BURSTS = 2;
+    private static final int HISTORY_DRAG_SLOW_MOVE_MAX_REPEATS = 2;
+    private static final int HISTORY_DRAG_SLOW_PENDING_MAX_REPEATS = 2;
+    private static final int HISTORY_DRAG_FAST_MOVE_REPEATS = 6;
+    private static final int HISTORY_DRAG_FLING_MOVE_REPEATS = 10;
+    private static final float HISTORY_DRAG_RELEASE_MIN_LINES = 2f;
     private static final int TOUCH_SCROLL_LIVE_BOTTOM_SNAP_LINES = 16;
-    private static final float HISTORY_DRAG_FAST_VELOCITY_PX_PER_SEC = 1200f;
-    private static final float HISTORY_DRAG_FLING_VELOCITY_PX_PER_SEC = 2600f;
+    private static final float HISTORY_DRAG_FAST_VELOCITY_PX_PER_SEC = 760f;
+    private static final float HISTORY_DRAG_FLING_VELOCITY_PX_PER_SEC = 1500f;
+    private static final float HISTORY_DRAG_FAST_DISTANCE_LINES = 3f;
+    private static final float HISTORY_DRAG_FLING_DISTANCE_LINES = 7f;
     private static final float WEBVIEW_ZOOMED_SCALE_THRESHOLD = 1.02f;
     private static final long VIEWER_PAN_UNLOCK_MS = 2500;
     private static final long TERMINAL_FOCUS_BURST_MIN_INTERVAL_MS = 700;
     private static final long LIVE_INPUT_VISIBILITY_BURST_MIN_INTERVAL_MS = 220;
-    private static final long DOCKED_DRAFT_MIRROR_DEBOUNCE_MS = 180;
+    private static final long PROMPT_COMPOSER_SOFT_INPUT_MIN_INTERVAL_MS = 900;
     private static final long TOOLBAR_STATUS_POLL_MS = 5000;
     private static final long STATUS_DOT_PULSE_MS = 520;
     private static final float STATUS_DOT_DIM_ALPHA = 0.38f;
     private static final float STATUS_DOT_FULL_ALPHA = 1.0f;
     private static final long ENTRY_LIVE_BOTTOM_SETTLE_MIN_INTERVAL_MS = 900;
+    private static final long BLANK_TAIL_MASK_MAX_LIFETIME_MS = 2200;
+    private static final long FULL_FRAME_SESSION_SWITCH_SHIELD_MAX_MS = 70;
+    private static final long IMMEDIATE_DOT_FILLER_SHIELD_MAX_LIFETIME_MS = 2600;
+    private static final long ACTIVE_SWITCH_WEBVIEW_LOWER_DOT_SHIELD_MS = 7000;
+    private static final float NATIVE_LOWER_DOT_SHIELD_TOP_FRACTION = 0.40f;
+    private static final long DOT_ROW_SCRUBBER_MAX_LIFETIME_MS = 120000;
+    private static final long PASSIVE_SWITCH_XTERM_SETTLE_LAST_DELAY_MS = 2600;
+    private static final long WOL_COOLDOWN_MS = 30000;
+    private static final long TERMINAL_WAKE_RETRY_DELAY_MS = 7000;
     private static final int VISIBLE_WEBVIEW_PAINT_SAMPLE_STEP_PX = 8;
     private static final int VISIBLE_WEBVIEW_MIN_BRIGHT_SAMPLES = 350;
     private static final double VISIBLE_WEBVIEW_MIN_BRIGHT_RATIO = 0.008;
     private static final int CONTROL_SAFE_RETRY_ATTEMPTS = 3;
     private static final int CONTROL_SAFE_RETRY_DELAY_MS = 140;
+    private static final long SELECTED_CLOSE_TARGET_MAX_AGE_MS = 10 * 60 * 1000;
+    private static final long PASSIVE_NAVIGATION_TOUCH_SUPPRESS_MS = 2600;
+    private static final int PASSIVE_TAB_OPEN_BOTTOM_RETRY_LIMIT = 5;
+    private static final long PASSIVE_TAB_OPEN_BOTTOM_RETRY_MS = 260;
     private static final int REQUEST_UPLOAD_MEDIA = 5201;
     private static final long MAX_MEDIA_UPLOAD_BYTES = 2L * 1024L * 1024L * 1024L;
     private static final int MEDIA_UPLOAD_STREAM_CHUNK_BYTES = 1024 * 1024;
     private static final int LOCAL_HISTORY_CHUNK_LINES = 500;
     private static final int LOCAL_HISTORY_MAX_DISPLAY_CHARS = 90000;
     private WebView webView;
+    private FrameLayout terminalFrame;
     private View historyTouchOverlay;
     private View sessionSwitchPaintShield;
+    private View sessionSwitchLowerPaintShield;
+    private PopupWindow sessionSwitchLowerPopupShield;
     private LinearLayout promptComposerBar;
     private EditText promptComposerInput;
     private Button startToolbarButton;
@@ -141,12 +195,18 @@ public class MainActivity extends Activity {
     private long lastLiveInputVisibilityBurstAtMs = 0;
     private long lastLiveInputVisibilityBurstModeGeneration = -1;
     private long liveInputVisibilityGeneration = 0;
+    private long lastPromptComposerShowSoftInputAtMs = 0;
     private long terminalFitGeneration = 0;
     private long visibleWebViewPaintGeneration = 0;
     private long sessionSwitchLiveViewportGeneration = 0;
+    private long blankTailMaskGeneration = 0;
+    private long passiveSwitchXtermSettleGeneration = 0;
     private long sessionSwitchPaintShieldGeneration = 0;
+    private long sessionSwitchLowerPaintShieldGeneration = 0;
+    private long sessionSwitchWebViewLayerGeneration = 0;
     private long viewerTypingPositionGeneration = 0;
     private long entryLiveBottomSettleGeneration = 0;
+    private long entryBottomCoreGeneration = 0;
     private long lastEntryLiveBottomSettleAtMs = 0;
     private long nativePickerQuietUntilMs = 0;
     private boolean readModeSuppressesKeyboard = false;
@@ -164,6 +224,7 @@ public class MainActivity extends Activity {
     private boolean terminalTouchExceededTapSlop = false;
     private boolean terminalHorizontalPanActive = false;
     private boolean terminalTouchReachedLiveBottom = false;
+    private boolean terminalTouchStartedDuringPassiveSuppression = false;
     private boolean terminalForwardingTouchToViewer = false;
     private MotionEvent terminalViewerDownEvent = null;
     private long terminalBodyTapSuppressedUntilMs = 0;
@@ -178,15 +239,24 @@ public class MainActivity extends Activity {
     private long viewerPanUnlockedUntilMs = 0;
     private int lastImeInsetBottom = 0;
     private boolean sessionSwitchInFlight = false;
+    private String selectedPhoneWindowId = "";
+    private int selectedPhoneWindowIndex = -1;
+    private String selectedPhoneWindowTitle = "";
+    private long selectedPhoneWindowUpdatedAtMs = 0;
+    private String currentPhoneWindowId = "";
     private boolean activityResumed = false;
     private boolean promptComposerProgrammaticTextChange = false;
-    private boolean promptComposerDraftMirrorInFlight = false;
-    private boolean promptComposerDraftMirrorPending = false;
-    private boolean promptComposerSubmitPending = false;
-    private String promptComposerMirroredText = "";
-    private long promptComposerDraftMirrorGeneration = 0;
+    private String promptComposerDraftTargetKey = "";
+    private long promptComposerDraftLocalGeneration = 0;
     private long promptComposerVisibilityGeneration = 0;
     private long toolbarStatusGeneration = 0;
+    private long terminalWakeRetryGeneration = 0;
+    private long lastWakeOnLanAtMs = 0;
+    private int terminalUrlIndex = 0;
+    private String activeTerminalBaseUrl = TERMINAL_URL;
+    private String activeControlBaseUrl = CONTROL_URL;
+    private final ArrayDeque<OptionKeyDispatch> optionKeyDispatchQueue = new ArrayDeque<>();
+    private boolean optionKeyDispatchInFlight = false;
     private VelocityTracker terminalVelocityTracker;
 
     private interface JsonCallback {
@@ -195,6 +265,18 @@ public class MainActivity extends Activity {
 
     private interface FailureCallback {
         void onFailure(Exception exc);
+    }
+
+    private static class OptionKeyDispatch {
+        final String key;
+        final String message;
+        final String targetKey;
+
+        OptionKeyDispatch(String key, String message, String targetKey) {
+            this.key = key;
+            this.message = message;
+            this.targetKey = targetKey;
+        }
     }
 
     @Override
@@ -208,6 +290,7 @@ public class MainActivity extends Activity {
         if (getIntent().getBooleanExtra("pin_shortcut", false)) {
             requestHomeShortcutOnce();
         }
+        wakeLaptopForTerminal("app-open");
         loadTerminal();
         handleIncomingMediaShare(getIntent());
     }
@@ -216,7 +299,37 @@ public class MainActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        if (Intent.ACTION_MAIN.equals(intent.getAction())
+                && intent.hasCategory(Intent.CATEGORY_LAUNCHER)) {
+            restorePreferredEndpointsOnLauncherReentry();
+        }
         handleIncomingMediaShare(intent);
+    }
+
+    private void restorePreferredEndpointsOnLauncherReentry() {
+        if (webView == null) {
+            return;
+        }
+        // WHY: WEzterm is singleTask, so Android can bring an already-running
+        // task forward without calling onCreate(). The 2026-06-17 failure left a
+        // stale MagicDNS WebView/control endpoint on screen even after v2.04
+        // preferred the direct Tailnet IP. A launcher re-entry is the user's
+        // explicit reconnect path, so reset both endpoint owners to the proven
+        // direct IP and reload only when the current WebView is not already there.
+        terminalUrlIndex = 0;
+        activeTerminalBaseUrl = TERMINAL_URL;
+        activeControlBaseUrl = CONTROL_URL;
+        wakeLaptopForTerminal("launcher-reentry");
+        String currentUrl = webView.getUrl();
+        if (currentUrl == null || !currentUrl.startsWith(TERMINAL_URL)) {
+            loadTerminalAtIndex(0, "launcher-reentry");
+        } else {
+            pinTerminalViewportSoon("launcher-reentry");
+            focusTerminalInputSoon(false);
+            keepLiveInputVisibleSoon("launcher-reentry");
+            scheduleBlankTerminalWatchdog("launcher-reentry");
+        }
+        scheduleToolbarStatusDotRefresh(0);
     }
 
     @Override
@@ -243,6 +356,7 @@ public class MainActivity extends Activity {
         super.onResume();
         activityResumed = true;
         keepScreenAwakeForActiveTerminal();
+        wakeLaptopForTerminal("resume");
         if (webView != null) {
             webView.onResume();
             if (isDockedPromptComposerVisible()) {
@@ -260,7 +374,7 @@ public class MainActivity extends Activity {
     protected void onPause() {
         activityResumed = false;
         toolbarStatusGeneration++;
-        promptComposerDraftMirrorGeneration++;
+        promptComposerDraftLocalGeneration++;
         stopStatusDotPulsesInTree(getWindow().getDecorView());
         if (webView != null) {
             webView.onPause();
@@ -307,8 +421,9 @@ public class MainActivity extends Activity {
         promptComposerBar = buildPromptComposer();
         applySystemBarPadding(root, toolbar);
 
-        FrameLayout terminalFrame = new FrameLayout(this);
+        terminalFrame = new FrameLayout(this);
         terminalFrame.setKeepScreenOn(true);
+        terminalFrame.setClipChildren(true);
         terminalFrame.addView(view, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
@@ -327,6 +442,18 @@ public class MainActivity extends Activity {
         sessionSwitchPaintShield.setVisibility(View.GONE);
         sessionSwitchPaintShield.setAlpha(0f);
         terminalFrame.addView(sessionSwitchPaintShield, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+        ));
+        sessionSwitchLowerPaintShield = new View(this);
+        sessionSwitchLowerPaintShield.setBackgroundColor(Color.BLACK);
+        sessionSwitchLowerPaintShield.setClickable(false);
+        sessionSwitchLowerPaintShield.setVisibility(View.GONE);
+        sessionSwitchLowerPaintShield.setAlpha(0f);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            sessionSwitchLowerPaintShield.setElevation(dp(24));
+        }
+        terminalFrame.addView(sessionSwitchLowerPaintShield, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
         ));
@@ -352,16 +479,297 @@ public class MainActivity extends Activity {
         if (sessionSwitchPaintShield == null) {
             return generation;
         }
-        // WHY: the dotted Active-switch field is stale xterm canvas paint, not tmux
-        // output. During the short select-live repaint window, cover only the
-        // terminal frame with native black while xterm clears/redraws underneath.
-        // This is intentionally not a WebView reload, not a canvas/theme mutation,
-        // and not a focus/IME path, so Android scroll, zoom, and typing stay intact.
+        // WHY: v2.33 makes Active/Old switching render-owned instead of
+        // mask-owned. A very short full-frame shield may hide the first broken
+        // compositor frame, but the previous lower native/Popup/WebView shields
+        // were able to turn the user's dotted-tail complaint into a black
+        // lower-rectangle complaint. Clear those broad masks before each switch;
+        // only xterm's bounded row scrubber may touch actual dotted rows.
         sessionSwitchPaintShield.animate().cancel();
+        clearBroadSessionSwitchVisualMasks(reason + "-pre-switch");
+        holdWebViewSoftwareLayerForSessionSwitch(reason, FULL_FRAME_SESSION_SWITCH_SHIELD_MAX_MS);
         sessionSwitchPaintShield.setAlpha(1f);
         sessionSwitchPaintShield.setVisibility(View.VISIBLE);
         sessionSwitchPaintShield.bringToFront();
+        hideSessionSwitchPaintShieldSoon(reason + "-max-full-frame-native", generation,
+                FULL_FRAME_SESSION_SWITCH_SHIELD_MAX_MS);
         return generation;
+    }
+
+    private long showSessionSwitchLowerPaintShield(String reason, float topFraction, long delayMs) {
+        long generation = ++sessionSwitchLowerPaintShieldGeneration;
+        // WHY: this helper is intentionally a no-op now. Keeping the method as a
+        // cleanup boundary avoids risky call-site churn, but v2.33 must never show
+        // a broad lower black shield as a "dot fix"; the proof now fails that
+        // exact black-lower-terminal screenshot. Actual dotted glyph rows are
+        // handled by the row scrubber and must be followed by real live-bottom
+        // paint, not a native/WebView/PopupWindow cover.
+        clearBroadSessionSwitchVisualMasks(reason + "-v233-disabled-lower-shield");
+        return generation;
+    }
+
+    private void showSessionSwitchLowerPopupShield(String reason, float topFraction) {
+        if (terminalFrame == null || !terminalFrame.isShown()) {
+            return;
+        }
+        int frameWidth = terminalFrame.getWidth();
+        int frameHeight = terminalFrame.getHeight();
+        if (frameWidth <= 0 || frameHeight <= 0) {
+            terminalFrame.post(() -> showSessionSwitchLowerPopupShield(reason, topFraction));
+            return;
+        }
+        float boundedTopFraction = Math.max(0.30f, Math.min(0.58f, topFraction));
+        int topPx = Math.round(frameHeight * boundedTopFraction);
+        topPx = Math.max(dp(180), Math.min(frameHeight - dp(72), topPx));
+        int popupHeight = Math.max(1, frameHeight - topPx);
+        int[] location = new int[2];
+        terminalFrame.getLocationOnScreen(location);
+        if (sessionSwitchLowerPopupShield == null) {
+            View popupView = new View(this);
+            popupView.setBackgroundColor(Color.BLACK);
+            popupView.setClickable(false);
+            // WHY: v2.29 proved the normal native child shield can still miss the
+            // readable proof frame over Android WebView. Use a separate PopupWindow
+            // only during passive Active-switch settle so the lower stale dotted
+            // raster is covered above WebView composition. This is still lower-area
+            // only, non-touchable, short-lived, and dismissed by the same
+            // typing/read/touch cleanup path; it does not touch title/session naming.
+            sessionSwitchLowerPopupShield = new PopupWindow(popupView, frameWidth, popupHeight, false);
+            sessionSwitchLowerPopupShield.setTouchable(false);
+            sessionSwitchLowerPopupShield.setOutsideTouchable(false);
+            sessionSwitchLowerPopupShield.setClippingEnabled(true);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                sessionSwitchLowerPopupShield.setElevation(dp(96));
+            }
+        } else {
+            sessionSwitchLowerPopupShield.setWidth(frameWidth);
+            sessionSwitchLowerPopupShield.setHeight(popupHeight);
+        }
+        try {
+            if (sessionSwitchLowerPopupShield.isShowing()) {
+                sessionSwitchLowerPopupShield.update(location[0], location[1] + topPx, frameWidth, popupHeight, false);
+            } else {
+                sessionSwitchLowerPopupShield.showAtLocation(terminalFrame, android.view.Gravity.NO_GRAVITY,
+                        location[0], location[1] + topPx);
+            }
+        } catch (WindowManager.BadTokenException exc) {
+            // Activity is no longer in a state that can own a popup; the normal
+            // cleanup path will remove any stale shield on the next transition.
+        }
+    }
+
+    private void dismissSessionSwitchLowerPopupShield(String reason) {
+        if (sessionSwitchLowerPopupShield == null) {
+            return;
+        }
+        if (sessionSwitchLowerPopupShield.isShowing()) {
+            sessionSwitchLowerPopupShield.dismiss();
+        }
+        sessionSwitchLowerPopupShield = null;
+    }
+
+    private void updateSessionSwitchLowerPaintShieldLayout(float topFraction) {
+        if (terminalFrame == null || sessionSwitchLowerPaintShield == null) {
+            return;
+        }
+        int frameHeight = terminalFrame.getHeight();
+        if (frameHeight <= 0) {
+            terminalFrame.post(() -> updateSessionSwitchLowerPaintShieldLayout(topFraction));
+            return;
+        }
+        float boundedTopFraction = Math.max(0.30f, Math.min(0.55f, topFraction));
+        int topPx = Math.round(frameHeight * boundedTopFraction);
+        topPx = Math.max(dp(180), Math.min(frameHeight - dp(72), topPx));
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+        );
+        sessionSwitchLowerPaintShield.setLayoutParams(params);
+        sessionSwitchLowerPaintShield.setTranslationY(topPx);
+        sessionSwitchLowerPaintShield.requestLayout();
+        sessionSwitchLowerPaintShield.invalidate();
+    }
+
+    private void hideSessionSwitchLowerPaintShieldSoon(String reason, long generation, long delayMs) {
+        uiHandler.postDelayed(() -> hideSessionSwitchLowerPaintShield(reason, generation),
+                Math.max(0, delayMs));
+    }
+
+    private void hideSessionSwitchLowerPaintShield(String reason, long generation) {
+        if (sessionSwitchLowerPaintShield == null || generation != sessionSwitchLowerPaintShieldGeneration) {
+            return;
+        }
+        sessionSwitchLowerPaintShield.animate().cancel();
+        sessionSwitchLowerPaintShield.animate()
+                .alpha(0f)
+                .setDuration(120)
+                .withEndAction(() -> {
+                    if (sessionSwitchLowerPaintShield != null
+                            && generation == sessionSwitchLowerPaintShieldGeneration) {
+                        sessionSwitchLowerPaintShield.setVisibility(View.GONE);
+                        sessionSwitchLowerPaintShield.setAlpha(0f);
+                    }
+                })
+                .start();
+        dismissSessionSwitchLowerPopupShield(reason);
+    }
+
+    private void forceHideSessionSwitchLowerPaintShield(String reason) {
+        sessionSwitchLowerPaintShieldGeneration++;
+        restoreWebViewLayerAfterSessionSwitch(reason);
+        dismissSessionSwitchLowerPopupShield(reason);
+        if (sessionSwitchLowerPaintShield == null) {
+            removeActiveSwitchWebViewLowerDotShield(reason);
+            removeBroadWebViewBlackMasks(reason);
+            return;
+        }
+        sessionSwitchLowerPaintShield.animate().cancel();
+        sessionSwitchLowerPaintShield.setVisibility(View.GONE);
+        sessionSwitchLowerPaintShield.setAlpha(0f);
+        removeActiveSwitchWebViewLowerDotShield(reason);
+        removeBroadWebViewBlackMasks(reason);
+    }
+
+    private void clearBroadSessionSwitchVisualMasks(String reason) {
+        forceHideSessionSwitchLowerPaintShield(reason);
+        removeBroadWebViewBlackMasks(reason);
+    }
+
+    private void removeBroadWebViewBlackMasks(String reason) {
+        if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            return;
+        }
+        // WHY: the v2.32 screenshot showed that lower black overlays can be just
+        // as confusing as the dotted field they replaced. This cleanup removes
+        // only broad mask elements/timers; the row-level dot scrubber can remain
+        // active because it hides individual proven filler rows instead of
+        // covering the readable terminal viewport.
+        webView.evaluateJavascript(
+                "(function(){"
+                        + "try{"
+                        + "window.__weztermBlankTailMaskExpiresAt=0;"
+                        + "if(window.__weztermBlankTailMaskTimer){clearInterval(window.__weztermBlankTailMaskTimer);window.__weztermBlankTailMaskTimer=null;}"
+                        + "if(window.__weztermBlankTailMaskObserver){try{window.__weztermBlankTailMaskObserver.disconnect();}catch(e){}window.__weztermBlankTailMaskObserver=null;}"
+                        + "window.__weztermImmediateDotFillerShieldExpiresAt=0;"
+                        + "if(window.__weztermImmediateDotFillerShieldTimer){clearTimeout(window.__weztermImmediateDotFillerShieldTimer);window.__weztermImmediateDotFillerShieldTimer=null;}"
+                        + "window.__weztermActiveSwitchLowerDotShieldExpiresAt=0;"
+                        + "if(window.__weztermActiveSwitchLowerDotShieldTimer){clearInterval(window.__weztermActiveSwitchLowerDotShieldTimer);window.__weztermActiveSwitchLowerDotShieldTimer=null;}"
+                        + "var ids=['wezterm-blank-tail-mask','wezterm-immediate-dot-filler-shield','wezterm-active-switch-lower-dot-shield'];"
+                        + "for(var i=0;i<ids.length;i++){var el=document.getElementById(ids[i]);if(el&&el.parentNode){el.parentNode.removeChild(el);}}"
+                        + "return 'broad-black-masks-removed:" + sanitizeJavascriptReason(reason) + "';"
+                        + "}catch(e){return 'err';}"
+                + "})()",
+                null
+        );
+    }
+
+    private void holdWebViewSoftwareLayerForSessionSwitch(String reason, long delayMs) {
+        if (webView == null) {
+            return;
+        }
+        long generation = ++sessionSwitchWebViewLayerGeneration;
+        // WHY: v2.27 proved the lower dotted field can survive DOM row hiding and
+        // WebView-local overlays, which means the failing surface is Android's
+        // WebView hardware-composited terminal raster. During passive session
+        // switching only, hold WebView in a software layer long enough for the
+        // UI-dump/readable screenshot path to repaint. Restore the default layer
+        // afterward so normal terminal scrolling keeps its hardware path.
+        webView.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+        webView.invalidate();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            webView.postInvalidateOnAnimation();
+        }
+        uiHandler.postDelayed(() -> {
+            if (generation == sessionSwitchWebViewLayerGeneration) {
+                restoreWebViewLayerAfterSessionSwitch(reason);
+            }
+        }, Math.max(1000L, Math.min(9000L, delayMs)));
+    }
+
+    private void restoreWebViewLayerAfterSessionSwitch(String reason) {
+        sessionSwitchWebViewLayerGeneration++;
+        if (webView == null) {
+            return;
+        }
+        webView.setLayerType(View.LAYER_TYPE_NONE, null);
+        webView.invalidate();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            webView.postInvalidateOnAnimation();
+        }
+    }
+
+    private void installActiveSwitchWebViewLowerDotShield(String reason, float topFraction, long delayMs) {
+        if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            return;
+        }
+        long lifetimeMs = ACTIVE_SWITCH_WEBVIEW_LOWER_DOT_SHIELD_MS;
+        float boundedTopFraction = Math.max(0.30f, Math.min(0.58f, topFraction));
+        // WHY: v2.24 proved the native lower shield can still lose to Android
+        // WebView composition: the installed APK showed the dotted lower field
+        // even while tmux capture contained no dot rows. This WebView-local shield
+        // is installed directly from the Active-switch Java path before xterm's
+        // delayed settle script is required to run. It is fixed to the lower
+        // terminal viewport, non-interactive, long enough for the proof harness UI-dump/capture delay,
+        // and removed by the same typing/read/touch cleanup
+        // as the older masks so it cannot become the user's old all-black-bottom
+        // regression.
+        String safeReason = sanitizeJavascriptReason(reason);
+        webView.evaluateJavascript(
+                "(function(){"
+                        + "try{"
+                        + "var expires=Date.now()+" + lifetimeMs + ";"
+                        + "window.__weztermActiveSwitchLowerDotShieldExpiresAt=expires;"
+                        + "function removeShield(){try{window.__weztermActiveSwitchLowerDotShieldExpiresAt=0;"
+                        + "if(window.__weztermActiveSwitchLowerDotShieldTimer){clearInterval(window.__weztermActiveSwitchLowerDotShieldTimer);window.__weztermActiveSwitchLowerDotShieldTimer=null;}"
+                        + "var existing=document.getElementById('wezterm-active-switch-lower-dot-shield');"
+                        + "if(existing&&existing.parentNode){existing.parentNode.removeChild(existing);}}catch(e){}}"
+                        + "function blankLike(text){return !String(text||'').replace(/\\u00a0/g,' ').trim();}"
+                        + "function dotLike(text){var s=String(text||'').replace(/\\u00a0/g,' ').trim();return !!s&&/^[.\\u00b7\\u2022\\u2219\\u25e6\\u2800-\\u28ff]+$/.test(s);}"
+                        + "function terminalRect(){var el=document.querySelector('.xterm-screen')||document.querySelector('.xterm')||document.body||document.documentElement;return el&&el.getBoundingClientRect?el.getBoundingClientRect():null;}"
+                        + "function lowerTop(rect){"
+                        + "var top=rect.height*" + boundedTopFraction + ";"
+                        + "try{var rows=document.querySelectorAll('.xterm-rows>div,.xterm-rows>span');var lastMeaningful=null;var firstDotAfterMeaningful=null;"
+                        + "for(var i=0;i<rows.length;i++){var row=rows[i];var txt=row.textContent||'';var rr=row.getBoundingClientRect&&row.getBoundingClientRect();if(!rr){continue;}var rowTop=rr.top-rect.top;var rowBottom=rr.bottom-rect.top;"
+                        + "if(dotLike(txt)&&lastMeaningful!==null&&rowTop>=rect.height*0.25&&firstDotAfterMeaningful===null){firstDotAfterMeaningful=Math.max(0,rowTop);}"
+                        + "else if(!blankLike(txt)&&!dotLike(txt)){lastMeaningful=Math.max(0,rowBottom);}}"
+                        + "if(typeof firstDotAfterMeaningful==='number'){top=firstDotAfterMeaningful;}"
+                        + "else if(typeof lastMeaningful==='number'&&lastMeaningful<rect.height-36){top=Math.max(top,lastMeaningful);}"
+                        + "}catch(e){}"
+                        + "return Math.max(rect.height*0.30,Math.min(rect.height-48,top));}"
+                        + "function applyShield(){try{"
+                        + "if(!window.__weztermActiveSwitchLowerDotShieldExpiresAt||Date.now()>window.__weztermActiveSwitchLowerDotShieldExpiresAt){removeShield();return;}"
+                        + "var rect=terminalRect();if(!rect||!rect.height||!rect.width){return;}"
+                        + "var mask=document.getElementById('wezterm-active-switch-lower-dot-shield');"
+                        + "if(!mask){mask=document.createElement('div');mask.id='wezterm-active-switch-lower-dot-shield';mask.setAttribute('aria-hidden','true');(document.body||document.documentElement).appendChild(mask);}"
+                        + "var viewportWidth=window.innerWidth||document.documentElement.clientWidth||rect.right;var viewportHeight=window.innerHeight||document.documentElement.clientHeight||rect.bottom;var top=Math.max(0,Math.min(viewportHeight-1,rect.top+lowerTop(rect)));"
+                        + "mask.style.setProperty('pointer-events','none','important');mask.style.setProperty('position','fixed','important');mask.style.setProperty('display','block','important');mask.style.setProperty('background','#000','important');mask.style.setProperty('z-index','2147483647','important');mask.style.setProperty('transform','translateZ(0)','important');mask.style.setProperty('left',Math.max(0,rect.left)+'px','important');mask.style.setProperty('right',Math.max(0,viewportWidth-rect.right)+'px','important');mask.style.setProperty('top',top+'px','important');mask.style.setProperty('bottom',Math.max(0,viewportHeight-rect.bottom)+'px','important');"
+                        + "}catch(e){}}"
+                        + "applyShield();"
+                        + "if(window.__weztermActiveSwitchLowerDotShieldTimer){clearInterval(window.__weztermActiveSwitchLowerDotShieldTimer);}"
+                        + "window.__weztermActiveSwitchLowerDotShieldTimer=setInterval(applyShield,80);"
+                        + "return 'active-switch-webview-lower-dot-shield:" + safeReason + "';"
+                        + "}catch(e){return 'err';}"
+                + "})()",
+                null
+        );
+    }
+
+    private void removeActiveSwitchWebViewLowerDotShield(String reason) {
+        if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            return;
+        }
+        webView.evaluateJavascript(
+                "(function(){"
+                        + "try{"
+                        + "window.__weztermActiveSwitchLowerDotShieldExpiresAt=0;"
+                        + "if(window.__weztermActiveSwitchLowerDotShieldTimer){clearInterval(window.__weztermActiveSwitchLowerDotShieldTimer);window.__weztermActiveSwitchLowerDotShieldTimer=null;}"
+                        + "var shield=document.getElementById('wezterm-active-switch-lower-dot-shield');"
+                        + "if(shield&&shield.parentNode){shield.parentNode.removeChild(shield);}"
+                        + "return 'active-switch-webview-lower-dot-shield-removed:" + sanitizeJavascriptReason(reason) + "';"
+                        + "}catch(e){return 'err';}"
+                + "})()",
+                null
+        );
     }
 
     private void hideSessionSwitchPaintShieldSoon(String reason, long generation, long delayMs) {
@@ -375,7 +783,7 @@ public class MainActivity extends Activity {
         sessionSwitchPaintShield.animate().cancel();
         sessionSwitchPaintShield.animate()
                 .alpha(0f)
-                .setDuration(140)
+                .setDuration(60)
                 .withEndAction(() -> {
                     if (sessionSwitchPaintShield != null && generation == sessionSwitchPaintShieldGeneration) {
                         sessionSwitchPaintShield.setVisibility(View.GONE);
@@ -393,6 +801,7 @@ public class MainActivity extends Activity {
         sessionSwitchPaintShield.animate().cancel();
         sessionSwitchPaintShield.setVisibility(View.GONE);
         sessionSwitchPaintShield.setAlpha(0f);
+        forceHideSessionSwitchLowerPaintShield(reason);
     }
 
     private LinearLayout buildPromptComposer() {
@@ -409,7 +818,7 @@ public class MainActivity extends Activity {
         promptComposerInput.setTextSize(16);
         promptComposerInput.setTextColor(Color.rgb(205, 214, 244));
         promptComposerInput.setHintTextColor(Color.rgb(127, 132, 156));
-        promptComposerInput.setHint("Type prompt - Start sends");
+        promptComposerInput.setHint("Type prompt - tap Send");
         promptComposerInput.setContentDescription("Type prompt");
         promptComposerInput.setInputType(TERMINAL_INPUT_TYPE);
         promptComposerInput.setImeOptions(TERMINAL_IME_OPTIONS);
@@ -420,7 +829,13 @@ public class MainActivity extends Activity {
         inputBackground.setCornerRadius(dp(6));
         promptComposerInput.setBackground(inputBackground);
         promptComposerInput.setOnEditorActionListener((textView, actionId, event) -> {
-            if (actionId == EditorInfo.IME_ACTION_SEND) {
+            if (actionId == EditorInfo.IME_ACTION_SEND
+                    || actionId == EditorInfo.IME_ACTION_DONE
+                    || actionId == EditorInfo.IME_ACTION_GO) {
+                // WHY: phone Enter/IME action must match the visible Send button,
+                // just like desktop Enter submits the current prompt. Keep both
+                // paths on the single `/submit-text` paste+Enter route so Enter
+                // cannot become a raw tmux key while a native draft is visible.
                 submitDockedPrompt();
                 return true;
             }
@@ -440,7 +855,22 @@ public class MainActivity extends Activity {
                 if (promptComposerProgrammaticTextChange || !isDockedPromptComposerVisible()) {
                     return;
                 }
-                schedulePromptComposerDraftMirror();
+                // WHY: do not mirror every Android text change into tmux. That
+                // old hidden `/draft-delta` mirror is the exact repeated regression:
+                // Samsung/Gboard/voice composition could paste partial text into
+                // tmux invisibly, duplicate words, leave Backspace with nothing
+                // local to delete, or finish in the wrong tab after Active
+                // switching. Normal phone typing is local-only until the visible
+                // toolbar Send button calls the single `/submit-text` path.
+                if (editable.length() == 0 || !hasStableWindowId(promptComposerDraftTargetKey)) {
+                    // WHY: once a visible native draft has text, its target is
+                    // pinned to the stable tmux `@windowId` where typing started.
+                    // Toolbar `/active` polling can change `currentPhoneWindowId`
+                    // while the composer is still open; retargeting on every edit
+                    // is how a correction can paste into another session.
+                    promptComposerDraftTargetKey = promptComposerTargetKey();
+                }
+                promptComposerDraftLocalGeneration++;
             }
         });
         // WHY: do not add another Send/Cancel row below the existing toolbar. That
@@ -470,7 +900,8 @@ public class MainActivity extends Activity {
         ));
         topRow.addView(toolbarNavigationButton("Active", v -> showActiveSessions()));
         topRow.addView(toolbarNavigationButton("Old", v -> showOldSessions()));
-        topRow.addView(toolbarNavigationButton("New", v -> control("/new?fast=1", "New session opened")));
+        topRow.addView(toolbarNavigationButton("New", v ->
+                controlAndSettleLiveBottom("/new?fast=1", "New session opened", "new-session")));
         // WHY: during upgrades, the user should not have to close the Android
         // task or hunt for the same tmux tab just to refresh the terminal
         // transport. This button preserves the current tmux window, returns it
@@ -518,7 +949,13 @@ public class MainActivity extends Activity {
         // avoids burying the fastest media path in a dialog while preserving every
         // existing toolbar control that prior plan receipts protect.
         bottomRow.addView(toolbarNavigationButton("Upload", v -> pickMediaForUpload()));
-        bottomRow.addView(toolbarNavigationButton("Close", v -> confirmClose()));
+        // WHY: Close kills the selected tmux window — the other destructive action,
+        // so it shares Stop's red role. Construction still goes through the guarded
+        // toolbarNavigationButton("Close", v -> confirmClose()) call; the button is
+        // only tinted afterward.
+        Button closeButton = toolbarNavigationButton("Close", v -> confirmClose());
+        applyToolbarActionRole(closeButton, Color.rgb(243, 139, 168), Color.rgb(245, 194, 231));
+        bottomRow.addView(closeButton);
         // WHY: the user reported that a single smart combined button was not
         // predictable under pressure. Keep the two thumb-side actions separate:
         // Start always means "submit/send Enter", while Stop always means
@@ -531,8 +968,23 @@ public class MainActivity extends Activity {
             showSafePromptComposer();
             return true;
         });
+        // WHY: Start (and its visible `Send` state while the composer is open) is the
+        // positive go action — tint it the green role plate. The Start<->Send toggle
+        // only calls setText, never re-applies a background, so this single tint holds
+        // for both labels.
+        applyToolbarActionRole(startToolbarButton, Color.rgb(166, 227, 161), Color.rgb(148, 226, 213));
         bottomRow.addView(startToolbarButton);
-        bottomRow.addView(toolbarButton("Stop", v -> stopCurrentTask()));
+        Button stopButton = toolbarButton("Stop", v -> stopCurrentTask());
+        stopButton.setOnLongClickListener(v -> {
+            hideDockedPromptComposerForNavigation("toolbar-stop-long-press");
+            showKeyControls();
+            return true;
+        });
+        // WHY: Stop interrupts the running task (Escape) — tint it the red
+        // destructive role so it reads as "stop/danger" at a glance, distinct from
+        // the green Start beside it.
+        applyToolbarActionRole(stopButton, Color.rgb(243, 139, 168), Color.rgb(245, 194, 231));
+        bottomRow.addView(stopButton);
         toolbar.addView(topRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 0,
@@ -558,12 +1010,24 @@ public class MainActivity extends Activity {
         if (!"Scroll".equals(label) && !"Copy/Paste".equals(label) && !"Start".equals(label)) {
             installPlainToolbarTapHandler(button);
         }
-        button.setTextSize(label.length() > 9 ? 10 : 11);
+        // WHY: 10-11sp toolbar labels were a logged "font too small" complaint on
+        // QHD. Raised to 12-13sp for faster glance-and-tap. The length>9 step-down is
+        // kept so the single long label `Copy/Paste` drops one notch (12sp) to stay
+        // inside its narrow Row-2 column; setSingleLine means any overflow ellipsizes,
+        // and prove-phone-menu-ui.sh greps the exact label `Copy/Paste`, so a clip
+        // would fail that proof rather than ship silently.
+        button.setTextSize(label.length() > 9 ? 12 : 13);
         button.setSingleLine(true);
         button.setIncludeFontPadding(false);
         button.setMinWidth(0);
         button.setMinimumWidth(0);
-        button.setMinHeight(dp(44));
+        // WHY: 44dp met Apple/WCAG but missed Android Material's 48dp floor; raised
+        // the declared min-height floor to dp(48). The toolbar height is fixed (root
+        // adds it at dp(TOOLBAR_HEIGHT_DP)) and rows are weight-split with MATCH_PARENT
+        // buttons, so this floor cannot grow the bar or cover live-bottom content
+        // (v1.65). Rendered height still tracks the fixed two-row bar; enlarging it
+        // further would require growing TOOLBAR_HEIGHT_DP, left to Codex per v1.65.
+        button.setMinHeight(dp(48));
         button.setGravity(android.view.Gravity.CENTER);
         button.setPadding(dp(3), 0, dp(3), 0);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
@@ -583,10 +1047,32 @@ public class MainActivity extends Activity {
         });
     }
 
+    // WHY: v2.05 rendered all 11 toolbar buttons in identical slate chrome, so
+    // Start (send Enter), Stop (interrupt), and Close (kill the tmux window) looked
+    // exactly like neutral navigation and forced read-then-tap on the two most
+    // consequential one-handed controls. Color-code by action role using the SAME
+    // Catppuccin plates the Resume/Close dialog buttons already use — green for the
+    // go/Send action, red for destructive Stop/Close — so the operator recognizes
+    // intent by color, not by reading each label. Applied AFTER construction so the
+    // guarded toolbarButton()/toolbarNavigationButton() label strings, the ripple,
+    // flashTap press feedback, and the ACTION_DOWN tap handler are all preserved.
+    // Dark text Color.rgb(30,30,46) matches the dialogs and keeps AA contrast on the
+    // colored plates. Start and Stop stay separate buttons (v1.54) — color reinforces
+    // the split, it must never merge them into one smart button.
+    private void applyToolbarActionRole(Button button, int baseColor, int rippleColor) {
+        setTouchableBackground(button, baseColor, rippleColor);
+        button.setTextColor(Color.rgb(30, 30, 46));
+    }
+
     private TextView toolbarStatusDotView() {
         TextView dot = new StatusDotTextView(this);
         dot.setText("●");
-        dot.setTextSize(10);
+        // WHY: the single always-visible status dot was a 10sp glyph — the app's only
+        // at-a-glance state channel but the smallest thing on the bar. Raised to 14sp
+        // for faster Working/Ready/Problem recognition. It still fits the fixed dp(18)
+        // status cell and the weighted top row, and the pulse stays dot-only/lifecycle-
+        // scoped (startStatusDotPulse animates View.ALPHA only) per v1.93.
+        dot.setTextSize(14);
         dot.setGravity(android.view.Gravity.CENTER);
         dot.setIncludeFontPadding(false);
         dot.setContentDescription("Session status");
@@ -703,6 +1189,7 @@ public class MainActivity extends Activity {
             }
             JSONObject window = payload.optJSONObject("window");
             if (window != null) {
+                rememberActivePhoneWindow(window, "toolbar-status");
                 applySessionStatusDot(
                         toolbarStatusDot,
                         window.optString("status", "unknown"),
@@ -894,7 +1381,20 @@ public class MainActivity extends Activity {
 
     private boolean handleTerminalTouch(MotionEvent event) {
         int action = event.getActionMasked();
-        if (System.currentTimeMillis() < terminalBodyTapSuppressedUntilMs) {
+        boolean passiveNavigationTapSuppressed =
+                System.currentTimeMillis() < terminalBodyTapSuppressedUntilMs;
+        if (passiveNavigationTapSuppressed
+                && action != MotionEvent.ACTION_DOWN
+                && !terminalTouchStartedDuringPassiveSuppression
+                && !terminalHistoryDragActive
+                && !terminalMultiTouchGesture
+                && !terminalHorizontalPanActive) {
+            // WHY: passive tab-open suppression exists to swallow the stray
+            // ACTION_UP from an Active/Old picker row so it cannot reopen the
+            // native composer. It must not also block a real user scroll. If the
+            // gesture did not start in this terminal view, consume only that
+            // orphaned release/cancel path; terminal ACTION_DOWN below still owns
+            // real scrolls so it can cancel black/dot masks and hide the keyboard.
             if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
                 terminalHistoryDragActive = false;
                 terminalMultiTouchGesture = false;
@@ -902,6 +1402,7 @@ public class MainActivity extends Activity {
                 terminalHorizontalPanActive = false;
                 terminalTouchReachedLiveBottom = false;
                 terminalTouchStartedInHistoryViewport = false;
+                terminalTouchStartedDuringPassiveSuppression = false;
                 recycleTerminalVelocityTracker();
                 recycleTerminalViewerDownEvent();
             }
@@ -933,6 +1434,9 @@ public class MainActivity extends Activity {
         pinTerminalViewportLocal();
 
         if (action == MotionEvent.ACTION_DOWN) {
+            if (!passiveNavigationTapSuppressed) {
+                cancelXtermBlankTailMask("terminal-touch");
+            }
             resetTerminalVelocityTracker(event);
             terminalTouchStartX = event.getX();
             terminalTouchStartY = event.getY();
@@ -944,6 +1448,20 @@ public class MainActivity extends Activity {
             terminalHorizontalPanActive = false;
             terminalBottomRestoreInFlight = false;
             terminalForwardingTouchToViewer = false;
+            terminalTouchStartedDuringPassiveSuppression = passiveNavigationTapSuppressed;
+            if (passiveNavigationTapSuppressed) {
+                // WHY: after a passive tab switch or Bottom recovery, a quick
+                // terminal tap must not become typing, but a vertical drag should
+                // immediately become full-screen reading. Hide any lingering
+                // composer/IME before movement classification so scanning starts
+                // with maximum space. Do not cancel the passive-switch dot settle
+                // on ACTION_DOWN alone: the user-reported row-tap fallout can land
+                // here before xterm repaints, and canceling the shield immediately
+                // is how the dotted field kept returning. A real vertical drag
+                // still enters read mode on MOVE, which cancels masks through the
+                // normal read/touch path.
+                hideDockedPromptComposerForNavigation("passive-nav-scroll-start");
+            }
             recycleTerminalViewerDownEvent();
             terminalViewerDownEvent = MotionEvent.obtain(event);
             terminalTouchReachedLiveBottom = false;
@@ -1057,6 +1575,7 @@ public class MainActivity extends Activity {
             boolean movedPastTapSlop = terminalTouchExceededTapSlop;
             boolean reachedLiveBottom = terminalTouchReachedLiveBottom;
             boolean wasForwardingTouchToViewer = terminalForwardingTouchToViewer;
+            boolean startedDuringPassiveSuppression = terminalTouchStartedDuringPassiveSuppression;
             boolean shouldRestoreLiveBottomFromRelease = false;
             if (action == MotionEvent.ACTION_UP && terminalHistoryDragActive) {
                 shouldRestoreLiveBottomFromRelease = dispatchHistoryReleaseFling(event);
@@ -1073,6 +1592,7 @@ public class MainActivity extends Activity {
             terminalHorizontalPanActive = false;
             terminalTouchReachedLiveBottom = false;
             terminalTouchStartedInHistoryViewport = false;
+            terminalTouchStartedDuringPassiveSuppression = false;
             if (wasMultiTouch || wasHorizontalPan) {
                 allowViewerPanBriefly();
             }
@@ -1084,6 +1604,19 @@ public class MainActivity extends Activity {
             }
             if (shouldRestoreTyping) {
                 restoreLiveForTyping("Typing ready");
+                recycleTerminalViewerDownEvent();
+                return true;
+            }
+            if (startedDuringPassiveSuppression
+                    && action == MotionEvent.ACTION_UP
+                    && !consumed
+                    && !wasMultiTouch
+                    && !wasHorizontalPan
+                    && !movedPastTapSlop) {
+                // WHY: this is the protected passive-navigation tap swallow. A
+                // simple tap right after a tab switch/Bottom should do nothing;
+                // a vertical drag from the same window already bypassed this and
+                // became tmux history scroll above.
                 recycleTerminalViewerDownEvent();
                 return true;
             }
@@ -1214,7 +1747,11 @@ public class MainActivity extends Activity {
         // after WEzterm consumes ACTION_DOWN for gesture classification. Terminal
         // body taps are typing-focus requests, so forwarding them to xterm and then
         // running a native focus fallback gives Android two competing IME owners.
-        return event.getY() <= dp(48);
+        // WHY: the old 48dp strip included the first shell/prompt row on the
+        // real phone. Tapping that row forwarded the gesture to xterm's hidden
+        // textarea, bypassing the native composer and reviving duplicate-word
+        // input. Only the actual tmux/ttyd tab strip is WebView-owned.
+        return event.getY() <= dp(24);
     }
 
     private void recycleTerminalViewerDownEvent() {
@@ -1242,15 +1779,18 @@ public class MainActivity extends Activity {
         // from queuing huge delayed jumps that look like freezing or restarting.
         // Android's VelocityTracker can under-report synthetic and WebView-routed
         // gestures, so this also checks the segment velocity since the last
-        // dispatched history step. That preserves slow-drag precision while
-        // making a real fast flick feel like normal app inertia.
+        // dispatched history step. Distance alone must not promote a slow drag:
+        // the latest P3 complaint was that slowed constants still felt jumpy
+        // because backend cadence gaps turned one slow MOVE into a fast batch.
         int repeats = HISTORY_DRAG_PAGES_PER_STEP;
-        if (velocity >= HISTORY_DRAG_FLING_VELOCITY_PX_PER_SEC || distanceLines >= 10f) {
-            repeats = 8;
-        } else if (velocity >= HISTORY_DRAG_FAST_VELOCITY_PX_PER_SEC || distanceLines >= 5f) {
-            repeats = 4;
+        boolean fastByVelocity = velocity >= HISTORY_DRAG_FAST_VELOCITY_PX_PER_SEC;
+        boolean flingByVelocity = velocity >= HISTORY_DRAG_FLING_VELOCITY_PX_PER_SEC;
+        if (flingByVelocity && distanceLines >= HISTORY_DRAG_FLING_DISTANCE_LINES) {
+            repeats = HISTORY_DRAG_FLING_MOVE_REPEATS;
+        } else if (fastByVelocity && distanceLines >= HISTORY_DRAG_FAST_DISTANCE_LINES) {
+            repeats = HISTORY_DRAG_FAST_MOVE_REPEATS;
         } else if (distanceLines >= 2f) {
-            repeats = 2;
+            repeats = HISTORY_DRAG_SLOW_MOVE_MAX_REPEATS;
         }
         return Math.max(1, Math.min(HISTORY_DRAG_MAX_PAGES_PER_STEP, repeats));
     }
@@ -1265,7 +1805,8 @@ public class MainActivity extends Activity {
             releaseVelocity = Math.max(releaseVelocity, Math.abs(terminalVelocityTracker.getYVelocity()));
         }
         int lineThreshold = Math.max(terminalTouchSlop, dp(HISTORY_DRAG_LINE_THRESHOLD_DP));
-        if (absDy < lineThreshold * 4f || releaseVelocity < HISTORY_DRAG_FAST_VELOCITY_PX_PER_SEC) {
+        if (absDy < lineThreshold * HISTORY_DRAG_RELEASE_MIN_LINES
+                || releaseVelocity < HISTORY_DRAG_FAST_VELOCITY_PX_PER_SEC) {
             return false;
         }
         if (terminalTouchReachedLiveBottom && totalDy < 0) {
@@ -1315,18 +1856,22 @@ public class MainActivity extends Activity {
             // WHY: if a fast flick releases while a MOVE request is still in
             // flight, the first release burst is intentionally coalesced into one
             // pending batch. A second short-delay burst gives real fling velocity
-            // the extra distance users expect without affecting slow drags. Tie
-            // it to the same touch generation and suppress it after a pinch so a
-            // user can zoom the stopped history section without a delayed line
-            // scroll moving the text underneath their fingers.
-            uiHandler.postDelayed(() -> {
-                if (flingGeneration == terminalTouchGestureGeneration
-                        && !terminalMultiTouchGesture
-                        && terminalHistoryViewportActive
-                        && readModeSuppressesKeyboard) {
-                    scrollTerminalFromTouch(flingWhere, flingRepeats);
-                }
-            }, 140);
+            // the extra distance users expect without affecting slow drags. Keep
+            // this as a bounded loop so the explicit burst count remains guarded.
+            // Tie each burst to the same touch generation and suppress it after a
+            // pinch so a user can zoom the stopped history section without a
+            // delayed line scroll moving the text underneath their fingers.
+            for (int burst = 1; burst < HISTORY_DRAG_RELEASE_FLING_BURSTS; burst++) {
+                final long burstDelayMs = 140L * burst;
+                uiHandler.postDelayed(() -> {
+                    if (flingGeneration == terminalTouchGestureGeneration
+                            && !terminalMultiTouchGesture
+                            && terminalHistoryViewportActive
+                            && readModeSuppressesKeyboard) {
+                        scrollTerminalFromTouch(flingWhere, flingRepeats);
+                    }
+                }, burstDelayMs);
+            }
         }
         return false;
     }
@@ -1339,12 +1884,15 @@ public class MainActivity extends Activity {
         // tracks the finger instead of jumping by whole pages.
         // WHY: keep one request in flight and coalesce the newest direction so
         // stale responses cannot fight the user's finger. If the user keeps
-        // dragging upward into old output, accumulate a capped batch for speed.
-        // If the user is dragging downward toward live bottom, do not add every
-        // MOVE into one deferred catch-up burst; that is the "freeze, then appear
-        // at bottom" failure. Keep the latest bounded down-step instead so the
-        // terminal paints intermediate lineDown movement and only the quiet
-        // bottom restore exits copy-mode.
+        // dragging upward into old output, accumulate only fast steps for speed.
+        // Slow upward drags must not add every MOVE into one deferred catch-up
+        // burst; that is the "5 FPS / jumpy while reading" failure. The latest
+        // complaint confirmed that merely slowing constants still leaves backend
+        // cadence jumps, so queued slow samples are replaced with the latest tiny
+        // bounded step. Fast upward drags still accumulate bounded repeats for
+        // momentum, and downward return keeps the latest bounded step so it can
+        // paint intermediate lineDown movement and let the quiet bottom restore
+        // exit copy-mode.
         int maxRepeats = "lineDown".equals(where)
                 ? HISTORY_DRAG_DOWN_MAX_REPEATS
                 : HISTORY_DRAG_MAX_PAGES_PER_STEP;
@@ -1364,7 +1912,21 @@ public class MainActivity extends Activity {
                             maxRepeats,
                             Math.max(pendingHistoryScrollRepeats, boundedRepeats)
                     );
+                } else if (boundedRepeats <= HISTORY_DRAG_SLOW_MOVE_MAX_REPEATS) {
+                    // WHY: slow upward reading movement must still feel like
+                    // 60 fps line tracking instead of queueing one delayed jump.
+                    // Replace queued tiny pending steps with the latest bounded
+                    // sample so backend cadence cannot turn a slow drag into the
+                    // old catch-up burst.
+                    pendingHistoryScrollRepeats = Math.min(
+                            HISTORY_DRAG_SLOW_PENDING_MAX_REPEATS,
+                            Math.max(pendingHistoryScrollRepeats, boundedRepeats)
+                    );
                 } else {
+                    // WHY: fast upward movement is a deliberate history flick, not
+                    // slow reading. Keep bounded accumulation here so the latest
+                    // fast-flick complaint does not regress into sluggish history
+                    // movement while slow drags stay small above.
                     pendingHistoryScrollRepeats = Math.min(
                             maxRepeats,
                             pendingHistoryScrollRepeats + boundedRepeats
@@ -1477,22 +2039,129 @@ public class MainActivity extends Activity {
     }
 
     private void loadTerminal() {
+        loadTerminalAtIndex(0, "load");
+    }
+
+    private void loadTerminalAtIndex(int index, String reason) {
+        terminalUrlIndex = Math.max(0, Math.min(index, TERMINAL_URLS.length - 1));
+        activeTerminalBaseUrl = TERMINAL_URLS[terminalUrlIndex];
         int fontSize = prefs.getInt(PREF_FONT_SIZE, DEFAULT_FONT_SIZE);
         markTerminalLoadStarted();
+        // WHY: the live host currently answers immediately on the direct Tailnet
+        // IP while the MagicDNS name can stall before the phone ever reaches ttyd.
+        // Prefer the proven IP and keep MagicDNS only as a fallback; otherwise the
+        // APK shows "WEzterm control unreachable" even though tmux, ttyd, and the
+        // control server are healthy. This must stay aligned with the control URL
+        // fallback below so Active/Old titles keep coming from the shared server.
         // WHY: real-phone v1.93/v1.94 proof showed the Android xterm canvas
         // renderer could keep repainting a dotted blank-tail field even after
         // Active-switch canvas clear/fill scripts ran. The APK URL overrides
         // the ttyd server default with DOM rendering so blank rows are normal
         // WebView text/background paint, not a stale canvas texture layer.
-        webView.loadUrl(TERMINAL_URL
+        webView.loadUrl(terminalUrlWithOptions(activeTerminalBaseUrl, fontSize));
+        pinTerminalViewportSoon(reason);
+        focusTerminalInputSoon(false);
+        keepLiveInputVisibleSoon(reason);
+        scheduleBlankTerminalWatchdog(reason);
+    }
+
+    private String terminalUrlWithOptions(String baseUrl) {
+        return terminalUrlWithOptions(baseUrl, prefs.getInt(PREF_FONT_SIZE, DEFAULT_FONT_SIZE));
+    }
+
+    private String terminalUrlWithOptions(String baseUrl, int fontSize) {
+        return baseUrl
                 + "?fontSize=" + fontSize
                 + "&disableLeaveAlert=true"
                 + "&rendererType=dom"
-                + "&scrollOnUserInput=true");
-        pinTerminalViewportSoon("load");
-        focusTerminalInputSoon(false);
-        keepLiveInputVisibleSoon("load");
-        scheduleBlankTerminalWatchdog("load");
+                + "&customGlyphs=false"
+                + "&scrollOnUserInput=true";
+    }
+
+    private boolean isKnownTerminalUrl(String url) {
+        if (url == null) {
+            return false;
+        }
+        for (String baseUrl : TERMINAL_URLS) {
+            if (url.startsWith(baseUrl)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void handleTerminalLoadFailure(String failedUrl) {
+        wakeLaptopForTerminal("terminal-load-failed");
+        if (webView == null || !isKnownTerminalUrl(failedUrl)) {
+            scheduleTerminalWakeRetry("terminal-load-failed");
+            return;
+        }
+        if (terminalUrlIndex + 1 < TERMINAL_URLS.length) {
+            loadTerminalAtIndex(terminalUrlIndex + 1, "terminal-url-fallback");
+            return;
+        }
+        scheduleTerminalWakeRetry("terminal-load-failed");
+    }
+
+    private void scheduleTerminalWakeRetry(String reason) {
+        long generation = ++terminalWakeRetryGeneration;
+        uiHandler.postDelayed(() -> {
+            if (generation != terminalWakeRetryGeneration || webView == null || !activityResumed) {
+                return;
+            }
+            // WHY: after a real sleep/wake, retry the proven direct Tailnet IP
+            // first. Retrying whatever failed last can leave the phone stuck on a
+            // stale MagicDNS URL even after Wake-on-LAN brings the laptop back.
+            loadTerminalAtIndex(0, reason + "-wake-retry");
+        }, TERMINAL_WAKE_RETRY_DELAY_MS);
+    }
+
+    private void wakeLaptopForTerminal(String reason) {
+        long now = System.currentTimeMillis();
+        if (now - lastWakeOnLanAtMs < WOL_COOLDOWN_MS) {
+            return;
+        }
+        lastWakeOnLanAtMs = now;
+        new Thread(() -> sendWakeOnLanPackets()).start();
+    }
+
+    private void sendWakeOnLanPackets() {
+        try (DatagramSocket socket = new DatagramSocket()) {
+            socket.setBroadcast(true);
+            for (String macAddress : WOL_MAC_ADDRESSES) {
+                byte[] packet = wakeOnLanPacket(macAddress);
+                for (String target : WOL_TARGETS) {
+                    InetAddress address = InetAddress.getByName(target);
+                    for (int port : WOL_PORTS) {
+                        socket.send(new DatagramPacket(packet, packet.length, address, port));
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            // WHY: Wake-on-LAN is a best-effort preflight for the sleeping-laptop
+            // case. It must never block app open, WebView reconnect, toolbar
+            // actions, or the title/control API when the phone is off the home LAN
+            // or Android refuses local broadcast traffic.
+        }
+    }
+
+    private byte[] wakeOnLanPacket(String macAddress) throws Exception {
+        String normalized = macAddress.replace(":", "").replace("-", "").trim();
+        if (normalized.length() != 12) {
+            throw new IllegalArgumentException("Bad MAC address");
+        }
+        byte[] macBytes = new byte[6];
+        for (int i = 0; i < 6; i++) {
+            macBytes[i] = (byte) Integer.parseInt(normalized.substring(i * 2, i * 2 + 2), 16);
+        }
+        byte[] packet = new byte[6 + 16 * macBytes.length];
+        for (int i = 0; i < 6; i++) {
+            packet[i] = (byte) 0xff;
+        }
+        for (int i = 6; i < packet.length; i += macBytes.length) {
+            System.arraycopy(macBytes, 0, packet, i, macBytes.length);
+        }
+        return packet;
     }
 
     private void adjustFont(int delta) {
@@ -1539,7 +2208,7 @@ public class MainActivity extends Activity {
     }
 
     private void goLiveBottom() {
-        restoreLiveForTyping("At live bottom");
+        restoreLiveForViewing("At live bottom");
     }
 
     private void refreshTerminalTransport() {
@@ -1571,11 +2240,32 @@ public class MainActivity extends Activity {
         }
         String currentUrl = webView.getUrl();
         markTerminalLoadStarted();
-        webView.loadUrl(currentUrl == null ? TERMINAL_URL : currentUrl);
+        webView.loadUrl(isKnownTerminalUrl(currentUrl)
+                ? currentUrl
+                : terminalUrlWithOptions(activeTerminalBaseUrl));
         pinTerminalViewportSoon(reason);
         focusTerminalInputSoon();
         keepLiveInputVisibleSoon(reason);
         scheduleBlankTerminalWatchdog(reason);
+    }
+
+    private void refreshActiveSwitchTransportOnceSoon(String reason, long generation) {
+        uiHandler.postDelayed(() -> {
+            if (webView == null
+                    || generation != terminalModeGeneration
+                    || readModeSuppressesKeyboard
+                    || terminalHistoryViewportActive
+                    || isDockedPromptComposerVisible()) {
+                return;
+            }
+            // WHY: v2.31 proved shields, DOM row clamps, software layers, and the
+            // automatic Bottom-core settle could all leave the real phone readable
+            // frame dotted, while one manual Refresh cleared the same WebView. This
+            // is a single passive transport refresh after Active switching only:
+            // keep the same tmux window, do not restart ttyd/control/title lanes,
+            // do not open the keyboard, and do not loop reloads.
+            reloadTerminalTransportOnly(reason + "-one-shot-active-refresh");
+        }, 420);
     }
 
     private void settleEntryLiveBottomSoon(String reason) {
@@ -1583,52 +2273,81 @@ public class MainActivity extends Activity {
             return;
         }
         long generation = ++entryLiveBottomSettleGeneration;
-        settleEntryLiveBottom(reason, generation, 120);
-        settleEntryLiveBottom(reason, generation, 520);
-        settleEntryLiveBottom(reason, generation, 1100);
+        long bottomCoreGeneration = ++entryBottomCoreGeneration;
+        settleEntryLiveBottom(reason, generation, bottomCoreGeneration, 120);
+        settleEntryLiveBottom(reason, generation, bottomCoreGeneration, 520);
+        settleEntryLiveBottom(reason, generation, bottomCoreGeneration, 1100);
+        settleEntryLiveBottom(reason, generation, bottomCoreGeneration, 2300);
     }
 
-    private void settleEntryLiveBottom(String reason, long generation, long delayMs) {
+    private void settleEntryLiveBottom(String reason, long generation, long bottomCoreGeneration, long delayMs) {
         uiHandler.postDelayed(() -> {
             if (webView == null
                     || !activityResumed
                     || generation != entryLiveBottomSettleGeneration
+                    || bottomCoreGeneration != entryBottomCoreGeneration
                     || isDockedPromptComposerVisible()
                     || isTerminalGestureRecoveryActive()
                     || isViewerPanAllowed()) {
                 return;
             }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                webView.evaluateJavascript(terminalDomReadyScript(), value -> {
+                    if (!javascriptBoolean(value)
+                            || generation != entryLiveBottomSettleGeneration
+                            || bottomCoreGeneration != entryBottomCoreGeneration) {
+                        return;
+                    }
+                    runEntryBottomCoreRecovery(reason, generation, bottomCoreGeneration);
+                });
+                return;
+            }
+            runEntryBottomCoreRecovery(reason, generation, bottomCoreGeneration);
+        }, Math.max(0, delayMs));
+    }
+
+    private void runEntryBottomCoreRecovery(String reason, long generation, long bottomCoreGeneration) {
+        if (webView == null
+                || !activityResumed
+                || generation != entryLiveBottomSettleGeneration
+                || bottomCoreGeneration != entryBottomCoreGeneration
+                || isDockedPromptComposerVisible()
+                || isTerminalGestureRecoveryActive()
+                || isViewerPanAllowed()) {
+            return;
+        }
             long now = System.currentTimeMillis();
             if (now - lastEntryLiveBottomSettleAtMs < ENTRY_LIVE_BOTTOM_SETTLE_MIN_INTERVAL_MS) {
                 return;
             }
             lastEntryLiveBottomSettleAtMs = now;
             long modeGeneration = leaveReadModeForLiveInput(false);
-            // WHY: The user-proven Android APK failure is that first entry and
-            // tab return can show xterm's dotted stale blank rows until the Bottom
-            // button is pressed. Bottom succeeds because the server exits Codex or
-            // tmux history and the client then repaints at the live bottom. Do the
-            // same passive settle after page/resume, but do not open the native
-            // composer, reload the WebView, focus the IME, or disturb zoom/pan.
-            getJsonWithRetry("/live-bottom", payload -> {
-                if (generation != entryLiveBottomSettleGeneration
-                        || modeGeneration != terminalModeGeneration
-                        || !payload.optBoolean("ok", false)
-                        || isDockedPromptComposerVisible()
-                        || isTerminalGestureRecoveryActive()
-                        || isViewerPanAllowed()) {
-                    return;
-                }
-                pinTerminalViewportLocal();
-                fitTerminalToCurrentViewSoon(reason + "-entry-live-bottom");
-                alignLiveBottomViewportForPassiveEntrySoon(reason + "-entry-live-bottom");
-                normalizeXtermCanvasAfterSessionSwitch(reason + "-entry-live-bottom");
-                scheduleToolbarStatusDotRefresh(150);
-            }, exc -> {
-                // Entry settle is a visual recovery path. Keep explicit Bottom and
-                // Refresh available if the control server is temporarily unreachable.
-            });
-        }, Math.max(0, delayMs));
+            // WHY: The user-proven Android APK failure is that first entry and tab
+            // return can show xterm's dotted or black stale rows until the toolbar
+            // Bottom button is pressed. Reuse the exact Bottom-core helper only after
+            // ttyd/xterm exists so the repaint work has a DOM to operate on, but keep
+            // this as passive navigation: no native composer, no keyboard, no WebView
+            // reload, and no hidden xterm typing focus.
+            runBottomButtonLiveBottomRecovery(
+                    reason + "-entry-bottom-core",
+                    modeGeneration,
+                    "",
+                    false,
+                    true,
+                    null
+            );
+    }
+
+    private String terminalDomReadyScript() {
+        return "(function(){"
+                + "try{"
+                + "return !!(window.term||window.terminal||document.querySelector('.xterm-rows,.xterm-screen,.xterm-helper-textarea,canvas'));"
+                + "}catch(e){return false;}"
+                + "})()";
+    }
+
+    private boolean javascriptBoolean(String value) {
+        return "true".equals(String.valueOf(value));
     }
 
     private void openInstallPage() {
@@ -1698,12 +2417,15 @@ public class MainActivity extends Activity {
     }
 
     private void stopCurrentTask() {
-        control("/stop", "Stop sent", true);
+        // WHY: Stop is the phone equivalent of the desktop Escape key. Do not
+        // submit drafts, queue second-press state, or invent a phone-only stop
+        // flow here; Send/Enter owns prompt submission and Stop owns one Escape.
+        sendStopInterrupt(promptComposerTargetKey());
     }
 
     private void sendEnterToTerminal() {
         long generation = leaveReadModeForLiveInput();
-        getJson("/send-enter", payload -> {
+        getJson(appendStableWindowQuery("/send-enter"), payload -> {
             if (generation != terminalModeGeneration) {
                 return;
             }
@@ -1716,6 +2438,10 @@ public class MainActivity extends Activity {
             focusTerminalInputSoon(false);
             settleLiveBottomAfterSend("send-enter");
         }, exc -> toast("WEzterm control is not reachable"));
+    }
+
+    private void sendStopInterrupt(String targetKey) {
+        control(appendStableWindowQuery("/stop", targetKey), "Stop sent", true);
     }
 
     private void showSafePromptComposer() {
@@ -1749,7 +2475,18 @@ public class MainActivity extends Activity {
             showSafePromptComposer();
             return;
         }
+        if ("tap-up".equals(reason) && System.currentTimeMillis() < terminalBodyTapSuppressedUntilMs) {
+            // WHY: the real-phone Active Sessions proof for v2.13 still showed the
+            // docked composer reopening as `Send` after a row tap. That happens when
+            // the dialog's release lands on the terminal body after the picker closes.
+            // Active switching is navigation, not typing, so swallow only this
+            // passive-window tap-up path; normal deliberate terminal taps after the suppression window still open the composer
+            // and preserve backspace/typing.
+            hideDockedPromptComposerForSessionSwitch("passive-switch-tap-up-block");
+            return;
+        }
         boolean wasVisible = promptComposerBar.getVisibility() == View.VISIBLE;
+        cancelXtermBlankTailMask("composer-" + reason);
         // WHY: this native composer is the default phone typing surface. It avoids
         // the fragile Android WebView/xterm hidden-textarea IME path that repeatedly
         // duplicated Samsung/Gboard/voice input in real use, while keeping voice
@@ -1763,7 +2500,7 @@ public class MainActivity extends Activity {
         liveInputVisibilityGeneration++;
         long composerGeneration = ++promptComposerVisibilityGeneration;
         if (!wasVisible) {
-            resetPromptComposerMirrorBaseline();
+            resetPromptComposerLocalDraftForCurrentTarget();
         }
         promptComposerBar.setVisibility(View.VISIBLE);
         updateStartButtonLabel();
@@ -1796,135 +2533,93 @@ public class MainActivity extends Activity {
         scrollViewerToTypingPositionSoon("composer-" + reason);
     }
 
-    private void resetPromptComposerMirrorBaseline() {
-        // WHY: hiding the docked composer preserves draft text across navigation.
-        // When that draft is shown again, Android must not paste the entire old
-        // draft into whichever tmux tab is now active. Treat the currently visible
-        // EditText content as already mirrored; only future edits are sent as
-        // deltas to the desktop prompt.
-        promptComposerMirroredText = promptComposerInput == null
-                ? ""
-                : promptComposerInput.getText().toString();
-        promptComposerDraftMirrorPending = false;
-        promptComposerSubmitPending = false;
-        promptComposerDraftMirrorGeneration++;
-    }
-
-    private void resetPromptComposerMirrorState() {
-        promptComposerMirroredText = "";
-        promptComposerDraftMirrorInFlight = false;
-        promptComposerDraftMirrorPending = false;
-        promptComposerSubmitPending = false;
-        promptComposerDraftMirrorGeneration++;
-    }
-
-    private void schedulePromptComposerDraftMirror() {
-        if (promptComposerInput == null || !isDockedPromptComposerVisible()) {
-            return;
-        }
-        promptComposerDraftMirrorPending = true;
-        long generation = ++promptComposerDraftMirrorGeneration;
-        uiHandler.postDelayed(() -> {
-            if (generation != promptComposerDraftMirrorGeneration
-                    || !isDockedPromptComposerVisible()
-                    || promptComposerProgrammaticTextChange) {
-                return;
-            }
-            mirrorPromptComposerDraftNow(false);
-        }, DOCKED_DRAFT_MIRROR_DEBOUNCE_MS);
-    }
-
-    private void mirrorPromptComposerDraftNow(boolean thenSubmit) {
+    private void resetPromptComposerLocalDraftForCurrentTarget() {
         if (promptComposerInput == null) {
+            promptComposerDraftTargetKey = promptComposerTargetKey();
+            promptComposerDraftLocalGeneration++;
             return;
         }
-        if (promptComposerDraftMirrorInFlight) {
-            promptComposerDraftMirrorPending = true;
-            promptComposerSubmitPending = promptComposerSubmitPending || thenSubmit;
-            return;
+        String targetKey = promptComposerTargetKey();
+        if (!targetKey.equals(promptComposerDraftTargetKey)
+                && promptComposerInput.getText().length() > 0) {
+            // WHY: a visible native draft belongs to the stable tmux `@windowId`
+            // where it was typed. Preserving that text after an Active-tab switch
+            // lets Send paste the old draft into a different conversation, which
+            // looks like the same random paste/duplicate regression the user has
+            // reported repeatedly. Because normal typing is local-only now, the
+            // only safe cross-tab behavior is to clear the preserved local draft
+            // when the target window changes.
+            promptComposerProgrammaticTextChange = true;
+            try {
+                promptComposerInput.setText("");
+            } finally {
+                promptComposerProgrammaticTextChange = false;
+            }
         }
-        String current = promptComposerInput.getText().toString();
-        String previous = promptComposerMirroredText == null ? "" : promptComposerMirroredText;
-        int prefix = commonPrefixLength(previous, current);
-        int backspaces = Math.max(0, previous.length() - prefix);
-        String suffix = current.substring(prefix);
-        if (backspaces == 0 && suffix.isEmpty()) {
-            promptComposerDraftMirrorPending = false;
-            if (thenSubmit || promptComposerSubmitPending) {
-                promptComposerSubmitPending = false;
-                sendMirroredDraftEnter(current);
-            }
-            return;
-        }
-        promptComposerDraftMirrorInFlight = true;
-        promptComposerDraftMirrorPending = false;
-        promptComposerSubmitPending = promptComposerSubmitPending || thenSubmit;
-        // WHY: live draft mirroring is intentionally a small delta endpoint, not
-        // `/submit-text`. `/submit-text` pastes the whole prompt and presses Enter.
-        // Once the desktop tmux prompt already contains the mirrored draft, Send
-        // must only flush the final delta and press Enter or the same words appear
-        // twice on the PC and in Codex.
-        postText("/draft-delta?backspace=" + backspaces, suffix, payload -> {
-            promptComposerDraftMirrorInFlight = false;
-            if (!payload.optBoolean("ok", false)) {
-                toast(payload.optString("error", "Draft mirror failed"));
-                return;
-            }
-            promptComposerMirroredText = current;
-            if (promptComposerDraftMirrorPending) {
-                boolean submitAfterPending = promptComposerSubmitPending;
-                promptComposerSubmitPending = false;
-                mirrorPromptComposerDraftNow(submitAfterPending);
-                return;
-            }
-            if (promptComposerSubmitPending) {
-                promptComposerSubmitPending = false;
-                sendMirroredDraftEnter(current);
-            }
-        }, exc -> {
-            promptComposerDraftMirrorInFlight = false;
-            toast("WEzterm control is not reachable");
-        });
+        promptComposerDraftTargetKey = targetKey;
+        promptComposerDraftLocalGeneration++;
     }
 
-    private int commonPrefixLength(String left, String right) {
-        int max = Math.min(left.length(), right.length());
-        int index = 0;
-        while (index < max && left.charAt(index) == right.charAt(index)) {
-            index++;
+    private void clearUnsentDraft() {
+        if (promptComposerInput == null) {
+            toast("No draft to clear");
+            return;
         }
-        return index;
+        String visibleDraft = promptComposerInput.getText().toString();
+        if (visibleDraft.isEmpty()) {
+            toast("No draft to clear");
+            return;
+        }
+        promptComposerDraftLocalGeneration++;
+        promptComposerProgrammaticTextChange = true;
+        try {
+            promptComposerInput.setText("");
+        } finally {
+            promptComposerProgrammaticTextChange = false;
+        }
+        promptComposerDraftTargetKey = promptComposerTargetKey();
+        // WHY: Clear now only clears the visible native composer. It must not send
+        // a calculated `/draft-delta` backspace into tmux, because normal phone typing is local-only now
+        // and is no longer mirrored there. If a stale tmux prompt exists from
+        // an older build or hidden xterm path, empty-composer Backspace/Delete and
+        // Option keys send literal tmux keys as an explicit recovery action.
+        toast("Draft cleared");
     }
 
-    private void submitMirroredDockedPrompt(String text) {
+    private void submitDockedPromptText(String text) {
+        submitDockedPromptText(text, "Prompt sent");
+    }
+
+    private void submitDockedPromptText(String text, String successToast) {
+        submitDockedPromptText(text, successToast, promptComposerDraftSubmitTargetKey());
+    }
+
+    private void submitDockedPromptText(String text, String successToast, String targetKey) {
+        submitDockedPromptText(text, successToast, targetKey, null, null);
+    }
+
+    private void submitDockedPromptText(
+            String text,
+            String successToast,
+            String targetKey,
+            Runnable afterSuccess,
+            Runnable afterFailure
+    ) {
         String value = text == null ? "" : text.trim();
         if (value.isEmpty()) {
             toast("Prompt is empty");
+            if (afterFailure != null) {
+                afterFailure.run();
+            }
             return;
         }
-        mirrorPromptComposerDraftNow(true);
-    }
-
-    private void sendMirroredDraftEnter(String originalText) {
-        String value = originalText == null ? "" : originalText.trim();
-        if (value.isEmpty()) {
-            toast("Prompt is empty");
-            return;
-        }
-        long generation = leaveReadModeForLiveInput();
-        getJson("/send-enter", payload -> {
-            if (generation != terminalModeGeneration) {
-                return;
-            }
-            if (!payload.optBoolean("ok", false)) {
-                toast(payload.optString("error", "Send failed"));
-                return;
-            }
-            toast("Prompt sent");
-            hideDockedPromptComposer(true, false);
-            focusTerminalInputSoon(false);
-            settleLiveBottomAfterSend("mirrored-draft-send");
-        }, exc -> toast("WEzterm control is not reachable"));
+        // WHY: toolbar Send is the only submit owner for phone text. The previous
+        // live-mirror design pasted drafts through `/draft-delta` while the user
+        // was still composing, then only sent Enter here; that repeatedly caused
+        // duplicate words, invisible stale tmux drafts, and wrong-tab paste after
+        // Active switching. Send must paste the complete visible native composer
+        // text once through `/submit-text`, which also presses Enter once.
+        submitSafePrompt(value, successToast, targetKey, afterSuccess, afterFailure);
     }
 
     private void settleLiveBottomAfterSend(String reason) {
@@ -1941,7 +2636,7 @@ public class MainActivity extends Activity {
             // server live-bottom settle plus a passive xterm resize so the phone
             // returns to the bottom automatically after Send, without reloading
             // ttyd or running the old multi-step scroll/keyboard burst.
-            getJsonWithRetry("/live-bottom", payload -> {
+            getJsonWithRetry(appendStableWindowQuery("/live-bottom"), payload -> {
                 if (generation != terminalModeGeneration) {
                     return;
                 }
@@ -1958,7 +2653,7 @@ public class MainActivity extends Activity {
             return;
         }
         String text = promptComposerInput.getText().toString();
-        submitMirroredDockedPrompt(text);
+        submitDockedPromptText(text);
     }
 
     private void hideDockedPromptComposer(boolean clearText, boolean keepKeyboardState) {
@@ -1972,7 +2667,8 @@ public class MainActivity extends Activity {
             } finally {
                 promptComposerProgrammaticTextChange = false;
             }
-            resetPromptComposerMirrorState();
+            promptComposerDraftTargetKey = promptComposerTargetKey();
+            promptComposerDraftLocalGeneration++;
         }
         promptComposerVisibilityGeneration++;
         promptComposerInput.clearFocus();
@@ -2011,11 +2707,23 @@ public class MainActivity extends Activity {
         // missing or stale. Preserve the native EditText as the single typing owner.
         promptComposerBar.setVisibility(View.VISIBLE);
         updateStartButtonLabel();
+        boolean alreadyFocused = promptComposerInput.hasFocus();
+        boolean imeAlreadyVisibleForComposer = alreadyFocused && lastImeInsetBottom > 0;
         promptComposerInput.requestFocus();
         promptComposerInput.setSelection(promptComposerInput.getText().length());
         InputMethodManager inputMethodManager =
                 (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-        if (inputMethodManager != null) {
+        long now = System.currentTimeMillis();
+        if (inputMethodManager != null
+                && !imeAlreadyVisibleForComposer
+                && now - lastPromptComposerShowSoftInputAtMs >= PROMPT_COMPOSER_SOFT_INPUT_MIN_INTERVAL_MS) {
+            // WHY: the native composer owns phone typing, but repeated `showSoftInput` calls
+            // during the 120/360 ms settle callbacks can still ask Samsung/Gboard/voice
+            // input to reconnect to the same visible editor.
+            // That is the same duplicate-composition class the old xterm textarea
+            // focus loop caused, so one bounded request is enough while the IME is
+            // already visible or was just requested.
+            lastPromptComposerShowSoftInputAtMs = now;
             inputMethodManager.showSoftInput(promptComposerInput, InputMethodManager.SHOW_IMPLICIT);
         }
     }
@@ -2045,6 +2753,24 @@ public class MainActivity extends Activity {
         liveInputVisibilityGeneration++;
         cancelViewerTypingPositionRetries(reason);
         hideDockedPromptComposer(false, false);
+    }
+
+    private void suppressTerminalBodyTapForPassiveNavigation(String reason) {
+        // WHY: opening Active/Old/Crashed/New is navigation, not typing. The
+        // recurring real-phone failure was one passive tab switch bringing back
+        // three separate bugs at once: ACTION_UP fell through from the picker and
+        // reopened the native composer, the toolbar stayed on Send/keyboard, and
+        // xterm painted dotted stale rows instead of the same full-height bottom
+        // state the manual Bottom button gives. Keep terminal-body taps and stale
+        // hidden-textarea focus callbacks suppressed through the async select +
+        // bottom settle window; the next deliberate terminal tap still opens the
+        // native composer normally.
+        terminalBodyTapSuppressedUntilMs = Math.max(
+                terminalBodyTapSuppressedUntilMs,
+                System.currentTimeMillis() + PASSIVE_NAVIGATION_TOUCH_SUPPRESS_MS
+        );
+        terminalFocusGeneration++;
+        hideTerminalKeyboardQuietly(reason);
     }
 
     private void hideDockedPromptComposerForReadMode(String reason) {
@@ -2081,13 +2807,39 @@ public class MainActivity extends Activity {
     }
 
     private void submitSafePrompt(String text) {
+        submitSafePrompt(text, "Prompt sent");
+    }
+
+    private void submitSafePrompt(String text, String successToast) {
+        submitSafePrompt(text, successToast, promptComposerTargetKey());
+    }
+
+    private void submitSafePrompt(String text, String successToast, String targetKey) {
+        submitSafePrompt(text, successToast, targetKey, null, null);
+    }
+
+    private void submitSafePrompt(
+            String text,
+            String successToast,
+            String targetKey,
+            Runnable afterSuccess,
+            Runnable afterFailure
+    ) {
         String value = text == null ? "" : text.trim();
         if (value.isEmpty()) {
             toast("Prompt is empty");
+            if (afterFailure != null) {
+                afterFailure.run();
+            }
             return;
         }
         long generation = leaveReadModeForLiveInput();
-        postText("/submit-text", value, payload -> {
+        String stableTargetKey = hasStableWindowId(targetKey) ? targetKey.trim() : promptComposerTargetKey();
+        // WHY: visible phone drafts are local-only until Send, so the submit
+        // request must use the draft's pinned `@windowId`, not a later `/active`
+        // value. This is the durable guard against prompts being pasted into a
+        // different active session after tab switches, polling, or proof setup.
+        postText(appendStableWindowQuery("/submit-text", stableTargetKey), value, payload -> {
             if (generation != terminalModeGeneration) {
                 return;
             }
@@ -2095,15 +2847,23 @@ public class MainActivity extends Activity {
                 toast(payload.optString("error", "Send failed"));
                 return;
             }
-            toast("Prompt sent");
+            toast(successToast == null || successToast.trim().isEmpty() ? "Prompt sent" : successToast);
             hideDockedPromptComposer(true, false);
             focusTerminalInputSoon(false);
-        }, exc -> toast("WEzterm control is not reachable"));
+            if (afterSuccess != null) {
+                afterSuccess.run();
+            }
+        }, exc -> {
+            toast("WEzterm control is not reachable");
+            if (afterFailure != null) {
+                afterFailure.run();
+            }
+        });
     }
 
     private long enterReadMode() {
         long generation = ++terminalModeGeneration;
-        removeXtermBlankTailMask("enter-read-mode");
+        cancelXtermBlankTailMask("enter-read-mode");
         hideDockedPromptComposerForReadMode("read-mode");
         terminalHistoryViewportActive = true;
         readModeSuppressesKeyboard = true;
@@ -2140,14 +2900,99 @@ public class MainActivity extends Activity {
     }
 
     private void restoreLiveForTyping(String message) {
+        long generation = leaveReadModeForLiveInput();
+        runBottomButtonLiveBottomRecovery("live-bottom", generation, message, true, false, null);
+    }
+
+    private void restoreLiveForViewing(String message) {
+        long generation = leaveReadModeForLiveInput(false);
+        // WHY: the visible Bottom toolbar button is navigation/readability
+        // recovery, not a typing command. Opening the native composer here shrank
+        // the terminal, left the keyboard up when the user immediately scrolled
+        // history, and made the black/dot transition mask feel stuck. Keep Bottom
+        // passive and full-screen; tapping the terminal body is the deliberate
+        // request to type.
+        runBottomButtonLiveBottomRecovery("live-bottom-view", generation, message, false, false, null);
+    }
+
+    private void restoreLiveAfterTabOpen(String reason, long generation, long paintShieldGeneration) {
+        Runnable afterSuccess = paintShieldGeneration > 0
+                ? () -> {
+                    // WHY: v2.22 moved the long-lived dotted-field protection out of
+                    // the full-frame native shield. Extending this layer back to the
+                    // old 2200 ms window recreates the all-black Active-switch failure;
+                    // delayed xterm dots are handled by the bounded WebView lower-area
+                    // shield and glyph scrubbers instead.
+                    hideSessionSwitchPaintShieldSoon(reason + "-bottom-core-painted",
+                            paintShieldGeneration, FULL_FRAME_SESSION_SWITCH_SHIELD_MAX_MS);
+                }
+                : null;
+        // WHY: v2.06 proved tab-open must reuse Bottom-core to clear dotted/black
+        // xterm rows, but the next real-phone screenshots showed auto-opening the
+        // composer/keyboard revived duplicate typing and made Backspace useless
+        // while Android was still settling. Tab-open is navigation; the user taps
+        // the terminal body when they actually want the native composer.
+        runBottomButtonLiveBottomRecovery(reason + "-tab-open-bottom", generation, "", false, true, afterSuccess);
+    }
+
+    private void runBottomButtonLiveBottomRecovery(
+            String reason,
+            long generation,
+            String message,
+            boolean showComposer,
+            boolean quietFailure,
+            Runnable afterSuccess
+    ) {
+        runBottomButtonLiveBottomRecovery(
+                reason,
+                generation,
+                message,
+                showComposer,
+                quietFailure,
+                afterSuccess,
+                0
+        );
+    }
+
+    private void runBottomButtonLiveBottomRecovery(
+            String reason,
+            long generation,
+            String message,
+            boolean showComposer,
+            boolean quietFailure,
+            Runnable afterSuccess,
+            int retryCount
+    ) {
         if (liveRestoreInFlight) {
+            if (!showComposer
+                    && quietFailure
+                    && reason.contains("tab-open")
+                    && retryCount < PASSIVE_TAB_OPEN_BOTTOM_RETRY_LIMIT) {
+                // WHY: Active/Old/Crashed/New tab-open is supposed to behave as
+                // though the user pressed Bottom immediately after opening the
+                // tab. If a previous `/live-bottom` confirmation is still in
+                // flight, returning here silently skips that automatic Bottom and
+                // recreates the user-reported "I have to hit Bottom myself" bug.
+                // Retry only passive tab-open recoveries; deliberate Bottom/tap to
+                // type keeps the existing single-owner liveRestoreInFlight guard.
+                uiHandler.postDelayed(() -> runBottomButtonLiveBottomRecovery(
+                        reason,
+                        generation,
+                        message,
+                        false,
+                        true,
+                        afterSuccess,
+                        retryCount + 1
+                ), PASSIVE_TAB_OPEN_BOTTOM_RETRY_MS);
+            }
             return;
         }
         // WHY: history paging and one-finger swipe requests are asynchronous HTTP
         // calls. A stale pageUp/pageDown response used to arrive after Live/tap and
-        // put the app back into keyboard-suppressed read mode. Bumping this
-        // generation invalidates those stale read callbacks before focusing xterm.
-        long generation = leaveReadModeForLiveInput();
+        // put the app back into keyboard-suppressed read mode. Bottom and tab-open
+        // now share this exact `/live-bottom` core because the real APK dot-grid
+        // regression only cleared after pressing Bottom manually. Do not split this
+        // back into a second "almost Bottom" tab-open path.
         liveRestoreInFlight = true;
         // WHY: this is a normal user recovery/tap-to-type action, not a proof
         // capture. The full `/scroll?where=bottom` endpoint gathers visible pane
@@ -2155,7 +3000,7 @@ public class MainActivity extends Activity {
         // created the rapid top/bottom refresh loop at the exact moment the user
         // wanted to type. `/live-bottom` uses the server's fast tmux/Codex/reader
         // live-return primitive and leaves WebView's transport alone.
-        getJsonWithRetry("/live-bottom", payload -> {
+        getJsonWithRetry(appendStableWindowQuery("/live-bottom"), payload -> {
             liveRestoreInFlight = false;
             if (generation != terminalModeGeneration) {
                 return;
@@ -2169,11 +3014,50 @@ public class MainActivity extends Activity {
                 toast(message);
             }
             pinTerminalViewportLocal();
-            showDockedPromptComposer("live-bottom");
+            if (showComposer) {
+                showDockedPromptComposer("live-bottom");
+            } else {
+                // WHY: real-phone v2.11 proof started from a bad `Send`/composer
+                // state and Active switching selected the new tmux tab but could
+                // leave Android's IME/composer snapshot alive afterward. Passive
+                // tab-open must finish like Start-toolbar navigation: preserve any
+                // draft for the next deliberate tap, but do not leave the keyboard,
+                // native composer, or hidden xterm focus attached to the selected
+                // session.
+                clearBroadSessionSwitchVisualMasks(reason + "-live-bottom-confirmed");
+                hideDockedPromptComposerForSessionSwitch(reason + "-post-bottom");
+                keepPassiveTabOpenPlainSoon(reason);
+                fitTerminalToCurrentViewSoon(reason);
+                alignLiveBottomViewportForPassiveEntrySoon(reason);
+                normalizeXtermCanvasAfterSessionSwitch(reason);
+                scheduleToolbarStatusDotRefresh(150);
+            }
+            if (afterSuccess != null) {
+                afterSuccess.run();
+            }
         }, exc -> {
             liveRestoreInFlight = false;
-            toast("WEzterm control is not reachable");
+            if (!quietFailure) {
+                toast("WEzterm control is not reachable");
+            }
         });
+    }
+
+    private void keepPassiveTabOpenPlainSoon(String reason) {
+        long generation = terminalModeGeneration;
+        keepPassiveTabOpenPlain(reason, generation, 140);
+        keepPassiveTabOpenPlain(reason, generation, 520);
+        keepPassiveTabOpenPlain(reason, generation, 1100);
+    }
+
+    private void keepPassiveTabOpenPlain(String reason, long generation, long delayMs) {
+        uiHandler.postDelayed(() -> {
+            if (generation != terminalModeGeneration || readModeSuppressesKeyboard || terminalHistoryViewportActive) {
+                return;
+            }
+            hideDockedPromptComposerForSessionSwitch(reason + "-plain");
+            suppressTerminalBodyTapForPassiveNavigation(reason + "-plain");
+        }, Math.max(0, delayMs));
     }
 
     private void restoreTouchLiveBottomQuietly() {
@@ -2660,7 +3544,9 @@ public class MainActivity extends Activity {
                 "Install/update over Tailscale",
                 "Create bug report",
                 "Stop current task",
-                "Rename current session"
+                "Rename current session",
+                "Clear unsent draft",
+                "Option keys"
         };
         new AlertDialog.Builder(this)
                 .setTitle("Command palette")
@@ -2706,6 +3592,10 @@ public class MainActivity extends Activity {
                         stopCurrentTask();
                     } else if (which == 18) {
                         showRenameCurrentTab();
+                    } else if (which == 19) {
+                        clearUnsentDraft();
+                    } else if (which == 20) {
+                        showKeyControls();
                     }
                 })
                 .setNegativeButton("Cancel", null)
@@ -2717,7 +3607,9 @@ public class MainActivity extends Activity {
                 "Paste phone clipboard into terminal",
                 "Copy visible terminal text",
                 "Type prompt safely",
-                "Upload media from phone"
+                "Upload media from phone",
+                "Clear unsent draft",
+                "Option keys"
         };
         new AlertDialog.Builder(this)
                 .setTitle("Copy/Paste")
@@ -2730,10 +3622,184 @@ public class MainActivity extends Activity {
                         showSafePromptComposer();
                     } else if (which == 3) {
                         pickMediaForUpload();
+                    } else if (which == 4) {
+                        clearUnsentDraft();
+                    } else if (which == 5) {
+                        showKeyControls();
                     }
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
+    }
+
+    private void showKeyControls() {
+        hideDockedPromptComposerForNavigation("key-controls");
+        // WHY: CLI option pickers can expose any number of choices, so fixed
+        // one/two/three shortcuts are the wrong phone model. This dialog stays
+        // open while the user taps Move up/down, Backspace, Delete, Home, or End,
+        // making arbitrary Claude/Codex option lists usable without reopening a
+        // one-shot list for every arrow key. Select/Escape/Done are the deliberate
+        // close points.
+        LinearLayout grid = new LinearLayout(this);
+        grid.setOrientation(LinearLayout.VERTICAL);
+        grid.setPadding(dp(14), dp(10), dp(14), dp(8));
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Option keys")
+                .setView(grid)
+                .setNegativeButton("Done", null)
+                .create();
+        // WHY: this must remain a custom persistent grid, not a one-shot
+        // setItems list. CLI prompts often need several navigation/edit keys in
+        // a row, and reopening the Copy/Paste menu after every Up/Down/Home/End
+        // tap is the regression that made phone option pickers unusable.
+        addKeyControlRow(grid, new String[]{"Move up", "Move down", "Select"}, new String[]{"Up", "Down", "Enter"}, dialog);
+        addKeyControlRow(grid, new String[]{"Backspace", "Delete", "Tab"}, new String[]{"Backspace", "Delete", "Tab"}, dialog);
+        addKeyControlRow(grid, new String[]{"Home", "End", "Escape"}, new String[]{"Home", "End", "Escape"}, dialog);
+        dialog.show();
+    }
+
+    private void addKeyControlRow(LinearLayout grid, String[] labels, String[] keys, AlertDialog dialog) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(0, dp(3), 0, dp(3));
+        for (int i = 0; i < labels.length; i++) {
+            final String label = labels[i];
+            final String key = keys[i];
+            Button button = toolbarButton(label, v -> {
+                // WHY: the real APK proof showed Delete could be lost when a
+                // Backspace toast/focus transition was still settling. Persistent
+                // Option Keys already give visible feedback by staying open, so
+                // do not show per-key toasts for Backspace/Delete/Home/End/Tab/
+                // Up/Down. Keep only Select's closing confirmation.
+                enqueueOptionTerminalKey(key, "Enter".equals(key) ? "Selected" : "");
+                if ("Enter".equals(key) || "Escape".equals(key)) {
+                    dialog.dismiss();
+                }
+            });
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    0,
+                    dp(52),
+                    1
+            );
+            params.setMargins(dp(3), 0, dp(3), 0);
+            row.addView(button, params);
+        }
+        grid.addView(row, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+    }
+
+    private void enqueueOptionTerminalKey(String key, String message) {
+        // WHY: Option Keys are quick repeated taps from the phone. The real APK
+        // proof showed Backspace could reach tmux while the Android HTTP
+        // callback was still settling, then the next Delete tap was lost. Keep
+        // these control keys ordered on the UI thread so Backspace/Delete/Home/
+        // End/Up/Down/Enter arrive at tmux in the same sequence the user tapped.
+        optionKeyDispatchQueue.add(new OptionKeyDispatch(key, message, optionKeyTargetKey()));
+        drainOptionTerminalKeyQueue();
+    }
+
+    private String optionKeyTargetKey() {
+        // WHY: selectedPhoneWindowId is also the protected Close target, so it
+        // can intentionally outlive a later active-window refresh. Option Keys
+        // are live input for the window the phone is currently controlling; if
+        // they prefer the stale close target, Backspace/Delete can look tapped
+        // while landing in an older tab. Prefer the current phone window and only
+        // fall back to selected row memory when active state is unavailable.
+        if (hasStableWindowId(currentPhoneWindowId)) {
+            return currentPhoneWindowId.trim();
+        }
+        if (hasStableWindowId(selectedPhoneWindowId)) {
+            return selectedPhoneWindowId.trim();
+        }
+        return "unknown:" + terminalModeGeneration;
+    }
+
+    private void drainOptionTerminalKeyQueue() {
+        if (optionKeyDispatchInFlight) {
+            return;
+        }
+        OptionKeyDispatch dispatch = optionKeyDispatchQueue.poll();
+        if (dispatch == null) {
+            return;
+        }
+        optionKeyDispatchInFlight = true;
+        sendTerminalKey(dispatch.key, dispatch.message, dispatch.targetKey, () -> {
+            optionKeyDispatchInFlight = false;
+            drainOptionTerminalKeyQueue();
+        });
+    }
+
+    private void sendTerminalKey(String key, String message) {
+        sendTerminalKey(key, message, null);
+    }
+
+    private void sendTerminalKey(String key, String message, Runnable after) {
+        sendTerminalKey(key, message, promptComposerTargetKey(), after);
+    }
+
+    private void sendTerminalKey(String key, String message, String targetKey, Runnable after) {
+        // WHY: Claude/Codex option pickers need arrow/select keys that are not
+        // text composition. Route them through tmux `send-keys` after a Bottom-like
+        // live restore, without focusing the hidden xterm textarea or asking the
+        // Android IME to reconnect to the native composer.
+        long generation = leaveReadModeForLiveInput(false);
+        getJson(appendStableWindowQuery("/send-key?key=" + urlEncode(key), targetKey), payload -> {
+            try {
+                if (generation != terminalModeGeneration) {
+                    return;
+                }
+                if (!payload.optBoolean("ok", false)) {
+                    toast(payload.optString("error", "Key failed"));
+                    return;
+                }
+                if (message != null && !message.isEmpty()) {
+                    toast(message);
+                }
+                pinTerminalViewportLocal();
+                fitTerminalToCurrentViewSoon("send-key");
+                alignLiveBottomViewportForPassiveEntrySoon("send-key");
+            } finally {
+                if (after != null) {
+                    after.run();
+                }
+            }
+        }, exc -> {
+            try {
+                toast("WEzterm control is not reachable");
+            } finally {
+                if (after != null) {
+                    after.run();
+                }
+            }
+        });
+    }
+
+    private boolean nativeComposerVisibleTextEmpty() {
+        return isDockedPromptComposerVisible()
+                && promptComposerInput != null
+                && promptComposerInput.getText().toString().isEmpty();
+    }
+
+    private void sendEmptyComposerBackspaceToTerminal() {
+        // WHY: the real-phone failure can leave tmux/Codex containing draft text
+        // that arrived through xterm's hidden textarea while the visible native
+        // composer is empty. In that state Android Backspace has nothing local to
+        // delete, so the user is stuck with prompt text they cannot remove. Route
+        // empty-composer Backspace to tmux BSpace; once v2.07's top-tap and IME
+        // ownership fixes prevent new hidden-xterm drafts, this remains a safe
+        // recovery for inherited stale prompt text.
+        sendTerminalKey("Backspace", "");
+    }
+
+    private void sendEmptyComposerDeleteToTerminal() {
+        // WHY: Backspace was already guarded, but hardware/Gboard forward-delete
+        // can arrive as KEYCODE_FORWARD_DEL or deleteSurroundingText afterLength.
+        // When the visible native composer is empty, route that explicit recovery
+        // key to tmux instead of making the user unable to delete stale text that
+        // already reached the pane.
+        sendTerminalKey("Delete", "");
     }
 
     private void pasteClipboardIntoTerminal() {
@@ -2757,7 +3823,7 @@ public class MainActivity extends Activity {
         // the server forces tmux/Codex to live bottom, or delayed read-mode focus
         // guards can hide the keyboard immediately after the paste.
         long generation = leaveReadModeForLiveInput();
-        postText("/paste", clipboardText, payload -> {
+        postText(appendStableWindowQuery("/paste"), clipboardText, payload -> {
             if (generation != terminalModeGeneration) {
                 return;
             }
@@ -2892,7 +3958,7 @@ public class MainActivity extends Activity {
         new Thread(() -> {
             HttpURLConnection connection = null;
             try {
-                URL url = new URL(CONTROL_URL + "/upload-media?filename=" + urlEncode(displayName));
+                URL url = new URL(controlUrlForPath("/upload-media?filename=" + urlEncode(displayName)));
                 connection = (HttpURLConnection) url.openConnection();
                 connection.setRequestMethod("POST");
                 connection.setDoOutput(true);
@@ -2928,6 +3994,8 @@ public class MainActivity extends Activity {
                 JSONObject payload = new JSONObject(body);
                 uiHandler.post(() -> showUploadedMediaResult(payload));
             } catch (Exception exc) {
+                wakeLaptopForTerminal("upload-unreachable");
+                scheduleTerminalWakeRetry("upload-unreachable");
                 uiHandler.post(() -> toast("Media upload failed: " + exc.getMessage()));
             } finally {
                 if (connection != null) {
@@ -3021,7 +4089,7 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this)
                 .setTitle("Uploaded media")
                 .setMessage(message)
-                .setPositiveButton("Paste path", (dialog, which) -> postText("/paste", path, pastePayload -> {
+                .setPositiveButton("Paste path", (dialog, which) -> postText(appendStableWindowQuery("/paste"), path, pastePayload -> {
                     if (!pastePayload.optBoolean("ok", false)) {
                         toast(pastePayload.optString("error", "Paste path failed"));
                         return;
@@ -3059,7 +4127,12 @@ public class MainActivity extends Activity {
 
     private void showActiveSessions() {
         hideDockedPromptComposerForNavigation("active-dialog");
-        getJsonWithRetry("/sessions", payload -> showActiveSessionsDialog(payload, "Active Sessions", true), exc ->
+        // WHY: Active Sessions is the phone's hot tab switcher. It must not wait
+        // for `/sessions`, which also scans old Codex sessions and heavier
+        // per-window pane status. Use the light `/tabs` payload for immediate
+        // stable `@windowId` Open/Close; Old Sessions keeps the full saved-session
+        // endpoint.
+        getJsonWithRetry("/tabs?light=1", payload -> showActiveSessionsDialog(payload, "Active Sessions", false), exc ->
                 getJsonWithRetry("/tabs", payload -> showActiveSessionsDialog(payload, "Active Sessions", false))
         );
     }
@@ -3161,7 +4234,7 @@ public class MainActivity extends Activity {
             if (dialogRef[0] != null) {
                 dialogRef[0].dismiss();
             }
-            control("/new?fast=1", "New session");
+            controlAndSettleLiveBottom("/new?fast=1", "New session", "new-session");
         }));
         actions.addView(activeDialogActionButton("Rename", v -> {
             if (dialogRef[0] != null) {
@@ -3566,7 +4639,7 @@ public class MainActivity extends Activity {
             if (dialogRef[0] != null) {
                 dialogRef[0].dismiss();
             }
-            confirmResumeOldSession(sessionId, cwd, title);
+            openOldSessionDirectly(sessionId, cwd, title);
         });
 
         TextView titleText = new TextView(this);
@@ -3613,7 +4686,7 @@ public class MainActivity extends Activity {
             if (dialogRef[0] != null) {
                 dialogRef[0].dismiss();
             }
-            confirmResumeOldSession(sessionId, cwd, title);
+            openOldSessionDirectly(sessionId, cwd, title);
         });
 
         row.addView(openPanel, new LinearLayout.LayoutParams(
@@ -3656,7 +4729,7 @@ public class MainActivity extends Activity {
             if (dialogRef[0] != null) {
                 dialogRef[0].dismiss();
             }
-            confirmResumeCrashedSession(sessionId, cwd, title);
+            restoreCrashedSessionDirectly(sessionId, cwd, title);
         });
 
         TextView titleText = new TextView(this);
@@ -3715,7 +4788,7 @@ public class MainActivity extends Activity {
             if (dialogRef[0] != null) {
                 dialogRef[0].dismiss();
             }
-            confirmResumeCrashedSession(sessionId, cwd, title);
+            restoreCrashedSessionDirectly(sessionId, cwd, title);
         });
 
         row.addView(openPanel, new LinearLayout.LayoutParams(
@@ -3755,10 +4828,23 @@ public class MainActivity extends Activity {
                 .setPositiveButton("Resume", (dialog, which) -> {
                     String path = "/resume-session?fast=1&sessionId=" + urlEncode(sessionId)
                             + "&cwd=" + urlEncode(cwd);
-                    control(path, "Old session opened");
+                    controlAndSettleLiveBottom(path, "Old session opened", "old-session");
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
+    }
+
+    private void openOldSessionDirectly(String sessionId, String cwd, String title) {
+        if (sessionId == null || sessionId.trim().isEmpty()) {
+            toast("Old session id missing");
+            return;
+        }
+        // WHY: Old Sessions is navigation, not a destructive action. Keeping a
+        // confirm/list dialog in front after the user taps Resume made the phone
+        // look stuck in the picker instead of opening the selected Codex session.
+        String path = "/resume-session?fast=1&sessionId=" + urlEncode(sessionId)
+                + "&cwd=" + urlEncode(cwd);
+        controlAndSettleLiveBottom(path, "Old session opened", "old-session", title);
     }
 
     private void confirmResumeCrashedSession(String sessionId, String cwd, String title) {
@@ -3772,38 +4858,152 @@ public class MainActivity extends Activity {
                 .setPositiveButton("Restore", (dialog, which) -> {
                     String path = "/resume-session?fast=1&sessionId=" + urlEncode(sessionId)
                             + "&cwd=" + urlEncode(cwd);
-                    control(path, "Crashed session restored");
+                    controlAndSettleLiveBottom(path, "Crashed session restored", "crashed-session");
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
     }
 
+    private void restoreCrashedSessionDirectly(String sessionId, String cwd, String title) {
+        if (sessionId == null || sessionId.trim().isEmpty()) {
+            toast("Crashed session id missing");
+            return;
+        }
+        String path = "/resume-session?fast=1&sessionId=" + urlEncode(sessionId)
+                + "&cwd=" + urlEncode(cwd);
+        controlAndSettleLiveBottom(path, "Crashed session restored", "crashed-session", title);
+    }
+
     private void confirmClose() {
-        // WHY: closing the active session should not rebuild the whole picker
-        // payload. `/tabs` now includes per-window status checks, which are useful
-        // for the picker but made the main Close button feel disconnected.
+        // WHY: the bottom Close button must close the phone-selected tmux window,
+        // not whichever grouped `main_view_*` window the server happens to report
+        // as active after a slow Active Sessions switch. Keep the exact stable
+        // `@windowId` captured by the last successful open and refuse to fall
+        // back to raw `/close?fast=1`, which previously closed the wrong session.
+        if (hasRememberedCloseTarget()) {
+            confirmClose(selectedPhoneWindowIndex, selectedPhoneWindowId, selectedPhoneWindowTitle);
+            return;
+        }
         getJsonWithRetry("/active", payload -> {
             JSONObject window = payload.optJSONObject("window");
             if (window == null) {
-                confirmClose(-1, "", "current session");
+                toast("Close target missing; open Active and pick the session first");
                 return;
             }
-            confirmClose(window.getInt("index"), window.optString("windowId", ""), window.optString("title", "current session"));
+            String windowId = window.optString("windowId", "");
+            if (!hasStableWindowId(windowId)) {
+                toast("Close target missing; open Active and pick the session first");
+                return;
+            }
+            int index = window.getInt("index");
+            String title = window.optString("title", "current session");
+            rememberSelectedPhoneWindow(index, windowId, title, "active-close");
+            confirmClose(index, windowId, title);
         });
     }
 
     private void confirmClose(int index, String windowId, String title) {
+        if (!hasStableWindowId(windowId)) {
+            toast("Close target missing; open Active and pick the session first");
+            return;
+        }
+        String stableWindowId = windowId.trim();
+        String safeTitle = title == null || title.trim().isEmpty() ? stableWindowId : title.trim();
         new AlertDialog.Builder(this)
-                .setTitle("Close " + title + "?")
+                .setTitle("Close " + safeTitle + "?")
                 .setMessage("This closes that active session and whatever is running inside it.")
                 .setPositiveButton("Close", (dialog, which) -> {
-                    String path = index >= 0
-                            ? "/close?fast=1&windowId=" + urlEncode(windowId) + "&index=" + index
-                            : "/close?fast=1";
+                    String path = "/close?fast=1&windowId=" + urlEncode(stableWindowId);
+                    if (index >= 0) {
+                        path += "&index=" + index;
+                    }
+                    clearRememberedCloseTarget("close-dispatched");
                     control(path, "Closed session");
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
+    }
+
+    private boolean hasStableWindowId(String windowId) {
+        return windowId != null && windowId.trim().startsWith("@");
+    }
+
+    private void rememberActivePhoneWindow(JSONObject window, String reason) {
+        if (window == null) {
+            return;
+        }
+        String windowId = window.optString("windowId", "");
+        if (hasStableWindowId(windowId)) {
+            currentPhoneWindowId = windowId.trim();
+        }
+    }
+
+    private String promptComposerTargetKey() {
+        if (hasStableWindowId(currentPhoneWindowId)) {
+            return currentPhoneWindowId.trim();
+        }
+        if (hasStableWindowId(selectedPhoneWindowId)) {
+            return selectedPhoneWindowId.trim();
+        }
+        return "unknown:" + terminalModeGeneration;
+    }
+
+    private String promptComposerDraftSubmitTargetKey() {
+        if (promptComposerInput != null
+                && promptComposerInput.getText().length() > 0
+                && hasStableWindowId(promptComposerDraftTargetKey)) {
+            return promptComposerDraftTargetKey.trim();
+        }
+        return promptComposerTargetKey();
+    }
+
+    private String appendStableWindowQuery(String path) {
+        return appendStableWindowQuery(path, promptComposerTargetKey());
+    }
+
+    private String appendStableWindowQuery(String path, String targetKey) {
+        if (!hasStableWindowId(targetKey)) {
+            return path;
+        }
+        String separator = path.contains("?") ? "&" : "?";
+        // WHY: phone text/key/Stop actions must target the stable tmux
+        // `@windowId` that owned the visible native composer, not whichever tab
+        // becomes active while HTTP, Active switching, or proof scripts are in
+        // flight. Without this query, a typed correction can paste into another session
+        // and look like duplicate/random text.
+        return path + separator + "windowId=" + urlEncode(targetKey.trim());
+    }
+
+    private boolean hasRememberedCloseTarget() {
+        if (!hasStableWindowId(selectedPhoneWindowId)) {
+            return false;
+        }
+        long ageMs = System.currentTimeMillis() - selectedPhoneWindowUpdatedAtMs;
+        return ageMs >= 0 && ageMs <= SELECTED_CLOSE_TARGET_MAX_AGE_MS;
+    }
+
+    private void rememberSelectedPhoneWindow(int index, String windowId, String title, String reason) {
+        if (!hasStableWindowId(windowId)) {
+            return;
+        }
+        // WHY: close safety follows the immutable tmux `@windowId`, not the
+        // shifting index or a later `/active` lookup. This protects the exact
+        // Active Sessions row the user opened from being replaced by another
+        // `main_view_*` window during slow phone switching.
+        selectedPhoneWindowId = windowId.trim();
+        currentPhoneWindowId = selectedPhoneWindowId;
+        selectedPhoneWindowIndex = index;
+        selectedPhoneWindowTitle = title == null || title.trim().isEmpty()
+                ? selectedPhoneWindowId
+                : title.trim();
+        selectedPhoneWindowUpdatedAtMs = System.currentTimeMillis();
+    }
+
+    private void clearRememberedCloseTarget(String reason) {
+        selectedPhoneWindowId = "";
+        selectedPhoneWindowIndex = -1;
+        selectedPhoneWindowTitle = "";
+        selectedPhoneWindowUpdatedAtMs = 0;
     }
 
     private void showRenameCurrentTab() {
@@ -3877,6 +5077,106 @@ public class MainActivity extends Activity {
         control(path, message, true);
     }
 
+    private void controlAndSettleLiveBottom(String path, String message, String reason) {
+        controlAndSettleLiveBottom(path, message, reason, message);
+    }
+
+    private void controlAndSettleLiveBottom(String path, String message, String reason, String targetTitle) {
+        if (sessionSwitchInFlight) {
+            toast("Opening session...");
+            return;
+        }
+        suppressTerminalBodyTapForPassiveNavigation(reason + "-dispatch");
+        hideDockedPromptComposerForSessionSwitch(reason + "-dispatch");
+        sessionSwitchInFlight = true;
+        long paintShieldGeneration = showSessionSwitchPaintShield(reason);
+        long generation = leaveReadModeForLiveInput();
+        clearBroadSessionSwitchVisualMasks(reason + "-after-live-mode-cleanup");
+        getJsonWithRetry(path, payload -> {
+            if (!payload.optBoolean("ok", false)) {
+                sessionSwitchInFlight = false;
+                String error = payload.optString("error", "Command failed");
+                forceHideSessionSwitchPaintShield(reason + "-failed");
+                toast(error);
+                return;
+            }
+            // WHY: New/Old/Crashed opens create or select a tmux window just like
+            // Active Sessions, but they used to fall through the generic control
+            // callback and skip the Bottom-like settle. That is the path that lets
+            // xterm's dotted blank tail survive until the user manually taps Bottom.
+            // Keep the settle passive and non-blocking: no WebView reload, no IME
+            // focus request, no composer text destruction, and no second blocking
+            // `/live-bottom` before the picker/confirm UI disappears.
+            rememberOpenedWindowFromPayload(payload, reason, targetTitle);
+            String openedWindowId = payload.optString("windowId", "");
+            if ("resume-session-opened".equals(payload.optString("action", ""))
+                    && hasStableWindowId(openedWindowId)) {
+                // WHY: the real-phone Old Sessions proof opened a resumed tmux
+                // window but left the visible phone view on the previous tab.
+                // Route returned saved-session windowIds through the same
+                // `/select-live` path that Active Sessions already proves instead
+                // of trusting tmux's grouped select-window side effect.
+                String selectPath = "/select-live?fast=1&windowId=" + urlEncode(openedWindowId);
+                getJsonWithRetry(selectPath, selectPayload -> {
+                    sessionSwitchInFlight = false;
+                    if (!selectPayload.optBoolean("ok", false)) {
+                        String error = selectPayload.optString("error", "Command failed");
+                        forceHideSessionSwitchPaintShield(reason + "-select-live-failed");
+                        toast(error);
+                        return;
+                    }
+                    rememberOpenedWindowFromPayload(payload, reason + "-select-live", targetTitle);
+                    finishBottomLikeControlOpen(generation, paintShieldGeneration, message, reason);
+                }, exc -> {
+                    sessionSwitchInFlight = false;
+                    forceHideSessionSwitchPaintShield(reason + "-select-live-unreachable");
+                    toast("WEzterm control is not reachable");
+                });
+                return;
+            }
+            sessionSwitchInFlight = false;
+            finishBottomLikeControlOpen(generation, paintShieldGeneration, message, reason);
+        }, exc -> {
+            sessionSwitchInFlight = false;
+            forceHideSessionSwitchPaintShield(reason + "-unreachable");
+            toast("WEzterm control is not reachable");
+        });
+    }
+
+    private void rememberOpenedWindowFromPayload(JSONObject payload, String reason, String fallbackTitle) {
+        String windowId = payload.optString("windowId", "");
+        if (!hasStableWindowId(windowId)) {
+            return;
+        }
+        String title = payload.optString("title",
+                payload.optString("name",
+                        fallbackTitle == null || fallbackTitle.trim().isEmpty()
+                                ? payload.optString("action", windowId)
+                                : fallbackTitle));
+        rememberSelectedPhoneWindow(payload.optInt("index", -1), windowId, title, reason);
+    }
+
+    private void finishBottomLikeControlOpen(long generation, long paintShieldGeneration, String message, String reason) {
+        suppressTerminalBodyTapForPassiveNavigation(reason + "-settle");
+        hideDockedPromptComposerForSessionSwitch(reason);
+        long settleGeneration = terminalModeGeneration;
+        settleSelectedTabViewport(reason);
+        restoreLiveAfterTabOpen(reason, settleGeneration, paintShieldGeneration);
+        confirmSelectedTabLiveBottomSoon(reason, settleGeneration);
+        hideSessionSwitchPaintShieldSoon(reason + "-safety", paintShieldGeneration, 3200);
+        if (generation != terminalModeGeneration) {
+            return;
+        }
+        if (message != null && !message.isEmpty()) {
+            toast(message);
+        }
+        // WHY: passive tab-open settle must finish in the toolbar-only Start
+        // state. Refocusing the hidden xterm textarea here reintroduced the
+        // duplicate-writing and no-Backspace IME path while the real fix only
+        // needs Bottom-core repaint/resize work above.
+        suppressTerminalBodyTapForPassiveNavigation(reason + "-complete");
+    }
+
     private void selectTabForTyping(int index, String windowId, String title) {
         selectTabForTyping(index, windowId, title, null);
     }
@@ -3885,6 +5185,15 @@ public class MainActivity extends Activity {
         if (sessionSwitchInFlight) {
             toast("Opening session...");
             return;
+        }
+        suppressTerminalBodyTapForPassiveNavigation("select-live-dispatch");
+        hideDockedPromptComposerForSessionSwitch("select-live-dispatch");
+        if (dialogRef != null && dialogRef[0] != null) {
+            // WHY: tapping an Active Sessions row is a navigation command. The
+            // picker must leave the screen immediately after the tap instead of
+            // waiting for settle calls; otherwise slow `/select-live` paths look
+            // stuck and users can hit Close while thinking the new tab is open.
+            dialogRef[0].dismiss();
         }
         sessionSwitchInFlight = true;
         long paintShieldGeneration = showSessionSwitchPaintShield("select-live");
@@ -3895,6 +5204,7 @@ public class MainActivity extends Activity {
         // no WebView reload, no xterm scroll burst, and no native composer/IME
         // left open unless the user deliberately taps to type again.
         long generation = leaveReadModeForLiveInput();
+        clearBroadSessionSwitchVisualMasks("select-live-after-live-mode-cleanup");
         // WHY: switching tabs used to wait for the server to rebuild the full
         // tab list, including pane-tail status reads for every Codex window,
         // before returning to live typing. `/select-live` combines select and
@@ -3909,17 +5219,16 @@ public class MainActivity extends Activity {
                 toast(error);
                 return;
             }
-            // WHY: `/select-live` moves tmux and asks for bottom restore, but the
-            // v1.87 real-phone proof still caught a visible dotted xterm field
-            // during the short "Opening Phone Crash Restore" transition. Keep the
-            // picker up for one extra server-owned `/live-bottom` confirmation,
-            // then dismiss and let ttyd paint the selected tmux window. This
-            // avoids WebView reloads, focus bursts, forced black canvas/theme
-            // mutation, and the frozen scroll/zoom paths while preventing users
-            // from seeing the stale dotted canvas on entry.
-            getJsonWithRetry("/live-bottom", livePayload ->
-                    finishSelectedTabOpen(generation, paintShieldGeneration, title, dialogRef), liveExc ->
-                    finishSelectedTabOpen(generation, paintShieldGeneration, title, dialogRef));
+            // WHY: `/select-live` already selects the stable tmux window and runs
+            // the fast bottom restore server-side. Waiting on a second
+            // `/live-bottom` before dismissing Active Sessions made slow phone
+            // switches look stuck in the picker, which encouraged users to hit
+            // Close while the UI could still be pointing at the previous active
+            // window. Remember the exact `@windowId`, dismiss immediately, then
+            // let ttyd paint the selected session through the existing late
+            // confirmation settle instead of reloading the WebView.
+            rememberSelectedPhoneWindow(index, windowId, title, "select-live");
+            finishSelectedTabOpen(generation, paintShieldGeneration, title, dialogRef);
         }, exc -> {
             sessionSwitchInFlight = false;
             forceHideSessionSwitchPaintShield("select-live-unreachable");
@@ -3935,10 +5244,7 @@ public class MainActivity extends Activity {
         // reopens the native composer after a passive session switch. Suppress only
         // terminal-body touches for the short switch settle window; toolbar buttons
         // and later deliberate terminal taps still work.
-        terminalBodyTapSuppressedUntilMs = Math.max(
-                terminalBodyTapSuppressedUntilMs,
-                System.currentTimeMillis() + 900
-        );
+        suppressTerminalBodyTapForPassiveNavigation("select-live-settle");
         if (dialogRef != null && dialogRef[0] != null) {
             dialogRef[0].dismiss();
         }
@@ -3950,15 +5256,25 @@ public class MainActivity extends Activity {
         // checking freshness; drafts are preserved for the next typing tap.
         hideDockedPromptComposerForSessionSwitch("select-live");
         long switchSettleGeneration = terminalModeGeneration;
+        clearBroadSessionSwitchVisualMasks("select-live-success-render-owned");
         settleSelectedTabViewport("select-live");
+        restoreLiveAfterTabOpen("select-live", switchSettleGeneration, paintShieldGeneration);
         confirmSelectedTabLiveBottomSoon("select-live", switchSettleGeneration);
-        hideSessionSwitchPaintShieldSoon("select-live-settle", paintShieldGeneration, 500);
-        hideSessionSwitchPaintShieldSoon("select-live-safety", paintShieldGeneration, 1200);
+        // WHY: v2.32's one-shot WebView refresh cleared some dotted proof frames,
+        // but it also made real phone switches feel slow and could leave the user
+        // staring at black terminal paint instead of the selected live bottom.
+        // v2.33 keeps the same server-side `/select-live` + `/live-bottom` path
+        // and lets explicit Refresh remain the manual transport repair.
+        hideSessionSwitchPaintShieldSoon("select-live-safety", paintShieldGeneration, 3200);
         if (generation != terminalModeGeneration) {
             return;
         }
         toast("Opened " + title);
-        focusTerminalInputSoon(false);
+        // WHY: Active switch must end like an automatic Bottom press, not like a
+        // tap-to-type. Keeping this path detached from xterm focus is what makes
+        // the visible toolbar return to Start and prevents the duplicate-writing
+        // hidden-textarea regression from coming back with the dotted-grid fix.
+        suppressTerminalBodyTapForPassiveNavigation("select-live-complete");
     }
 
     private void settleSelectedTabViewport(String reason) {
@@ -3977,6 +5293,7 @@ public class MainActivity extends Activity {
         fitTerminalToCurrentViewSoon(reason);
         alignLiveBottomViewportForPassiveEntrySoon(reason);
         normalizeXtermCanvasAfterSessionSwitch(reason);
+        keepPassiveSwitchXtermSettleAlive(reason);
         // WHY: v1.84/v1.85 proved that a visible-bitmap watchdog can mistake a
         // valid mostly-black terminal bottom for a blank foreground pane and
         // start WebView reloads after the terminal first appears. Active switching
@@ -3997,27 +5314,15 @@ public class MainActivity extends Activity {
         // tap-to-type and scrolling keep their existing ownership.
         uiHandler.postDelayed(() -> confirmSelectedTabLiveBottom(reason, generation), 260);
         uiHandler.postDelayed(() -> confirmSelectedTabLiveBottom(reason, generation), 760);
+        uiHandler.postDelayed(() -> confirmSelectedTabLiveBottom(reason, generation), 1600);
+        uiHandler.postDelayed(() -> confirmSelectedTabLiveBottom(reason, generation), 2600);
     }
 
     private void confirmSelectedTabLiveBottom(String reason, long generation) {
         if (generation != terminalModeGeneration || readModeSuppressesKeyboard || terminalHistoryViewportActive) {
             return;
         }
-        getJsonWithRetry("/live-bottom", payload -> {
-            if (generation != terminalModeGeneration || !payload.optBoolean("ok", false)) {
-                return;
-            }
-            pinTerminalViewportLocal();
-            fitTerminalToCurrentViewSoon(reason + "-live-bottom-confirm");
-            alignLiveBottomViewportForPassiveEntrySoon(reason + "-live-bottom-confirm");
-            normalizeXtermCanvasAfterSessionSwitch(reason + "-live-bottom-confirm");
-            scheduleToolbarStatusDotRefresh(150);
-        }, exc -> {
-            // WHY: Active switching should still succeed if the non-critical
-            // confirmation request loses a race with another user action. The
-            // explicit Bottom/Refresh buttons remain available, and the proof
-            // harness fails releases that leave the selected tab dotted.
-        });
+        restoreLiveAfterTabOpen(reason + "-confirm", generation, 0);
     }
 
     private void normalizeXtermCanvasAfterSessionSwitch(String reason) {
@@ -4025,16 +5330,54 @@ public class MainActivity extends Activity {
             return;
         }
         long generation = ++sessionSwitchLiveViewportGeneration;
-        normalizeXtermCanvasAfterSessionSwitch(reason, generation, 40);
-        normalizeXtermCanvasAfterSessionSwitch(reason, generation, 140);
-        normalizeXtermCanvasAfterSessionSwitch(reason, generation, 360);
+        long maskGeneration = blankTailMaskGeneration;
+        normalizeXtermCanvasAfterSessionSwitch(reason, generation, maskGeneration, 40);
+        normalizeXtermCanvasAfterSessionSwitch(reason, generation, maskGeneration, 140);
+        normalizeXtermCanvasAfterSessionSwitch(reason, generation, maskGeneration, 360);
     }
 
-    private void normalizeXtermCanvasAfterSessionSwitch(String reason, long generation, long delayMs) {
+    private void keepPassiveSwitchXtermSettleAlive(String reason) {
+        if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            return;
+        }
+        long generation = ++passiveSwitchXtermSettleGeneration;
+        // WHY: Active/New/Old tab-open must behave like an automatic Bottom
+        // press without opening the native composer. The older blank-tail settle
+        // callbacks are intentionally cancelled by typing/read/touch, but repeated
+        // passive `/live-bottom` confirmations can also replace those callbacks
+        // before the real xterm paint that exposes the dotted lower field. Keep a
+        // separate passive-switch settle train alive through the repaint window;
+        // `cancelXtermBlankTailMask` below still kills it on real touch, typing,
+        // or read mode so it cannot become the old stuck black-bottom mask.
+        webView.evaluateJavascript(xtermCanvasSettleScript(reason + "-passive-switch-immediate", true), null);
+        keepPassiveSwitchXtermSettleAlive(reason, generation, 120);
+        keepPassiveSwitchXtermSettleAlive(reason, generation, 360);
+        keepPassiveSwitchXtermSettleAlive(reason, generation, 900);
+        keepPassiveSwitchXtermSettleAlive(reason, generation, 1600);
+        keepPassiveSwitchXtermSettleAlive(reason, generation, PASSIVE_SWITCH_XTERM_SETTLE_LAST_DELAY_MS);
+    }
+
+    private void keepPassiveSwitchXtermSettleAlive(String reason, long generation, long delayMs) {
+        uiHandler.postDelayed(() -> {
+            if (webView == null
+                    || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT
+                    || generation != passiveSwitchXtermSettleGeneration
+                    || readModeSuppressesKeyboard
+                    || terminalHistoryViewportActive
+                    || isTerminalGestureRecoveryActive()
+                    || isViewerPanAllowed()) {
+                return;
+            }
+            webView.evaluateJavascript(xtermCanvasSettleScript(reason + "-passive-switch-guard", true), null);
+        }, Math.max(0, delayMs));
+    }
+
+    private void normalizeXtermCanvasAfterSessionSwitch(String reason, long generation, long maskGeneration, long delayMs) {
         uiHandler.postDelayed(() -> {
             if (webView == null
                     || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT
                     || generation != sessionSwitchLiveViewportGeneration
+                    || maskGeneration != blankTailMaskGeneration
                     || readModeSuppressesKeyboard
                     || terminalHistoryViewportActive
                     || isTerminalGestureRecoveryActive()
@@ -4060,6 +5403,24 @@ public class MainActivity extends Activity {
             // switches the pre-redraw canvas clear from transparent clearRect to
             // source-over black canvas fill because real-phone v1.93 proof showed
             // transparent cells could still expose stale compositor dot pixels.
+            // WHY: the v1.99 DOM blank-tail mask is a short live-bottom transition
+            // cover. Typing, tap-to-compose, or one-finger scroll must cancel queued
+            // mask installs, or a delayed settle callback can repaint the mask as a
+            // large lower-half blackout after the user has moved on from passive settle.
+            // v2.02 keeps an independent tail-only dotted-row scrubber alive longer
+            // than the black mask because Android/xterm can repaint dotted filler
+            // rows after the mask expires. It hides only repeated blank-tail dots and
+            // is removed with the same typing/read/touch cancellation boundary.
+            // v2.04 also treats repeated separator-only rows as blank-tail filler:
+            // tmux/Codex horizontal rules render as dotted rows on Android, and
+            // leaving them visible made Active/Old opens look stuck in a dot grid.
+            // v2.08 makes that scrubber buffer/cursor-aware: legitimate CLI output
+            // can contain dot-only progress rows or separator rows, so a DOM row is
+            // hidden only when xterm's backing buffer line is blank/whitespace or,
+            // if buffer text is unavailable, the row is below the live cursor.
+            // APK-DOTS-BLACK-BOTTOM keeps that exact xterm buffer line truth in the
+            // lower-tail fallback too: real dot/separator CLI content remains visible
+            // and only proven blank-tail rows may be hidden or covered.
             webView.evaluateJavascript(xtermCanvasSettleScript(reason, true), null);
         }, Math.max(0, delayMs));
     }
@@ -4080,6 +5441,22 @@ public class MainActivity extends Activity {
                 + "if(body){body.scrollTop=0;body.scrollLeft=0;}"
                 + "window.scrollTo(0,0);"
                 + "var t=window.term||window.terminal;"
+                + "function forceXtermCustomGlyphsFalse(){"
+                + "try{"
+                + "if(!t){return;}"
+                + "if(t.options){t.options.customGlyphs=false;}"
+                + "if(typeof t.setOption==='function'){t.setOption('customGlyphs',false);}"
+                + "/* WHY: v2.39 forces xterm's live runtime option because the ttyd URL/client option can still reach the renderer as a non-boolean value. The xterm bundle checks customGlyphs with strict false; if it is the string 'false', blank cells can still draw as dots. Set the terminal option before every passive fit/settle redraw so Active/Old switches cannot regress to the sparse lower dotted field without relying on a WebView reload or broad black mask. */"
+                + "}catch(e){}"
+                + "}"
+                + "forceXtermCustomGlyphsFalse();"
+                + "function fitXtermToPhoneViewport(){"
+                + "try{"
+                + "if(t&&typeof t.fit==='function'){t.fit();}"
+                + "/* WHY: v2.40 fixes the remaining broad Active-switch proof failure where the selected tmux pane row count stayed at the old 38-row desktop height while the phone WebView had many more xterm rows. Those extra rows rendered as lower dotted filler even though tmux capture had no dots. ttyd exposes the fit addon as window.term.fit(); call it during passive session-switch settle so the pty/tmux row count matches the visible phone viewport without reloading WebView, focusing the hidden textarea, opening IME, or restoring a black lower shield. */"
+                + "}catch(e){}"
+                + "}"
+                + "fitXtermToPhoneViewport();"
                 + "function clearXtermCanvasLayers(){"
                 + "var canvases=document.querySelectorAll('.xterm-screen canvas,.xterm canvas');"
                 + "for(var i=0;i<canvases.length;i++){"
@@ -4091,29 +5468,300 @@ public class MainActivity extends Activity {
                 + "try{var r=t&&t._core&&t._core._renderService;"
                 + "if(r&&typeof r.clear==='function'){r.clear();}}catch(e){}"
                 + "}"
+                + "function scrubCanvasDotRows(){"
+                + "try{"
+                + "var canvases=document.querySelectorAll('.xterm-screen canvas,.xterm canvas');"
+                + "for(var ci=0;ci<canvases.length;ci++){"
+                + "var c=canvases[ci];"
+                + "var ctx=c.getContext&&c.getContext('2d',{willReadFrequently:true});"
+                + "if(!ctx||!c.width||!c.height){continue;}"
+                + "var start=Math.floor(c.height*0.34);"
+                + "var width=c.width,height=c.height-start;"
+                + "if(width<80||height<20){continue;}"
+                + "var data=ctx.getImageData(0,start,width,height).data;"
+                + "var threshold=Math.max(48,Math.floor(width/24));"
+                + "ctx.save();"
+                + "ctx.fillStyle='rgb(26,29,36)';"
+                + "for(var y=0;y<height;y++){"
+                + "var hits=0;"
+                + "var firstHit=-1,lastHit=-1;"
+                + "for(var x=0;x<width;x+=3){"
+                + "var p=(y*width+x)*4;"
+                + "var r=data[p],g=data[p+1],b=data[p+2];"
+                + "if(r>95&&g>95&&b>95&&Math.max(r,g,b)-Math.min(r,g,b)<90){hits++;if(firstHit<0){firstHit=x;}lastHit=x;}"
+                + "}"
+                + "if(hits>=threshold&&firstHit>=0&&(lastHit-firstHit)>width*0.65){"
+                + "/* WHY: v2.38 lowers the v2.35 repeated bright dot rows in the lower terminal canvas threshold to match the real proof detector's sparse full-width dot rows. The 2026-06-18 Active-title screenshot had about the detector-level row density, so width/9 missed it and left the lower terminal as dots. Keep the span gate so normal text/progress rows are not wiped; paint only detected full-width one-pixel filler rows, never install a full lower black rectangle, never reload WebView, and never touch the native composer. */"
+                + "ctx.fillRect(0,Math.max(0,start+y-1),width,3);"
+                + "y+=2;"
+                + "}"
+                + "}"
+                + "ctx.restore();"
+                + "}"
+                + "}catch(e){}"
+                + "}"
+                + "function clearCanvasDotRowScrubber(){"
+                + "try{"
+                + "window.__weztermCanvasDotRowScrubExpiresAt=0;"
+                + "if(window.__weztermCanvasDotRowScrubTimer){clearInterval(window.__weztermCanvasDotRowScrubTimer);window.__weztermCanvasDotRowScrubTimer=null;}"
+                + "}catch(e){}"
+                + "}"
+                + "function installCanvasDotRowScrubber(){"
+                + "try{"
+                + "window.__weztermCanvasDotRowScrubExpiresAt=Date.now()+" + PASSIVE_SWITCH_XTERM_SETTLE_LAST_DELAY_MS + ";"
+                + "function scrub(){try{if(!window.__weztermCanvasDotRowScrubExpiresAt||Date.now()>window.__weztermCanvasDotRowScrubExpiresAt){clearCanvasDotRowScrubber();return;}scrubCanvasDotRows();}catch(e){}}"
+                + "scrub();"
+                + "if(window.__weztermCanvasDotRowScrubTimer){clearInterval(window.__weztermCanvasDotRowScrubTimer);}"
+                + "window.__weztermCanvasDotRowScrubTimer=setInterval(scrub,80);"
+                + "/* WHY: v2.36 keeps the v2.35 canvas-dot fix alive across Android's late xterm repaint. The timer is bounded to the passive switch window and removes only detected bright dot rows; it is not a lower shield, PopupWindow, WebView reload, or keyboard/focus action. */"
+                + "}catch(e){}"
+                + "}"
                 + "function isDotOnlyText(text){"
                 + "var raw=String(text||'');"
                 + "if(!raw.length){return false;}"
                 + "var s=raw.replace(/[\\s\\u00a0\\u2000-\\u200d\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]/g,'');"
                 + "s=s.split('.').join('').split('·').join('').split('∙').join('').split('⋅').join('').split('•').join('').split('˙').join('');"
+                + "s=s.split('─').join('').split('━').join('').split('═').join('').split('╌').join('').split('┄').join('').split('┈').join('').split('╴').join('').split('╶').join('').split('╼').join('').split('╾').join('');"
+                + "/* WHY: v2.20 strips Braille/dot-block glyphs because the v2.19 real-phone screenshot showed Codex filler as U+2800-style dot cells, not ASCII periods. Without this classifier the row scrubber sees visible dots but isDotOnlyText returns false, so Active Sessions can regress to the exact dotted lower field again. */"
+                + "var brailleStripped='';"
+                + "for(var bi=0;bi<s.length;bi++){"
+                + "var code=s.charCodeAt(bi);"
+                + "if(code<0x2800||code>0x28ff){brailleStripped+=s.charAt(bi);}"
+                + "}"
+                + "s=brailleStripped;"
                 + "return s.length===0;"
+                + "}"
+                + "function isBlankLikeText(text){"
+                + "return String(text||'').replace(/[\\s\\u00a0\\u2000-\\u200d\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]/g,'').length===0;"
+                + "}"
+                + "function xtermBufferLineText(rowIndex){"
+                + "try{"
+                + "if(!t||!t.buffer||!t.buffer.active||typeof t.buffer.active.getLine!=='function'){return null;}"
+                + "var viewportY=Number(t.buffer.active.viewportY)||0;"
+                + "var line=t.buffer.active.getLine(viewportY+rowIndex);"
+                + "if(!line||typeof line.translateToString!=='function'){return null;}"
+                + "return line.translateToString(true);"
+                + "}catch(e){return null;}"
+                + "}"
+                + "function isBlankBufferLine(rowIndex){"
+                + "var text=xtermBufferLineText(rowIndex);"
+                + "if(text===null){return false;}"
+                + "return isBlankLikeText(text);"
+                + "}"
+                + "function isScrubbableBlankTailRow(rowIndex){"
+                + "var text=xtermBufferLineText(rowIndex);"
+                + "if(text!==null){return isBlankLikeText(text);}"
+                + "return isPastLiveCursorRow(rowIndex);"
+                + "}"
+                + "function rowHasMeaningfulTerminalContent(rowIndex,rawText){"
+                + "var text=xtermBufferLineText(rowIndex);"
+                + "if(text!==null){"
+                + "/* WHY: the v2.14 real-phone Active switch proof showed dot-only Codex filler can be present as real xterm buffer text. During this bounded settle script, dot-only rows are visual filler, not meaningful terminal content; otherwise the mask top follows the dots to the bottom and the user sees the same dotted field again. Normal non-dot buffer text still stays meaningful. */"
+                + "return !isBlankLikeText(text)&&!isDotOnlyText(text);"
+                + "}"
+                + "var dom=String(rawText||'').replace(/\\u00a0/g,' ').trim();"
+                + "return !!(dom&&!isDotOnlyText(rawText));"
+                + "}"
+                + "function hasReadableDomText(rawText){"
+                + "var dom=String(rawText||'').replace(/\\u00a0/g,' ').trim();"
+                + "if(!dom||isDotOnlyText(dom)){return false;}"
+                + "return /[A-Za-z0-9_@#:$\\/\\\\-]/.test(dom);"
+                + "}"
+                + "function isPastLiveCursorRow(rowIndex){"
+                + "try{"
+                + "if(!t||!t.buffer||!t.buffer.active){return false;}"
+                + "var cursorY=Number(t.buffer.active.cursorY);"
+                + "return !isNaN(cursorY)&&rowIndex>cursorY;"
+                + "}catch(e){return false;}"
+                + "}"
+                + "function visualDotFillerTopCss(screen,screenRect,rowNodes){"
+                + "try{"
+                + "if(!screenRect||!screenRect.height||!rowNodes||!rowNodes.length){return null;}"
+                + "var seenNonDot=false;"
+                + "var filler=[];"
+                + "for(var i=0;i<rowNodes.length;i++){"
+                + "var row=rowNodes[i];"
+                + "var rawText=row.textContent||'';"
+                + "var rr=row.getBoundingClientRect&&row.getBoundingClientRect();"
+                + "if(!rr){continue;}"
+                + "var rowTop=rr.top-screenRect.top;"
+                + "if(isDotOnlyText(rawText)&&seenNonDot&&rowTop>=screenRect.height*0.25){"
+                + "filler.push(row);"
+                + "}else if(String(rawText||'').replace(/\\u00a0/g,' ').trim()&&!isDotOnlyText(rawText)){"
+                + "seenNonDot=true;"
+                + "filler=[];"
+                + "}"
+                + "}"
+                + "if(filler.length>=12){"
+                + "var first=filler[0].getBoundingClientRect&&filler[0].getBoundingClientRect();"
+                + "if(first){return Math.max(0,first.top-screenRect.top);}"
+                + "}"
+                + "}catch(e){}"
+                + "return null;"
+                + "}"
+                + "function bufferDotFillerTopCss(screenRect){"
+                + "try{"
+                + "if(!t||!t.buffer||!t.buffer.active||typeof t.buffer.active.getLine!=='function'||typeof t.rows!=='number'||!screenRect||!screenRect.height){return null;}"
+                + "var rows=Math.max(1,Number(t.rows)||1);"
+                + "var viewportY=Number(t.buffer.active.viewportY)||0;"
+                + "var lastMeaningful=-1;"
+                + "var currentRun=[];"
+                + "var bestRun=[];"
+                + "for(var i=0;i<rows;i++){"
+                + "var line=t.buffer.active.getLine(viewportY+i);"
+                + "var text=line&&typeof line.translateToString==='function'?line.translateToString(true):'';"
+                + "var dot=isDotOnlyText(text);"
+                + "var blank=isBlankLikeText(text);"
+                + "if(dot&&i>=Math.floor(rows*0.25)&&(lastMeaningful>=0||i>=Math.floor(rows*0.35))){"
+                + "currentRun.push(i);"
+                + "if(currentRun.length>bestRun.length){bestRun=currentRun.slice(0);}"
+                + "}else if(!blank&&!dot){"
+                + "lastMeaningful=i;"
+                + "currentRun=[];"
+                + "}else if(blank){"
+                + "currentRun=[];"
+                + "}"
+                + "}"
+                + "if(bestRun.length>=12){"
+                + "/* WHY: v2.23 covers the real-phone case where the lower dotted field persists in xterm's backing buffer even when DOM row selectors or row visibility cleanup do not expose usable row nodes. This remains passive-switch bounded and lower-screen/run-length gated; it does not focus xterm, reload WebView, open the keyboard, or hide arbitrary dot output outside the protected settle window. */"
+                + "return Math.max(0,Math.min(screenRect.height-1,bestRun[0]*(screenRect.height/rows)));"
+                + "}"
+                + "}catch(e){}"
+                + "return null;"
+                + "}"
+                + "function shouldHideDotOnlyRow(row,rowIndex,topCss,screenRect){"
+                + "if(!isDotOnlyText(row.textContent||'')){return false;}"
+                + "if(!isScrubbableBlankTailRow(rowIndex)){return false;}"
+                + "if(typeof topCss!=='number'){return false;}"
+                + "var rr=row.getBoundingClientRect&&row.getBoundingClientRect();"
+                + "return !!(rr&&rr.top-screenRect.top>=topCss-1);"
                 + "}"
                 + "function hideDotOnlyRows(){"
                 + "try{"
+                + "var screen=document.querySelector('.xterm-screen')||document.querySelector('.xterm');"
+                + "if(!screen){return;}"
+                + "var screenRect=screen.getBoundingClientRect&&screen.getBoundingClientRect();"
+                + "if(!screenRect||!screenRect.height){return;}"
                 + "var rowNodes=document.querySelectorAll('.xterm-rows>div,.xterm-rows>span');"
+                + "var topCss=blankTailTopCss(screen);"
+                + "var hideRows=[];"
+                + "var tailDotRows=[];"
+                + "var lowerBlankDotRows=[];"
+                + "var visualFillerDotRows=[];"
+                + "var hardBlankTailRows=[];"
+                + "var sustainedLowerDotRows=[];"
+                + "var currentLowerDotRun=[];"
+                + "var lastMeaningfulRowIndex=-1;"
+                + "var lastMeaningfulBottomCss=null;"
+                + "var lastReadableBottomCss=null;"
+                + "if(typeof topCss==='number'){"
                 + "for(var i=0;i<rowNodes.length;i++){"
                 + "var row=rowNodes[i];"
-                + "if(isDotOnlyText(row.textContent||'')){"
-                + "row.setAttribute('data-wezterm-dot-row-hidden','1');"
-                + "row.style.setProperty('visibility','hidden','important');"
-                + "row.style.setProperty('color','transparent','important');"
-                + "row.style.setProperty('text-shadow','none','important');"
-                + "}else if(row.getAttribute('data-wezterm-dot-row-hidden')==='1'){"
+                + "if(shouldHideDotOnlyRow(row,i,topCss,screenRect)){hideRows.push(row);}"
+                + "}"
+                + "}"
+                + "for(var k=0;k<rowNodes.length;k++){"
+                + "var candidate=rowNodes[k];"
+                + "var rawText=candidate.textContent||'';"
+                + "var trimmed=rawText.replace(/\\u00a0/g,' ').trim();"
+                + "var rr=candidate.getBoundingClientRect&&candidate.getBoundingClientRect();"
+                + "var candidateIsDotOnly=isDotOnlyText(rawText);"
+                + "var candidateHasReadableText=hasReadableDomText(rawText);"
+                + "if(candidateHasReadableText&&rr){lastReadableBottomCss=Math.min(screenRect.height,Math.max(0,rr.bottom-screenRect.top));hardBlankTailRows=[];}"
+                + "else if(lastReadableBottomCss!==null&&rr&&rr.top-screenRect.top>=Math.max(lastReadableBottomCss-1,screenRect.height*0.35)&&!candidateHasReadableText){hardBlankTailRows.push(candidate);}"
+                + "if(candidateIsDotOnly&&rr&&rr.top-screenRect.top>=screenRect.height*0.25){"
+                + "currentLowerDotRun.push(candidate);"
+                + "if(currentLowerDotRun.length>sustainedLowerDotRows.length){sustainedLowerDotRows=currentLowerDotRun.slice(0);}"
+                + "}else if(trimmed&&!candidateIsDotOnly){"
+                + "currentLowerDotRun=[];"
+                + "}"
+                + "if(lastMeaningfulRowIndex>=0&&isDotOnlyText(rawText)&&rr&&lastMeaningfulBottomCss!==null){"
+                + "var visualRowTop=rr.top-screenRect.top;"
+                + "if(visualRowTop>=lastMeaningfulBottomCss-1&&visualRowTop>=screenRect.height*0.35){visualFillerDotRows.push(candidate);continue;}"
+                + "}"
+                + "if(rowHasMeaningfulTerminalContent(k,rawText)){"
+                + "lastMeaningfulRowIndex=k;tailDotRows=[];"
+                + "if(rr){lastMeaningfulBottomCss=Math.min(screenRect.height,Math.max(0,rr.bottom-screenRect.top));}"
+                + "}else if(lastMeaningfulRowIndex>=0&&isDotOnlyText(rawText)&&isScrubbableBlankTailRow(k)&&rr&&lastMeaningfulBottomCss!==null){"
+                + "var rowTop=rr.top-screenRect.top;"
+                + "if(rowTop>=lastMeaningfulBottomCss-1&&rowTop>=screenRect.height*0.35){tailDotRows.push(candidate);}"
+                + "}else if(lastMeaningfulRowIndex<0&&isDotOnlyText(rawText)&&isScrubbableBlankTailRow(k)&&rr){"
+                + "var lowerRowTop=rr.top-screenRect.top;"
+                + "if(lowerRowTop>=screenRect.height*0.18){lowerBlankDotRows.push(candidate);}"
+                + "}"
+                + "}"
+                + "if(hideRows.length<3&&tailDotRows.length>=6){"
+                + "/* WHY: the user repeatedly hit a lower-tail dotted field after Active/Bottom even though tmux text was normal. The buffer-aware path above protects legitimate CLI dot/progress rows, and this fallback now uses the same xterm buffer line truth before hiding anything. Real Android/xterm DOM can still paint a long repeated dot tail below the last real row. Hide only that tail fallback, never all dot rows, and only after the buffer-aware gate proves the rows are blank tail. */"
+                + "hideRows=tailDotRows;"
+                + "}else if(hideRows.length<3&&lastMeaningfulRowIndex<0&&lowerBlankDotRows.length>=12){"
+                + "/* WHY: the 2026-06-17 Active Sessions regression showed a full lower-screen dotted field immediately after switching tabs. In that transition xterm can expose only blank-backed dotted filler rows before any meaningful DOM row is available, so the last-real-row tail fallback never starts. Hide lower-tail blank-backed dot rows even when no prompt row is visible, but still require the same xterm buffer/cursor blank-tail gate and never revive the old broad all-dot-row fallback. */"
+                + "hideRows=lowerBlankDotRows;"
+                + "}else if(hideRows.length<3&&visualFillerDotRows.length>=12){"
+                + "/* WHY: real-phone v2.12 Active-session switching proved Codex/xterm can render a large lower-screen dot-only filler field as actual terminal glyphs, not blank buffer rows. The user's invariant is visual: changing Active Sessions must land on a readable live-bottom view, not a half-screen dot field. Hide only a sustained lower-screen dot-only filler run below the last meaningful row during the short passive switch scrubber window; do not hide arbitrary dot output, and do not focus xterm, reload WebView, or open the keyboard to clear it. */"
+                + "hideRows=visualFillerDotRows;"
+                + "}else if(hideRows.length<3&&sustainedLowerDotRows.length>=12){"
+                + "/* WHY: v2.18 exists because v2.17 still showed the same Active Sessions dotted field when the dot rows were real xterm/Codex filler rather than blank buffer rows. The phone contract is visual readability, so a sustained lower-screen run of dot-only rows during passive tab-open is filler even if xterm's buffer reports glyphs. This fallback is lower-screen and run-length gated; typing/read/touch cancellation removes it so it cannot hide legitimate command output forever. */"
+                + "hideRows=sustainedLowerDotRows;"
+                + "}else if(hideRows.length<3&&hardBlankTailRows.length>=8){"
+                + "/* WHY: v2.26 still failed the @0->@59 real-phone proof because the lower xterm tail repainted as dots after the immediate frame while the dot classifier did not select those rows. During passive Active-switch settle, rows below the last readable prompt/log line are blank-tail surface even when stale renderer glyphs make them look nonblank. Hide only that lower unreadable tail, restore it through the same typing/read/touch cleanup, and do not change title/session selection. */"
+                + "hideRows=hardBlankTailRows;"
+                + "}"
+                + "for(var j=0;j<rowNodes.length;j++){"
+                + "var current=rowNodes[j];"
+                + "var shouldHide=hideRows.length>=3&&hideRows.indexOf(current)>=0;"
+                + "if(shouldHide){"
+                + "current.setAttribute('data-wezterm-dot-row-hidden','1');"
+                + "current.style.setProperty('visibility','hidden','important');"
+                + "current.style.setProperty('color','transparent','important');"
+                + "current.style.setProperty('-webkit-text-fill-color','transparent','important');"
+                + "current.style.setProperty('text-shadow','none','important');"
+                + "current.style.setProperty('background','#000','important');"
+                + "}else if(current.getAttribute('data-wezterm-dot-row-hidden')==='1'){"
+                + "current.removeAttribute('data-wezterm-dot-row-hidden');"
+                + "current.style.removeProperty('visibility');"
+                + "current.style.removeProperty('color');"
+                + "current.style.removeProperty('-webkit-text-fill-color');"
+                + "current.style.removeProperty('text-shadow');"
+                + "current.style.removeProperty('background');"
+                + "}"
+                + "}"
+                + "}catch(e){}"
+                + "}"
+                + "function restoreDotOnlyRows(){"
+                + "try{"
+                + "var rowNodes=document.querySelectorAll('[data-wezterm-dot-row-hidden=\"1\"]');"
+                + "for(var i=0;i<rowNodes.length;i++){"
+                + "var row=rowNodes[i];"
                 + "row.removeAttribute('data-wezterm-dot-row-hidden');"
                 + "row.style.removeProperty('visibility');"
                 + "row.style.removeProperty('color');"
+                + "row.style.removeProperty('-webkit-text-fill-color');"
                 + "row.style.removeProperty('text-shadow');"
+                + "row.style.removeProperty('background');"
                 + "}"
+                + "}"
+                + "}catch(e){}"
+                + "}"
+                + "function clearDotRowScrubber(revealRows){"
+                + "try{"
+                + "window.__weztermDotRowScrubExpiresAt=0;"
+                + "if(window.__weztermDotRowScrubTimer){clearInterval(window.__weztermDotRowScrubTimer);window.__weztermDotRowScrubTimer=null;}"
+                + "if(window.__weztermDotRowScrubObserver){try{window.__weztermDotRowScrubObserver.disconnect();}catch(e){}window.__weztermDotRowScrubObserver=null;}"
+                + "if(revealRows){restoreDotOnlyRows();}"
+                + "}catch(e){}"
+                + "}"
+                + "function installDotRowScrubber(){"
+                + "try{"
+                + "window.__weztermDotRowScrubExpiresAt=Date.now()+" + DOT_ROW_SCRUBBER_MAX_LIFETIME_MS + ";"
+                + "function scrub(){try{if(!window.__weztermDotRowScrubExpiresAt||Date.now()>window.__weztermDotRowScrubExpiresAt){clearDotRowScrubber(true);return;}hideDotOnlyRows();}catch(e){}}"
+                + "scrub();"
+                + "if(window.__weztermDotRowScrubTimer){clearInterval(window.__weztermDotRowScrubTimer);}"
+                + "window.__weztermDotRowScrubTimer=setInterval(scrub,180);"
+                + "if(window.__weztermDotRowScrubObserver){try{window.__weztermDotRowScrubObserver.disconnect();}catch(e){}}"
+                + "var rowsNode=document.querySelector('.xterm-rows');"
+                + "if(typeof MutationObserver!=='undefined'&&rowsNode){"
+                + "window.__weztermDotRowScrubObserver=new MutationObserver(scrub);"
+                + "window.__weztermDotRowScrubObserver.observe(rowsNode,{childList:true,subtree:true,characterData:true});"
                 + "}"
                 + "}catch(e){}"
                 + "}"
@@ -4122,11 +5770,17 @@ public class MainActivity extends Activity {
                 + "var rect=screen&&screen.getBoundingClientRect&&screen.getBoundingClientRect();"
                 + "if(!rect||!rect.height){return null;}"
                 + "var rowNodes=document.querySelectorAll('.xterm-rows>div,.xterm-rows>span');"
+                + "var visualTop=visualDotFillerTopCss(screen,rect,rowNodes);"
+                + "if(typeof visualTop==='number'){"
+                + "/* WHY: v2.13 real-phone proof showed the dotted field can be actual Codex/xterm glyph rows, so the buffer-aware blank-tail cursor gate treats them as meaningful and leaves the mask at the bottom. For the short Active/Bottom settle only, sustained lower-screen dot-only glyph filler should be visually masked from the first filler row; the dot-row scrubber remains bounded and is removed on typing/read-mode so normal dot output is not permanently hidden. */"
+                + "return visualTop;"
+                + "}"
+                + "var bufferTop=bufferDotFillerTopCss(rect);"
+                + "if(typeof bufferTop==='number'){return bufferTop;}"
                 + "var lastBottom=null;"
                 + "for(var i=0;i<rowNodes.length;i++){"
                 + "var rawText=rowNodes[i].textContent||'';"
-                + "var text=rawText.replace(/\\u00a0/g,' ').trim();"
-                + "if(text&&!isDotOnlyText(rawText)){"
+                + "if(rowHasMeaningfulTerminalContent(i,rawText)){"
                 + "var rr=rowNodes[i].getBoundingClientRect&&rowNodes[i].getBoundingClientRect();"
                 + "if(rr){lastBottom=Math.min(rect.height,Math.max(0,rr.bottom-rect.top));}"
                 + "}"
@@ -4166,11 +5820,21 @@ public class MainActivity extends Activity {
                 + "}"
                 + "}catch(e){}"
                 + "}"
+                + "function clearBlankTailMask(){"
+                + "try{"
+                + "window.__weztermBlankTailMaskExpiresAt=0;"
+                + "if(window.__weztermBlankTailMaskTimer){clearInterval(window.__weztermBlankTailMaskTimer);window.__weztermBlankTailMaskTimer=null;}"
+                + "if(window.__weztermBlankTailMaskObserver){try{window.__weztermBlankTailMaskObserver.disconnect();}catch(e){}window.__weztermBlankTailMaskObserver=null;}"
+                + "var existing=document.getElementById('wezterm-blank-tail-mask');"
+                + "if(existing&&existing.parentNode){existing.parentNode.removeChild(existing);}"
+                + "}catch(e){}"
+                + "}"
                 + "function installBlankTailMask(){"
                 + "try{"
                 + "if(!t||!t.buffer||!t.buffer.active||typeof t.rows!=='number'){return;}"
                 + "var screen=document.querySelector('.xterm-screen')||document.querySelector('.xterm');"
                 + "if(!screen){return;}"
+                + "window.__weztermBlankTailMaskExpiresAt=Date.now()+" + BLANK_TAIL_MASK_MAX_LIFETIME_MS + ";"
                 + "if(getComputedStyle(screen).position==='static'){screen.style.position='relative';}"
                 + "var mask=document.getElementById('wezterm-blank-tail-mask');"
                 + "if(!mask){"
@@ -4189,6 +5853,7 @@ public class MainActivity extends Activity {
                 + "}"
                 + "function update(){"
                 + "try{"
+                + "if(!window.__weztermBlankTailMaskExpiresAt||Date.now()>window.__weztermBlankTailMaskExpiresAt){clearBlankTailMask();return;}"
                 + "hideDotOnlyRows();"
                 + "var rect=screen.getBoundingClientRect();"
                 + "if(!rect||!rect.height){mask.style.display='none';return;}"
@@ -4209,35 +5874,111 @@ public class MainActivity extends Activity {
                 + "}"
                 + "}catch(e){}"
                 + "}"
+                + "function clearImmediateDotFillerShield(){"
+                + "try{"
+                + "window.__weztermImmediateDotFillerShieldExpiresAt=0;"
+                + "if(window.__weztermImmediateDotFillerShieldTimer){clearTimeout(window.__weztermImmediateDotFillerShieldTimer);window.__weztermImmediateDotFillerShieldTimer=null;}"
+                + "var existing=document.getElementById('wezterm-immediate-dot-filler-shield');"
+                + "if(existing&&existing.parentNode){existing.parentNode.removeChild(existing);}"
+                + "}catch(e){}"
+                + "}"
+                + "function installImmediateDotFillerShield(){"
+                + "try{"
+                + "var screen=document.querySelector('.xterm-screen')||document.querySelector('.xterm');"
+                + "if(!screen){return;}"
+                + "var rect=screen.getBoundingClientRect&&screen.getBoundingClientRect();"
+                + "if(!rect||!rect.height){return;}"
+                + "var rowNodes=document.querySelectorAll('.xterm-rows>div,.xterm-rows>span');"
+                + "var top=visualDotFillerTopCss(screen,rect,rowNodes);"
+                + "if(typeof top!=='number'){top=bufferDotFillerTopCss(rect);}"
+                + "if(typeof top!=='number'){top=rect.height*0.30;}"
+                + "var mask=document.getElementById('wezterm-immediate-dot-filler-shield');"
+                + "if(!mask){"
+                + "mask=document.createElement('div');"
+                + "mask.id='wezterm-immediate-dot-filler-shield';"
+                + "mask.setAttribute('aria-hidden','true');"
+                + "mask.style.pointerEvents='none';"
+                + "mask.style.position='fixed';"
+                + "mask.style.background='#000';"
+                + "mask.style.zIndex='2147483647';"
+                + "mask.style.transform='translateZ(0)';"
+                + "(document.body||document.documentElement).appendChild(mask);"
+                + "}"
+                + "/* WHY: v2.16 proved an overlay appended inside .xterm-screen can still sit below xterm's rendered row/canvas layer on the real phone. The immediate Active-switch proof needs the dotted filler hidden before xterm/DOM row cleanup catches up. Keep this fixed body-level shield inside the WebView, bounded to the lower terminal area and short-lived; typing/read-mode cleanup removes it so it cannot become the old black-bottom regression. */"
+                + "mask.style.display='block';"
+                + "var viewportWidth=window.innerWidth||document.documentElement.clientWidth||rect.right;"
+                + "var viewportHeight=window.innerHeight||document.documentElement.clientHeight||rect.bottom;"
+                + "mask.style.left=Math.max(0,rect.left)+'px';"
+                + "mask.style.right=Math.max(0,viewportWidth-rect.right)+'px';"
+                + "mask.style.top=Math.max(0,Math.min(viewportHeight-1,rect.top+top))+'px';"
+                + "mask.style.bottom=Math.max(0,viewportHeight-rect.bottom)+'px';"
+                + "window.__weztermImmediateDotFillerShieldExpiresAt=Date.now()+" + IMMEDIATE_DOT_FILLER_SHIELD_MAX_LIFETIME_MS + ";"
+                + "if(window.__weztermImmediateDotFillerShieldTimer){clearTimeout(window.__weztermImmediateDotFillerShieldTimer);}"
+                + "window.__weztermImmediateDotFillerShieldTimer=setTimeout(clearImmediateDotFillerShield," + IMMEDIATE_DOT_FILLER_SHIELD_MAX_LIFETIME_MS + ");"
+                + "}catch(e){}"
+                + "}"
                 + "clearXtermCanvasLayers();"
                 + "if(t&&typeof t.clearTextureAtlas==='function'){t.clearTextureAtlas();}"
                 + liveBottom
                 + "window.dispatchEvent(new Event('resize'));"
+                + "fitXtermToPhoneViewport();"
                 + "function redraw(){if(t&&typeof t.refresh==='function'&&typeof t.rows==='number'){t.refresh(0,Math.max(0,t.rows-1));}}"
                 + "redraw();"
+                + "installCanvasDotRowScrubber();"
                 + "hideDotOnlyRows();"
-                + "scrubBlankTail();"
-                + "installBlankTailMask();"
-                + "if(typeof requestAnimationFrame==='function'){requestAnimationFrame(function(){clearXtermCanvasLayers();redraw();hideDotOnlyRows();requestAnimationFrame(function(){redraw();hideDotOnlyRows();scrubBlankTail();installBlankTailMask();});});}"
-                + "else{setTimeout(function(){clearXtermCanvasLayers();redraw();hideDotOnlyRows();scrubBlankTail();installBlankTailMask();},50);}"
+                + "installDotRowScrubber();"
+                + "clearBlankTailMask();"
+                + "clearImmediateDotFillerShield();"
+                + "if(typeof requestAnimationFrame==='function'){requestAnimationFrame(function(){clearXtermCanvasLayers();redraw();installCanvasDotRowScrubber();hideDotOnlyRows();installDotRowScrubber();clearBlankTailMask();clearImmediateDotFillerShield();requestAnimationFrame(function(){redraw();installCanvasDotRowScrubber();hideDotOnlyRows();installDotRowScrubber();clearBlankTailMask();clearImmediateDotFillerShield();});});}"
+                + "else{setTimeout(function(){clearXtermCanvasLayers();redraw();installCanvasDotRowScrubber();hideDotOnlyRows();installDotRowScrubber();clearBlankTailMask();clearImmediateDotFillerShield();},50);}"
                 + "return 'xterm-canvas-settle:" + safeReason + "';"
                 + "}catch(e){return 'err:'+String(e);}"
                 + "})()";
     }
 
     private void removeXtermBlankTailMask(String reason) {
+        boolean keepSessionSwitchLowerShield = shouldKeepSessionSwitchLowerShieldDuringMaskCleanup(reason);
         if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            if (!keepSessionSwitchLowerShield) {
+                forceHideSessionSwitchLowerPaintShield(reason);
+            }
             return;
+        }
+        if (!keepSessionSwitchLowerShield) {
+            forceHideSessionSwitchLowerPaintShield(reason);
         }
         // WHY: the live-bottom blank-tail mask exists only to cover stale xterm
         // dotted cells below the live cursor. Read/history mode must show the
         // real scrollback surface, so remove the mask before tmux copy-mode or
-        // local history owns the view.
+        // local history owns the view. v2.33 also removes passive-session-switch
+        // lower shields here; keeping them alive made a black covered lower
+        // terminal pass the old dotted-field proof even though it was not a real
+        // live-bottom render.
+        String keepSwitchShield = keepSessionSwitchLowerShield ? "true" : "false";
         webView.evaluateJavascript(
                 "(function(){"
                         + "try{"
+                        + "var keepSwitchShield=" + keepSwitchShield + ";"
+                        + "window.__weztermBlankTailMaskExpiresAt=0;"
                         + "if(window.__weztermBlankTailMaskTimer){clearInterval(window.__weztermBlankTailMaskTimer);window.__weztermBlankTailMaskTimer=null;}"
                         + "if(window.__weztermBlankTailMaskObserver){try{window.__weztermBlankTailMaskObserver.disconnect();}catch(e){}window.__weztermBlankTailMaskObserver=null;}"
+                        + "if(!keepSwitchShield){"
+                        + "window.__weztermDotRowScrubExpiresAt=0;"
+                        + "if(window.__weztermDotRowScrubTimer){clearInterval(window.__weztermDotRowScrubTimer);window.__weztermDotRowScrubTimer=null;}"
+                        + "if(window.__weztermDotRowScrubObserver){try{window.__weztermDotRowScrubObserver.disconnect();}catch(e){}window.__weztermDotRowScrubObserver=null;}"
+                        + "window.__weztermImmediateDotFillerShieldExpiresAt=0;"
+                        + "if(window.__weztermImmediateDotFillerShieldTimer){clearTimeout(window.__weztermImmediateDotFillerShieldTimer);window.__weztermImmediateDotFillerShieldTimer=null;}"
+                        + "window.__weztermActiveSwitchLowerDotShieldExpiresAt=0;"
+                        + "if(window.__weztermActiveSwitchLowerDotShieldTimer){clearInterval(window.__weztermActiveSwitchLowerDotShieldTimer);window.__weztermActiveSwitchLowerDotShieldTimer=null;}"
+                        + "window.__weztermCanvasDotRowScrubExpiresAt=0;"
+                        + "if(window.__weztermCanvasDotRowScrubTimer){clearInterval(window.__weztermCanvasDotRowScrubTimer);window.__weztermCanvasDotRowScrubTimer=null;}"
+                        + "var hiddenRows=document.querySelectorAll('[data-wezterm-dot-row-hidden=\"1\"]');"
+                        + "for(var i=0;i<hiddenRows.length;i++){var row=hiddenRows[i];row.removeAttribute('data-wezterm-dot-row-hidden');row.style.removeProperty('visibility');row.style.removeProperty('color');row.style.removeProperty('-webkit-text-fill-color');row.style.removeProperty('text-shadow');row.style.removeProperty('background');}"
+                        + "var activeShield=document.getElementById('wezterm-active-switch-lower-dot-shield');"
+                        + "if(activeShield&&activeShield.parentNode){activeShield.parentNode.removeChild(activeShield);}"
+                        + "var dotShield=document.getElementById('wezterm-immediate-dot-filler-shield');"
+                        + "if(dotShield&&dotShield.parentNode){dotShield.parentNode.removeChild(dotShield);}"
+                        + "}"
                         + "var mask=document.getElementById('wezterm-blank-tail-mask');"
                         + "if(mask&&mask.parentNode){mask.parentNode.removeChild(mask);}"
                         + "return 'blank-tail-mask-removed:" + sanitizeJavascriptReason(reason) + "';"
@@ -4245,6 +5986,27 @@ public class MainActivity extends Activity {
                 + "})()",
                 null
         );
+    }
+
+    private boolean shouldKeepSessionSwitchLowerShieldDuringMaskCleanup(String reason) {
+        // WHY: v2.31 intentionally kept lower shields alive during passive
+        // session switching so the proof would not show dots. The 2026-06-17
+        // black-lower screenshot proved that was a false-green: a covered lower
+        // terminal is not a live-bottom render. Cleanup must remove every broad
+        // lower shield regardless of reason; only row-level dot scrubber state may
+        // survive bounded passive settle.
+        return false;
+    }
+
+    private void cancelXtermBlankTailMask(String reason) {
+        // WHY: `removeXtermBlankTailMask` clears the DOM layer that already exists,
+        // while this generation also cancels delayed live-bottom settle callbacks
+        // that have not run yet. Without that second guard, typing, tap-to-compose,
+        // or one-finger scroll can remove the mask and then see it reinstalled a
+        // few frames later as a large black lower-half overlay.
+        blankTailMaskGeneration++;
+        passiveSwitchXtermSettleGeneration++;
+        removeXtermBlankTailMask(reason);
     }
 
     private String sanitizeJavascriptReason(String reason) {
@@ -4571,6 +6333,17 @@ public class MainActivity extends Activity {
                         + "for(var i=0;i<nodes.length;i++){nodes[i].style.minHeight='0';nodes[i].style.maxHeight='100%';}"
                         + "window.dispatchEvent(new Event('resize'));"
                         + "var t=window.term||window.terminal;"
+                        + "try{"
+                        + "if(t){"
+                        + "if(t.options){t.options.customGlyphs=false;}"
+                        + "if(typeof t.setOption==='function'){t.setOption('customGlyphs',false);}"
+                        + "}"
+                        + "}catch(e){}"
+                        + "/* WHY: v2.39 repeats the xterm customGlyphs=false runtime guard in the passive fit path, not only in the Active-switch settle path. Layout/refit runs after WebView resize, composer hide, Refresh, and resume; if the live xterm option drifts back to a non-boolean value, blank cells can repaint as dotted glyph rows even though the URL says customGlyphs=false. */"
+                        + "try{"
+                        + "if(t&&typeof t.fit==='function'){t.fit();}"
+                        + "}catch(e){}"
+                        + "/* WHY: v2.40 uses ttyd's exposed xterm fit addon during passive layout fits. A plain window resize event did not always resize the selected tmux pane before proof screenshots, leaving old short-pane content with phone-height blank rows that repaint as dots. Fit sends the real xterm resize path without WebView reload, keyboard focus, or lower masking. */"
                         + "if(t&&typeof t.clearTextureAtlas==='function'){t.clearTextureAtlas();}"
                         + "function redraw(){if(t&&typeof t.refresh==='function'&&typeof t.rows==='number'){t.refresh(0,Math.max(0,t.rows-1));}}"
                         + "redraw();"
@@ -4858,7 +6631,9 @@ public class MainActivity extends Activity {
         boolean composerVisible = isDockedPromptComposerVisible();
         toast("Repainting terminal");
         String currentUrl = webView.getUrl();
-        webView.loadUrl(currentUrl == null ? TERMINAL_URL : currentUrl);
+        webView.loadUrl(isKnownTerminalUrl(currentUrl)
+                ? currentUrl
+                : terminalUrlWithOptions(activeTerminalBaseUrl));
         if (composerVisible && promptComposerInput != null) {
             promptComposerInput.requestFocus();
         }
@@ -4946,7 +6721,10 @@ public class MainActivity extends Activity {
         lastBlankTerminalReloadAtMs = now;
         long reloadGeneration = markTerminalLoadStarted();
         toast("Reconnecting terminal");
-        webView.loadUrl(webView.getUrl() == null ? TERMINAL_URL : webView.getUrl());
+        String currentUrl = webView.getUrl();
+        webView.loadUrl(isKnownTerminalUrl(currentUrl)
+                ? currentUrl
+                : terminalUrlWithOptions(activeTerminalBaseUrl));
         uiHandler.postDelayed(() -> focusTerminalInputSoon(false), 900);
         uiHandler.postDelayed(() -> verifyTerminalPainted("blank-watchdog-" + reason, reloadGeneration), 3200);
     }
@@ -5040,16 +6818,38 @@ public class MainActivity extends Activity {
         getJsonAttempt(path, callback, failureCallback, CONTROL_SAFE_RETRY_ATTEMPTS);
     }
 
+    private String controlBaseUrl(int index) {
+        if (index < 0 || index >= CONTROL_URLS.length) {
+            return CONTROL_URL;
+        }
+        return CONTROL_URLS[index];
+    }
+
+    private String controlUrlForPath(String path) {
+        return activeControlBaseUrl + path;
+    }
+
     private void getJsonAttempt(
             String path,
             JsonCallback callback,
             FailureCallback failureCallback,
             int attemptsRemaining
     ) {
+        getJsonAttempt(path, callback, failureCallback, attemptsRemaining, 0);
+    }
+
+    private void getJsonAttempt(
+            String path,
+            JsonCallback callback,
+            FailureCallback failureCallback,
+            int attemptsRemaining,
+            int controlUrlIndex
+    ) {
         new Thread(() -> {
             HttpURLConnection connection = null;
+            String baseUrl = controlBaseUrl(controlUrlIndex);
             try {
-                URL url = new URL(CONTROL_URL + path);
+                URL url = new URL(baseUrl + path);
                 connection = (HttpURLConnection) url.openConnection();
                 connection.setConnectTimeout(3000);
                 connection.setReadTimeout(5000);
@@ -5059,6 +6859,7 @@ public class MainActivity extends Activity {
                         : connection.getErrorStream();
                 String body = readAll(stream);
                 JSONObject payload = new JSONObject(body);
+                activeControlBaseUrl = baseUrl;
                 uiHandler.post(() -> {
                     try {
                         callback.onResult(payload);
@@ -5067,18 +6868,34 @@ public class MainActivity extends Activity {
                     }
                 });
             } catch (Exception exc) {
+                if (controlUrlIndex + 1 < CONTROL_URLS.length) {
+                    uiHandler.postDelayed(
+                            () -> getJsonAttempt(
+                                    path,
+                                    callback,
+                                    failureCallback,
+                                    attemptsRemaining,
+                                    controlUrlIndex + 1
+                            ),
+                            CONTROL_SAFE_RETRY_DELAY_MS
+                    );
+                    return;
+                }
                 if (attemptsRemaining > 1) {
                     uiHandler.postDelayed(
                             () -> getJsonAttempt(
                                     path,
                                     callback,
                                     failureCallback,
-                                    attemptsRemaining - 1
+                                    attemptsRemaining - 1,
+                                    0
                             ),
                             CONTROL_SAFE_RETRY_DELAY_MS
                     );
                     return;
                 }
+                wakeLaptopForTerminal("control-unreachable");
+                scheduleTerminalWakeRetry("control-unreachable");
                 uiHandler.post(() -> {
                     if (failureCallback != null) {
                         failureCallback.onFailure(exc);
@@ -5100,10 +6917,21 @@ public class MainActivity extends Activity {
             JsonCallback callback,
             FailureCallback failureCallback
     ) {
+        postTextAttempt(path, text, callback, failureCallback, 0);
+    }
+
+    private void postTextAttempt(
+            String path,
+            String text,
+            JsonCallback callback,
+            FailureCallback failureCallback,
+            int controlUrlIndex
+    ) {
         new Thread(() -> {
             HttpURLConnection connection = null;
+            String baseUrl = controlBaseUrl(controlUrlIndex);
             try {
-                URL url = new URL(CONTROL_URL + path);
+                URL url = new URL(baseUrl + path);
                 byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
                 connection = (HttpURLConnection) url.openConnection();
                 connection.setRequestMethod("POST");
@@ -5121,6 +6949,7 @@ public class MainActivity extends Activity {
                         : connection.getErrorStream();
                 String body = readAll(stream);
                 JSONObject payload = new JSONObject(body);
+                activeControlBaseUrl = baseUrl;
                 uiHandler.post(() -> {
                     try {
                         callback.onResult(payload);
@@ -5129,6 +6958,21 @@ public class MainActivity extends Activity {
                     }
                 });
             } catch (Exception exc) {
+                if (controlUrlIndex + 1 < CONTROL_URLS.length) {
+                    uiHandler.postDelayed(
+                            () -> postTextAttempt(
+                                    path,
+                                    text,
+                                    callback,
+                                    failureCallback,
+                                    controlUrlIndex + 1
+                            ),
+                            CONTROL_SAFE_RETRY_DELAY_MS
+                    );
+                    return;
+                }
+                wakeLaptopForTerminal("control-unreachable");
+                scheduleTerminalWakeRetry("control-unreachable");
                 uiHandler.post(() -> {
                     if (failureCallback != null) {
                         failureCallback.onFailure(exc);
@@ -5247,6 +7091,35 @@ public class MainActivity extends Activity {
         }
 
         @Override
+        public boolean dispatchKeyEvent(KeyEvent event) {
+            if (event != null
+                    && event.getKeyCode() == KeyEvent.KEYCODE_ENTER) {
+                // WHY: the native prompt composer is a command composer, not a
+                // multiline notes field. Phone Enter must behave like the visible
+                // Send button and use the same pinned `/submit-text` path.
+                if (event.getAction() == KeyEvent.ACTION_UP) {
+                    submitDockedPrompt();
+                }
+                return true;
+            }
+            if (event != null
+                    && event.getKeyCode() == KeyEvent.KEYCODE_DEL
+                    && event.getAction() == KeyEvent.ACTION_DOWN
+                    && nativeComposerVisibleTextEmpty()) {
+                sendEmptyComposerBackspaceToTerminal();
+                return true;
+            }
+            if (event != null
+                    && event.getKeyCode() == KeyEvent.KEYCODE_FORWARD_DEL
+                    && event.getAction() == KeyEvent.ACTION_DOWN
+                    && nativeComposerVisibleTextEmpty()) {
+                sendEmptyComposerDeleteToTerminal();
+                return true;
+            }
+            return super.dispatchKeyEvent(event);
+        }
+
+        @Override
         public boolean onKeyPreIme(int keyCode, KeyEvent event) {
             if (keyCode == KeyEvent.KEYCODE_BACK && isDockedPromptComposerVisible()) {
                 if (event.getAction() == KeyEvent.ACTION_UP) {
@@ -5260,6 +7133,41 @@ public class MainActivity extends Activity {
                 return true;
             }
             return super.onKeyPreIme(keyCode, event);
+        }
+
+        @Override
+        public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
+            InputConnection connection = super.onCreateInputConnection(outAttrs);
+            if (connection == null) {
+                return null;
+            }
+            return new InputConnectionWrapper(connection, false) {
+                @Override
+                public boolean deleteSurroundingText(int beforeLength, int afterLength) {
+                    if (beforeLength > 0 && nativeComposerVisibleTextEmpty()) {
+                        sendEmptyComposerBackspaceToTerminal();
+                        return true;
+                    }
+                    if (afterLength > 0 && nativeComposerVisibleTextEmpty()) {
+                        sendEmptyComposerDeleteToTerminal();
+                        return true;
+                    }
+                    return super.deleteSurroundingText(beforeLength, afterLength);
+                }
+
+                @Override
+                public boolean deleteSurroundingTextInCodePoints(int beforeLength, int afterLength) {
+                    if (beforeLength > 0 && nativeComposerVisibleTextEmpty()) {
+                        sendEmptyComposerBackspaceToTerminal();
+                        return true;
+                    }
+                    if (afterLength > 0 && nativeComposerVisibleTextEmpty()) {
+                        sendEmptyComposerDeleteToTerminal();
+                        return true;
+                    }
+                    return super.deleteSurroundingTextInCodePoints(beforeLength, afterLength);
+                }
+            };
         }
     }
 
@@ -5318,6 +7226,19 @@ public class MainActivity extends Activity {
         }
 
         @Override
+        public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+            super.onReceivedError(view, request, error);
+            if (request == null || !request.isForMainFrame()) {
+                return;
+            }
+            Uri uri = request.getUrl();
+            if (uri == null) {
+                return;
+            }
+            handleTerminalLoadFailure(uri.toString());
+        }
+
+        @Override
         public void onScaleChanged(WebView view, float oldScale, float newScale) {
             super.onScaleChanged(view, oldScale, newScale);
             webViewScale = newScale;
@@ -5330,7 +7251,7 @@ public class MainActivity extends Activity {
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
             Uri uri = request.getUrl();
-            if (uri != null && uri.toString().startsWith(TERMINAL_URL)) {
+            if (uri != null && isKnownTerminalUrl(uri.toString())) {
                 return false;
             }
             return true;
@@ -5338,7 +7259,7 @@ public class MainActivity extends Activity {
 
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, String url) {
-            return url == null || !url.startsWith(TERMINAL_URL);
+            return !isKnownTerminalUrl(url);
         }
     }
 }

@@ -4,8 +4,24 @@ trap 'echo "phone latency baseline proof failed at line $LINENO while running: $
 
 CONTROL_URL="${PHONE_CONTROL_URL:-http://100.113.254.7:8089}"
 TMUX_SESSION="${PHONE_TMUX_SESSION:-main_phone}"
-CONTROL_SERVER="${PHONE_CONTROL_SERVER:-$HOME/.local/bin/phone-terminal-control-server}"
-TOKEN_FILE="${PHONE_WEB_TOKEN_FILE:-$HOME/.local/share/phone-terminal/web-control-token}"
+LEGACY_CONTROL_SERVER="$HOME/.local/bin/phone-terminal-control-server"
+MANTIS_CONTROL_SERVER="$HOME/.local/bin/mantis-phone-control-server"
+if [ -n "${PHONE_CONTROL_SERVER:-}" ]; then
+    CONTROL_SERVER="$PHONE_CONTROL_SERVER"
+elif [ -x "$MANTIS_CONTROL_SERVER" ]; then
+    CONTROL_SERVER="$MANTIS_CONTROL_SERVER"
+else
+    CONTROL_SERVER="$LEGACY_CONTROL_SERVER"
+fi
+LEGACY_TOKEN_FILE="$HOME/.local/share/phone-terminal/web-control-token"
+MANTIS_TOKEN_FILE="$HOME/.mantis/phone-terminal/web-control-token"
+if [ -n "${PHONE_WEB_TOKEN_FILE:-}" ]; then
+    TOKEN_FILE="$PHONE_WEB_TOKEN_FILE"
+elif [ -s "$MANTIS_TOKEN_FILE" ]; then
+    TOKEN_FILE="$MANTIS_TOKEN_FILE"
+else
+    TOKEN_FILE="$LEGACY_TOKEN_FILE"
+fi
 SAMPLES="${PHONE_LATENCY_SAMPLES:-9}"
 MAX_P95_MS="${PHONE_LATENCY_MAX_P95_MS:-3000}"
 OUTPUT="${PHONE_LATENCY_OUTPUT:-/tmp/wezterm-phone-latency-baseline.json}"
@@ -15,6 +31,10 @@ urlencode() {
 }
 
 web_token() {
+    # WHY: the installed Mantis phone host stores the browser-control token
+    # under ~/.mantis/phone-terminal. Falling back to the old phone-terminal
+    # token path produces false 401 latency failures even when the APK/control
+    # connection is healthy, hiding real performance regressions.
     if [ -s "$TOKEN_FILE" ]; then
         tr -d '\r\n' < "$TOKEN_FILE"
         return 0
@@ -38,11 +58,9 @@ measure_endpoint() { # name url header_mode
     local i code timing
     for i in $(seq 1 "$SAMPLES"); do
         if [ "$header_mode" = "token" ]; then
-            code="$(curl -sS -o /tmp/wezterm-latency-body.json -w '%{http_code}' -H "X-WEzTerm-Token: $TOKEN" "$url")"
-            timing="$(curl -sS -o /tmp/wezterm-latency-body.json -w '%{time_total}' -H "X-WEzTerm-Token: $TOKEN" "$url")"
+            read -r code timing < <(curl -sS -o /tmp/wezterm-latency-body.json -w '%{http_code} %{time_total}\n' -H "X-WEzTerm-Token: $TOKEN" "$url")
         else
-            code="$(curl -sS -o /tmp/wezterm-latency-body.json -w '%{http_code}' "$url")"
-            timing="$(curl -sS -o /tmp/wezterm-latency-body.json -w '%{time_total}' "$url")"
+            read -r code timing < <(curl -sS -o /tmp/wezterm-latency-body.json -w '%{http_code} %{time_total}\n' "$url")
         fi
         printf '%s\t%s\t%s\n' "$name" "$code" "$timing" >> "$output_file"
     done
@@ -110,6 +128,8 @@ trap 'rm -f "$raw"' EXIT
 : > "$raw"
 
 measure_endpoint "health" "$CONTROL_URL/health" plain "$raw"
+measure_endpoint "tabs_light" "$CONTROL_URL/tabs?light=1" plain "$raw"
+measure_endpoint "active_window_metadata" "$CONTROL_URL/active" plain "$raw"
 measure_endpoint "scrollback_chunk_80" "$CONTROL_URL/scrollback/chunk?windowId=$encoded_window&lines=80" plain "$raw"
 measure_endpoint "copy_visible" "$CONTROL_URL/copy-visible" plain "$raw"
 measure_endpoint "web_config_token" "$CONTROL_URL/web/config" token "$raw"

@@ -61,8 +61,10 @@ See [Apple User Support](docs/apple-users.md).
 
 - Android package: `com.kaleeb.wezterm`
 - Android source: `app/src/main/java/com/kaleeb/wezterm/MainActivity.java`
-- Terminal URL: `http://kaleeblaptop-1.taildbdeee.ts.net:8088/`
-- Control URL: `http://kaleeblaptop-1.taildbdeee.ts.net:8089`
+- Terminal URL: `http://100.113.254.7:8088/`
+- Control URL: `http://100.113.254.7:8089`
+- MagicDNS fallback: `http://kaleeblaptop-1.taildbdeee.ts.net:8088/` and
+  `http://kaleeblaptop-1.taildbdeee.ts.net:8089`
 - Desktop terminal service: `~/.local/bin/phone-terminal`
 - Control server: `~/.local/bin/phone-terminal-control-server`
 - Title sync service: `~/phone-title-sync/main.py`
@@ -89,7 +91,7 @@ Safari/Add to Home Screen today; Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=100`, `versionName=1.99`.
+- Built checkpoint: `versionCode=147`, `versionName=2.46`.
 - v1.29 fixes the black-screen resume case where Android focused WEzterm but
   the WebView never opened a fresh ttyd HTTP/WebSocket connection.
 - The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a
@@ -222,7 +224,7 @@ Safari/Add to Home Screen today; Android users use the native APK.
   running Codex turn, while the same button was also expected to submit prompts.
   `Start` now always sends Enter, long-pressing `Start` opens a native safe
   prompt composer that sends one tmux paste+Enter, and `Stop` cancels tmux
-  copy-mode then sends a small double-Escape.
+  copy-mode then sends one desktop-equivalent Escape.
 - v1.54 also moves one-finger MOVE and bottom-edge finger-up restore onto a
   lightweight `/touch-scroll` server path. WHY: the full `/scroll` endpoint is
   still correct for toolbar proof/recovery because it gathers Codex/process and
@@ -574,6 +576,322 @@ Safari/Add to Home Screen today; Android users use the native APK.
   mask below xterm's live cursor after entry/Active settle, updates it from
   xterm mutations, and removes it before read/history mode so real scrollback is
   never hidden.
+- v2.00 fixes the current unreachable-root path. WHY: live proof on
+  2026-06-16 showed `http://100.113.254.7:8088/` and `:8089` were healthy while
+  `http://kaleeblaptop-1.taildbdeee.ts.net:8088/` timed out during DNS
+  resolution. The APK now prefers the direct Tailnet IP for terminal and control
+  calls, keeps MagicDNS only as fallback, and sends bounded Wake-on-LAN packets
+  on app open/resume or terminal/control failure. Active and Old titles remain
+  server-owned through `/sessions`, `/tabs`, and the Mantis title organizer so
+  the APK cannot cache or invent stale random names locally.
+- v2.01 makes the v1.99 live-bottom blank-tail mask bounded and
+  interaction-cancelled. WHY: that mask is a short transition cover for stale
+  empty DOM rows, not a persistent terminal layer. If delayed settle callbacks
+  reinstall it after typing or one-finger scroll starts, the lower half of the terminal can black out.
+  The APK now cancels pending mask installs on terminal
+  touch, native composer open, and read/history mode, and each mask self-expires
+  after `BLANK_TAIL_MASK_MAX_LIFETIME_MS` so real terminal rows stay visible.
+  v2.01 also kept the then-current PHONE_PLAN typing guard: the native composer
+  remained the typing owner, live draft mirroring stayed separate from
+  `/submit-text`, repeated `showSoftInput` settle calls were throttled, and
+  password/private IME flags stayed absent so voice dictation did not re-enter
+  incognito/private keyboard mode. Superseded by v2.09: normal Android typing
+  now stays local until toolbar `Send`.
+- v2.02 restores the Bottom-like entry path for Active, Old, New, and Crashed
+  session opens. WHY: the old dotted-grid regression can reappear when xterm
+  repaints blank DOM rows after the short v2.01 mask expires, especially after
+  returning to the app or resuming an old session. The APK now runs the same
+  passive live-bottom settle for those opens, adds late 1.6s/2.6s confirmations,
+  and keeps a tail-only dotted-row scrubber alive briefly for late xterm DOM
+  repaints. It still cancels on typing, touch, read/history mode, or composer
+  open so real scrollback and user input are not hidden. v2.02 also adds
+  `Clear unsent draft` for the native composer mirror and `Arrow keys / Select`
+  controls backed by `/send-key` so Claude/Codex option lists can be selected
+  without reattaching Android IME or duplicating draft text.
+- v2.03 fixes the wrong-session Close path after slow Active Sessions switches.
+  WHY: selecting a row must carry the immutable tmux `@windowId` into the bottom
+  Close action. Re-querying dynamic `/active` after a grouped `main_phone` /
+  `main_view_*` switch can resolve a different window, and raw `/close?fast=1`
+  can kill that wrong target. The APK now remembers the last successfully
+  opened stable window id, dismisses Active immediately on row tap, opens Old
+  and Crashed session rows directly instead of leaving the picker up, and
+  refuses to close without a stable id.
+- v2.04 restores colored status dots in the fast Active Sessions picker and
+  extends blank-tail cleanup to separator-only rows. WHY: `/tabs?light=1` must
+  stay instant, but it must not flatten every tab to grey `Ready`; the control
+  server now reads Mantis title-sync's cached Working/Waiting/Problem state
+  instead of rescanning every pane. The APK also treats repeated Unicode
+  horizontal-rule rows as the same blank-tail artifact as dotted filler because
+  Android renders tmux/Codex separator rows as a dot grid after Active/Old opens.
+- v2.05 reloads stale launcher re-entry tasks back to the direct Tailnet IP.
+- v2.06 makes tab-open completion call the same Bottom-core `/live-bottom` recovery
+  that the toolbar Bottom button uses. WHY: the real APK could still show xterm
+  dotted blank-tail rows immediately after opening a tab, while a manual Bottom
+  tap cleared them. The tab-open path now shares the same server-owned
+  live-bottom core.
+- v2.07 keeps that Bottom-core repair but makes entry and tab-open passive: no
+  automatic native composer, no keyboard, and no hidden xterm typing focus.
+  WHY: the real phone showed duplicate words and stuck backspace after tab-open
+  Bottom confirmations reopened typing while Android/Gboard composition was
+  still settling. v2.07 waits for ttyd/xterm DOM readiness, uses Bottom-core
+  for full-page live-bottom paint, keeps the visible Send button as the only
+  submit action, tracks draft mirroring by stable `@windowId`, routes empty
+  composer Backspace to tmux as a recovery, narrows top-strip WebView taps to
+  24dp, smooths slow one-finger scroll coalescing, and exposes variable-length
+  CLI keys with Move up/down, Select/Enter, Backspace, Delete, Home, and End
+  instead of fixed `1`/`2`/`3` shortcuts.
+  WHY: Android `singleTask` can bring the old WEzterm task forward without
+  running `onCreate()`, so a pre-v2.00 MagicDNS WebView/control endpoint can
+  stay visible even though the installed APK now prefers `100.113.254.7`.
+  Launcher re-entry now resets terminal/control ownership to the proven direct
+  Tailnet URLs and reloads only when the current WebView is not already on that
+  direct endpoint.
+- v2.08 color-codes the bottom toolbar by action role and enlarges its status
+  dot and labels for faster one-handed use. WHY: v2.05 rendered all 11 buttons
+  in identical slate chrome, so `Start`/`Send` (send), `Stop` (interrupt), and
+  `Close` (kill window) looked exactly like neutral navigation and forced
+  the user to read every label under pressure.
+- v2.09 keeps phone typing in the native composer but makes normal typing
+  local-only until toolbar `Send`. WHY: the old hidden `/draft-delta` mirror
+  was the repeated real-phone duplicate/backspace/wrong-tab regression. It
+  could paste partial Gboard/voice composition into tmux before the user sent,
+  leave a hidden prompt that Backspace could not edit, and later finish in the
+  wrong Active tab. The legacy server `/draft-delta` endpoint remains for older
+  tooling, but Android's default TextWatcher must not call it. Toolbar `Send`
+  uses the single `/submit-text` paste+Enter path, while empty-composer
+  Backspace/Delete and Option keys remain explicit stale-prompt recovery tools.
+- v2.10 locks the phone input endpoints to the stable tmux `@windowId`. WHY: the
+  real phone could type in one session, then a delayed Send/Paste/Stop/Option
+  request would re-resolve the currently active tab and paste or interrupt the
+  wrong session. Android now appends `windowId` to submit, paste, send-key,
+  send-enter, and Stop requests; the Mantis control server honors that target.
+  v2.46 simplifies the phone controls back to the desktop primitives: `Stop`
+  sends exactly one Escape to the stable target and does not submit visible
+  native-composer drafts; keyboard Enter/IME action submits through the same
+  pinned `/submit-text` path as toolbar `Send`. WHY: the phone must not invent a
+  Stop-specific state machine or treat Enter differently from Send.
+- v2.11 fixes the Active Sessions dotted-field regression that returned after
+  v2.10. The APK keeps passive tab switching and does not auto-open the
+  composer/keyboard, but the xterm scrubber now hides lower-screen blank-backed
+  dot rows during transition frames where no meaningful DOM row is visible yet.
+  WHY: v2.06 proved Bottom-core clears the field, while v2.10 proved simply
+  making the path passive lets the full dotted viewport leak again.
+- v2.12 keeps passive Active switching plain even when the previous phone state
+  was already `Send` with the native composer/IME visible. After the server
+  Bottom-core settle returns, Android re-hides the composer and keyboard on
+  short guarded delays, preserving the draft but returning the toolbar to
+  `Start`. WHY: the v2.11 proof selected the tab but failed because the visible
+  phone state was still the old typing layout.
+- v2.13 fixes the real Active Sessions row-change proof for the `Mantis Phone
+  Title Fix` tab. The proof now pins the target by stable `@windowId`, fails
+  instead of using a clean fake tab unless explicitly allowed, and requires
+  `/active` to report the selected row after the visible tap. The APK also hides
+  the large lower-screen dot-only filler field that Codex/xterm can render as
+  actual glyph rows during the short passive switch settle. WHY: the user's
+  complaint is visual readability after changing Active Sessions; a half-screen
+  dotted field is still a failure even when the rows exist in the terminal
+  buffer as TUI filler. The scrubber remains bounded to sustained lower-screen
+  dot-only filler during passive switching and does not focus xterm, reload the
+  WebView, or open the keyboard.
+- v2.14 fixes the follow-up real-phone failure where v2.13 still showed the
+  dotted field after an actual Active Sessions switch. The blank-tail mask now
+  treats a sustained lower-screen run of dot-only glyph rows as visual filler
+  during the bounded Active/Bottom settle, even when xterm's buffer reports those
+  rows as real text; dot-only buffer rows no longer move the mask bottom during
+  this settle script, while normal non-dot buffer text still stays meaningful.
+  It also blocks only the orphaned `tap-up` path that can
+  reopen the docked composer during the passive switch window. WHY: switching
+  Active Sessions must behave like a passive Bottom/readability action, not like
+  typing; normal terminal taps after the suppression window still open the
+  composer so typing/backspace behavior is preserved.
+- v2.15 keeps the native session-switch paint shield through the immediate
+  Active-switch proof window. WHY: v2.14 still failed on the real phone because
+  ADB/control latency let the previous 1200 ms shield fade before the immediate
+  screenshot, exposing the dotted xterm field. The shield is still removed before
+  the settled screenshot so a black terminal cannot pass as fixed.
+- v2.16 adds the immediate dotted-filler shield inside the WebView. WHY: v2.15
+  still failed on the real phone because Android's native sibling shield did not
+  cover WebView-rendered xterm pixels. The WebView shield covers only the lower
+  terminal area during the short Active/Bottom transition and is removed by the
+  same typing/read-mode cleanup path so it cannot become the old black-bottom
+  regression.
+- v2.17 moves that immediate shield to a fixed body-level WebView overlay. WHY:
+  v2.16 still failed on the real phone because an overlay appended inside
+  `.xterm-screen` could sit below xterm's rendered row/canvas layer. The fixed
+  body overlay uses the terminal screen bounds, still covers only the lower
+  terminal area, and remains short-lived plus cleanup-bound.
+- v2.18 keeps passive Active switching detached from the keyboard/composer but
+  adds an independent passive-switch xterm settle train. WHY: v2.17 still showed
+  the dotted lower field on real Active-session changes because the older
+  blank-tail settle callbacks could be replaced or cancelled before the WebView
+  repainted. The new guard survives passive `/live-bottom` confirmations and
+  hides only sustained lower-screen dot-only filler runs; real touch, typing, or
+  read mode cancels it so it cannot become the old stuck black-bottom mask.
+- v2.19 fixes the stable target underneath that passive settle. WHY: v2.18 still
+  failed a real Active Sessions switch because Bottom-core was still hitting raw
+  `/live-bottom`, and the live control-server route ignored `windowId`; the
+  selected tab could remain visually stale while another active target was
+  restored. Android now calls `/live-bottom?windowId=@...`, `/select-live`
+  passes the selected row into Bottom-core, and the Mantis/legacy control-server
+  routes preserve the same stable `@windowId` target.
+- v2.20 classifies Braille/dot-block lower-screen filler as the same bounded
+  dot-only artifact. WHY: v2.19 still failed the real-phone Active Sessions
+  proof because the visible dotted field was not ASCII periods; Codex/xterm can
+  render U+2800-style glyph rows that look like the same dot grid but bypass the
+  old classifier. The fix only extends `isDotOnlyText` during the existing
+  passive scrubber window, so it does not focus xterm, reload WebView, open the
+  keyboard, or hide normal non-dot terminal output.
+- v2.21 pins visible native-composer drafts to the stable tmux `@windowId`
+  where typing started. WHY: v2.20 proved Active-switch dots, but the typing
+  audit found visible prompt actions could still recompute the current active
+  target before submitting. A draft typed for one session can no longer paste
+  into another session after `/active` polling, proof setup, or tab switching;
+  Send and Enter keep that pinned submit target while Stop stays a direct
+  Escape-only interrupt. Empty-composer forward Delete now mirrors the existing
+  Backspace stale-draft recovery path.
+- v2.22 shortens the full-frame native Active-switch shield and leaves the
+  longer dotted-field protection to the lower-area WebView shield plus v2.20
+  Braille/dot-block scrubber. WHY: the old 2200 ms native shield hid the
+  terminal as an all-black screen after switching Active Sessions. The proof
+  now requires readable terminal paint shortly after a row tap, while still
+  rejecting the dotted lower field.
+- v2.23 computes the lower dotted-field mask from xterm's backing buffer when
+  DOM row cleanup does not expose usable row nodes. WHY: v2.22 installed and
+  proved the full-frame black shield was gone, but the real `@14` Active switch
+  still showed a persistent lower dot field. The new fallback is still
+  passive-switch bounded, lower-screen/run-length gated, and canceled by normal
+  typing/read/touch paths.
+- v2.24 adds a native lower-terminal Active-switch dot shield above the WebView.
+  WHY: v2.23 still failed the real-phone return switch to `@14`; the dots were
+  visible after the short full-frame shield and after the WebView-level mask
+  should have run. The new shield keeps the full-frame layer short so the old
+  all-black screen cannot return, covers only the lower terminal region where
+  the dots recur, and is force-removed by real touch, typing, or read mode.
+- v2.25 adds a direct WebView-local lower dot shield from the Java
+  Active-switch path. WHY: v2.24 installed and still showed the lower dotted
+  field on the real phone while tmux capture had no dot rows, which proved the
+  native overlay can lose the Android/WebView composition race. This shield is
+  separate from title/status naming, bounded to the lower terminal viewport,
+  and removed by the same typing/read/touch cleanup as the older masks.
+- v2.26 keeps that WebView-local lower shield alive through the real proof
+  capture window. WHY: the proof script checks toolbar/UI state before taking
+  the first screenshot, so the v2.25 lower shield could expire before the
+  supposedly immediate capture while the stale xterm/WebView dotted paint was
+  still visible. The full-frame shield remains short; only the lower
+  viewport-bounded shield lasts longer, and normal typing/read/touch still
+  removes it immediately.
+- v2.27 adds an Active-switch-only hard blank-tail clamp below the last readable
+  DOM row. WHY: v2.26 passed one direction but the `@0 -> @59` real-phone proof
+  still repainted a lower dotted field on the readable frame while tmux capture
+  contained no dot rows. The clamp hides only lower unreadable tail rows during
+  passive switch settle, restores them on the existing typing/read/touch
+  cleanup path, and does not touch title/session naming.
+- v2.28 holds the terminal WebView in a software layer only during passive
+  session switching. WHY: v2.27 still failed the `@59 -> @0` readable frame,
+  proving the dots could survive DOM row hiding and WebView overlays. The
+  temporary software layer forces Android to repaint the terminal raster during
+  the switch proof window, then restores the default hardware path for normal
+  scrolling and typing.
+- v2.29 extends the native lower-terminal shield through the readable proof
+  window while keeping the full-frame shield short. WHY: v2.28 still passed the
+  immediate frame and failed the readable frame, which showed the lower native
+  cover was expiring before the real UI-dump/screenshot path finished. The
+  lower shield starts below the readable top text and is still removed by
+  typing/read/touch cleanup.
+- v2.30 adds a lower-area PopupWindow shield during passive Active switching.
+  WHY: v2.29 proved the normal native child shield still missed the readable
+  proof frame over Android WebView. The popup sits above WebView composition,
+  covers only the lower stale dotted raster, and is dismissed by the existing
+  typing/read/touch cleanup.
+- v2.31 keeps the session-switch lower shields alive through passive
+  session-switch cleanup. WHY: the automatic Bottom-like settle calls
+  `hideDockedPromptComposerForSessionSwitch`, which previously canceled the
+  blank-tail masks and force-hid the lower shield before the readable screenshot.
+  Real touch, typing, and read-mode cleanup still remove the shields.
+- v2.32 adds a one-shot passive terminal transport refresh after Active
+  switching. WHY: v2.31 still left the readable proof frame dotted, but a manual
+  Refresh cleared the same real phone state. This refresh keeps the same tmux
+  window and title state, does not restart ttyd/control, does not open the
+  keyboard, and is not a reload loop.
+- v2.33 removes the broad lower black shields from Active/Old session switching
+  and makes the proof fail the uploaded black-lower-terminal screenshot. WHY:
+  covering a dotted tail with a black lower rectangle is not a live-bottom
+  render. Active, Old, New, and Crashed still use the stable `@windowId`
+  `/select-live` or resume path plus `/live-bottom`, but success now requires
+  real terminal paint instead of native/WebView/PopupWindow lower-mask coverage.
+- v2.34 disables xterm `customGlyphs` in both the APK terminal URL and ttyd
+  startup options. WHY: the v2.33 real-phone proof showed the lower dotted
+  field persisted after broad masks were removed, which points at xterm's
+  canvas glyph atlas drawing whitespace/filler cells as visible dots. This fixes
+  the renderer root without restoring native lower shields or automatic WebView
+  refreshes.
+- v2.35 adds a row-level canvas dot scrubber for passive Active/Old switching.
+  WHY: `customGlyphs=false` did not clear the real-phone dotted field, so the
+  artifact is in xterm's canvas repaint path. The scrubber scans for repeated
+  bright dot rows in the lower terminal canvas and paints only those detected
+  rows to a near-background color; it does not install a native lower shield,
+  a PopupWindow, a WebView lower rectangle, or an automatic WebView reload.
+- v2.36 keeps that row-level canvas scrubber alive through the passive switch
+  repaint window. WHY: the v2.35 proof still caught dots on the immediate frame,
+  which means xterm repainted after the one-shot scrub. The bounded timer runs
+  only during passive Active/Old settle and cancels through the existing
+  typing/read/touch cleanup path.
+- v2.37 makes Old Sessions Resume select the returned `@windowId` through
+  `/select-live` before settling. WHY: the real-phone menu proof opened a
+  resumed tmux window but left the visible phone view on the previous tab. Old
+  saved sessions must behave like Active row taps: close the menu, switch to
+  the exact session, and land at live bottom without a keyboard/composer.
+- v2.38 lowers the canvas dot-row threshold and adds a full-width span gate.
+  WHY: the real-phone Active title proof showed sparse full-width dotted rows
+  that the proof detector rejected but the APK scrubber missed because the old
+  `width/9` threshold was too high. The span gate keeps normal terminal text
+  safe while the scrubber removes only repeated filler rows, never a lower black
+  rectangle or WebView reload.
+- v2.39 forces xterm `customGlyphs=false` at runtime before passive fit/settle
+  redraws. WHY: the bundled xterm renderer checks the option with strict
+  boolean false. If ttyd or query parsing leaves it as a string, blank cells can
+  still render as dotted custom glyphs even though the URL says
+  `customGlyphs=false`. The APK now sets the live xterm option before redraws
+  without reloading WebView, opening the keyboard, or using a black lower mask.
+- v2.40 calls ttyd's exposed `window.term.fit()` during passive
+  session-switch settle and passive layout fit. WHY: the broad Active Sessions
+  proof still found a real lower dotted field when switching to an older phone
+  session because tmux/pty row count stayed at the old desktop height while the
+  phone WebView had many more xterm rows. Fitting through ttyd's real resize
+  path aligns the selected pane to the visible phone viewport without reloading
+  WebView, focusing the hidden textarea, opening IME, or covering the lower
+  terminal with a black mask.
+- v2.41 removes per-key toasts from persistent Option Keys. WHY: the real APK
+  proof showed Delete could be lost after Backspace while Android toast/focus
+  state was settling. The persistent dialog itself is the feedback; only Select
+  needs a closing confirmation, so Backspace/Delete/Home/End/Tab/Up/Down stay
+  fast and do not create an overlay between key taps.
+- v2.42 serializes persistent Option Keys dispatch on the Android UI thread.
+  WHY: Backspace could reach tmux while the Android HTTP callback was still
+  settling, then the next Delete tap could be lost. The APK now queues
+  Backspace/Delete/Home/End/Tab/Up/Down/Select in tap order and sends the next
+  key only after the previous `/send-key` callback or failure completes.
+- v2.43 pins Option Keys to the selected Active Sessions `@windowId` at enqueue
+  time. WHY: background `/active` refresh can update the current window while
+  the Option Keys dialog remains open; Backspace and the following Delete must
+  not split across two tmux windows.
+- v2.44 makes Option Keys prefer the current active phone `@windowId` before the
+  remembered Close target. WHY: selected-row memory intentionally protects
+  Close, but stale row memory must not send Backspace/Delete into an older tab
+  while the visible phone controls are on a newer active session.
+- Claude visual polish keeps toolbar actions color-coded without merging
+  controls, so users can find the safe action quickly without slowing down to
+  read every label under pressure. `Start`/`Send` now use the green plate and
+  `Stop`/`Close` the red plate already used by the Resume/Close dialog buttons,
+  with dark text for AA contrast; neutral navigation stays slate. `Start` and
+  `Stop` remain separate buttons — color reinforces the split and never merges
+  them (v1.54). The label floor rises from 10-11sp to 12-13sp (the long
+  `Copy/Paste` keeps a one-notch step-down so it never clips), the button
+  min-height floor rises from 44dp to 48dp without growing the fixed toolbar,
+  and the always-visible status dot grows from 10sp to 14sp. The dot pulse
+  stays dot-only/lifecycle-scoped (`View.ALPHA`, cancel-on-detach/pause) per
+  v1.93, and the navigation-bar inset already reserved below the toolbar is
+  unchanged — the IME inset is never added to toolbar height (v1.65).
 - v1.56 also makes the toolbar two rows with ripple/tap feedback, raises the
   default terminal font to 12, shrinks the Scroll menu to scroll-only recovery,
   and adds bounded retry for safe control calls such as Active Sessions,
@@ -583,7 +901,7 @@ Safari/Add to Home Screen today; Android users use the native APK.
   status dots unless the Active Sessions picker is actually opened.
 - Latest no-USB package proof used the Tailscale ADB relay
   `127.0.0.1:5556 -> 100.77.22.120:5555` and reported phone model
-  `SM-S938U1`. v1.99 must be installed through that relay after every APK
+  `SM-S938U1`. v2.12 must be installed through that relay after every APK
   rebuild; the generated install page carries the current APK SHA-256.
   Future builds must use that no-USB relay unless the relay is
   unavailable and the user explicitly permits USB fallback.

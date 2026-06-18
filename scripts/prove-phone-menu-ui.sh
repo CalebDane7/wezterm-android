@@ -448,14 +448,37 @@ for x in sorted(columns):
         clusters[-1][1] = x
         clusters[-1][2] += 1
 repeated_columns = sum(1 for _, _, count in clusters if count >= 8)
+tail_top, tail_bottom = int(height * 0.78), int(height * 0.84)
+tail_rows = []
+for y in range(tail_top, tail_bottom):
+    xs = []
+    for x in range(left, right, 2):
+        r, g, b = image.getpixel((x, y))
+        if r > 110 and g > 110 and b > 110 and max(r, g, b) - min(r, g, b) < 80:
+            xs.append(x)
+    if len(xs) >= 45 and (max(xs) - min(xs) if xs else 0) > width * 0.65:
+        tail_rows.append((y, xs))
+tail_bands = []
+for y, _ in tail_rows:
+    if not tail_bands or y - tail_bands[-1][1] > 3:
+        tail_bands.append([y, y])
+    else:
+        tail_bands[-1][1] = y
+tail_narrow_bands = sum(1 for start, end in tail_bands if end - start <= 4)
+# WHY: the 2026-06-18 toolbar-only failure sat immediately above the native
+# controls after normal phone actions, below otherwise readable terminal rows.
+# The broad menu proof must reject that lower-tail dotted grid, not only a
+# full-view Active-switch grid.
+lower_tail_dot_grid = tail_narrow_bands >= 3 and len(tail_rows) <= 20
 full_view_dot_grid = len(rows) >= 180 and (narrow_bands >= 20 or repeated_columns >= 60)
-if narrow_bands >= 35 or full_view_dot_grid or (len(rows) >= 100 and repeated_columns >= 40):
+if lower_tail_dot_grid or narrow_bands >= 35 or full_view_dot_grid or (len(rows) >= 100 and repeated_columns >= 40):
     raise SystemExit(
         f"terminal dotted canvas grid detected "
         f"(rows={len(rows)}, narrowBands={narrow_bands}, repeatedCols={repeated_columns}, "
+        f"tailRows={len(tail_rows)}, tailNarrowBands={tail_narrow_bands}, "
         f"fullViewDotGrid={full_view_dot_grid}): {path}"
     )
-print(f"terminal dotted canvas grid absent: rows={len(rows)} narrowBands={narrow_bands} repeatedCols={repeated_columns} fullViewDotGrid={full_view_dot_grid}")
+print(f"terminal dotted canvas grid absent: rows={len(rows)} narrowBands={narrow_bands} repeatedCols={repeated_columns} tailRows={len(tail_rows)} tailNarrowBands={tail_narrow_bands} fullViewDotGrid={full_view_dot_grid}")
 PY
 }
 
@@ -2088,6 +2111,7 @@ bottom_source_window="$(tmux_active_window)"
 tap_text "Bottom"
 wait_for_active_window_id "$bottom_source_window"
 wait_for_window_pane_mode "$bottom_source_window" "0"
+wait_for_terminal_screenshot_settled_without_dots /tmp/wezterm-v249-direct-bottom-toolbar-proof.png "Direct Bottom toolbar-only"
 echo "Direct Bottom button kept current session at live typing"
 dismiss_native_composer_if_open
 
@@ -2217,7 +2241,7 @@ if [ "$(tmux_active_window)" != "$proof_window" ]; then
     exit 1
 fi
 wait_for_pane_mode "0"
-wait_for_terminal_screenshot_text_pixels /tmp/wezterm-v151-refresh-proof.png
+wait_for_terminal_screenshot_settled_without_dots /tmp/wezterm-v249-refresh-toolbar-proof.png "Refresh toolbar-only"
 echo "Refresh button restored live mode"
 
 echo "phone menu UI proof: Scroll menu buttons"

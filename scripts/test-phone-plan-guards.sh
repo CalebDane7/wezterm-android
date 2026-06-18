@@ -58,13 +58,13 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="149"' "current APK version must be bumped for the v2.48 toolbar-only dotted-field fix"
-require "$MANIFEST" 'android:versionName="2.48"' "current APK version must be bumped for the v2.48 toolbar-only dotted-field fix"
+require "$MANIFEST" 'android:versionCode="150"' "current APK version must be bumped for the v2.49 toolbar action dotted-field fix"
+require "$MANIFEST" 'android:versionName="2.49"' "current APK version must be bumped for the v2.49 toolbar action dotted-field fix"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.48";' "client /config proof must report the same v2.48 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.49";' "client /config proof must report the same v2.49 APK contract as the manifest"
 require "$MAIN" 'customGlyphs=false' "APK terminal URL must disable xterm custom glyphs to stop blank-cell dot glyphs"
 require "$MAIN" 'forceXtermCustomGlyphsFalse' "APK Active/Old settle must force the live xterm runtime customGlyphs option off"
 require "$MAIN" 't.options.customGlyphs=false' "APK must set xterm customGlyphs to boolean false at runtime"
@@ -126,9 +126,9 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=149`, `versionName=2.48`.' "README checkpoint must match the installed v2.48 APK"
+    require "$README" 'Built checkpoint: `versionCode=150`, `versionName=2.49`.' "README checkpoint must match the installed v2.49 APK"
     require "$README" 'v2.47 compacts the native composer and keeps the row-level xterm dot scrubber' "README must document the current composer-layout dotted-field fix"
-    require "$README" 'v2.48 keeps the same row/canvas scrubber alive after toolbar-only' "README must document the current toolbar-only dotted-field fix"
+    require "$README" 'v2.49 keeps the same row/canvas scrubber alive after normal toolbar-only actions' "README must document the current toolbar action dotted-field fix"
     require "$README" 'v2.11 fixes the Active Sessions dotted-field regression' "README must document the current Active Sessions dotted-field fix"
     require "$README" 'v2.12 keeps passive Active switching plain' "README must document the current passive Active switch plain-state fix"
     require "$README" 'v2.17 moves that immediate shield to a fixed body-level WebView overlay' "README must document the current Active switch fixed body-level WebView dot-shield fix"
@@ -271,11 +271,11 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.48' "install page must advertise the current v2.48 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>149</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.49' "install page must advertise the current v2.49 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>150</code>' "install page versionCode must match the manifest"
     require "$INSTALL_PAGE" 'composer-open layout dot scrubber' "install page must mention the v2.47 composer-layout dotted-field fix"
     require "$INSTALL_PAGE" 'compact native composer' "install page must mention the v2.47 compact composer fix"
-    require "$INSTALL_PAGE" 'toolbar-only entry/live-bottom dot scrubber' "install page must mention the v2.48 toolbar-only dotted-field fix"
+    require "$INSTALL_PAGE" 'toolbar action dotted-tail scrubber' "install page must mention the v2.49 toolbar action dotted-field fix"
     require "$INSTALL_PAGE" 'runtime ttyd fit-addon resize on passive session switches' "install page must advertise the current ttyd fit-addon resize fix"
     require "$INSTALL_PAGE" 'direct Tailnet IP terminal/control reachability with MagicDNS fallback' "install page must mention the direct Tailnet fallback fix"
     require "$INSTALL_PAGE" 'Old Resume returned-window select-live' "install page must mention the v2.37 Old Resume select-live fix"
@@ -361,7 +361,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.48 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.49 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8088/"' "APK terminal URL must prefer the proven direct Tailnet IP"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"
@@ -555,6 +555,9 @@ if [ -f "$MENU_UI_PROOF" ]; then
     require "$MENU_UI_PROOF" 'Go to live bottom / type' "menu UI proof must exercise live-bottom recovery"
     require "$MENU_UI_PROOF" 'open_scroll_menu()' "menu UI proof must robustly open the scroll-only menu from toolbar state"
     require "$MENU_UI_PROOF" 'Direct Bottom button kept current session at live typing' "menu UI proof must exercise the one-tap Bottom toolbar button without switching sessions"
+    require "$MENU_UI_PROOF" 'Direct Bottom toolbar-only' "menu UI proof must reject toolbar-only dotted fields after direct Bottom"
+    require "$MENU_UI_PROOF" 'Refresh toolbar-only' "menu UI proof must reject toolbar-only dotted fields after Refresh"
+    require "$MENU_UI_PROOF" 'tailNarrowBands' "menu UI proof must include the lower-tail dotted-grid detector"
     require "$MENU_UI_PROOF" 'bottom_source_window="$(tmux_active_window)"' "menu UI proof must assert Bottom preserves the current session"
     require "$MENU_UI_PROOF" 'Active switch hid native composer and keyboard' "menu UI proof must reproduce Active switching from an open native composer"
     require "$MENU_UI_PROOF" 'Active picker hid native composer before dialog' "menu UI proof must prove Active hides the composer before showing picker rows"
@@ -1137,6 +1140,10 @@ require "$MAIN" 'xtermCanvasSettleScript(reason + "-layout-dot-scrub", false)' "
 require "$MAIN" 'forceLiveBottom' "layout dot scrubber must keep live-bottom forcing disabled for tap-to-type"
 require "$MAIN" '|| isViewerPanAllowed())' "layout dot scrubber must not steal zoomed/two-finger viewer pan"
 require "$MAIN" 'keepToolbarOnlyXtermSettleAlive(reason);' "Bottom-core toolbar-only entry/live-bottom must keep the dot scrubber alive after composer is hidden"
+require "$MAIN" 'keepToolbarOnlyXtermSettleAliveAfterControlAction(reason);' "Send/Enter live-bottom settle must re-arm the toolbar-only dot scrubber"
+require "$MAIN" 'keepToolbarOnlyXtermSettleAliveAfterControlAction("touch-bottom");' "touch-bottom recovery must re-arm the toolbar-only dot scrubber"
+require "$MAIN" 'keepToolbarOnlyXtermSettleAliveAfterControlAction("send-key");' "option-key dispatch must re-arm the toolbar-only dot scrubber"
+require "$MAIN" 'v2.49 covers the root gap exposed after the 2026-06-18 22:41' "v2.49 toolbar action WHY comment must preserve the late proof failure"
 require "$MAIN" 'reason + "-toolbar-only-entry-dot-scrub"' "toolbar-only dotted-field fix must have a distinct proof reason"
 require "$MAIN" '22:10 phone screenshot proved the same lower' "toolbar-only dot scrubber WHY comment must preserve the missed proof state"
 require "$MAIN" 'no WebView' "toolbar-only dot scrubber must not revive WebView reload regressions"

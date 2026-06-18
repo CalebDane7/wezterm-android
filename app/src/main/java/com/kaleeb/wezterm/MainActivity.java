@@ -111,7 +111,7 @@ public class MainActivity extends Activity {
     private static final String PREFS = "wezterm";
     private static final String PREF_PIN_REQUESTED = "pin_requested";
     private static final String PREF_FONT_SIZE = "font_size";
-    private static final String APP_VERSION_NAME = "2.48";
+    private static final String APP_VERSION_NAME = "2.49";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
             | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
@@ -2653,6 +2653,7 @@ public class MainActivity extends Activity {
                 }
                 pinTerminalViewportLocal();
                 fitTerminalToCurrentViewSoon(reason);
+                keepToolbarOnlyXtermSettleAliveAfterControlAction(reason);
                 scrollViewerToTypingPositionOnce(reason, 180);
                 scheduleToolbarStatusDotRefresh(150);
             }, exc -> toast("WEzterm control is not reachable"));
@@ -2861,6 +2862,7 @@ public class MainActivity extends Activity {
             toast(successToast == null || successToast.trim().isEmpty() ? "Prompt sent" : successToast);
             hideDockedPromptComposer(true, false);
             focusTerminalInputSoon(false);
+            settleLiveBottomAfterSend("submit-text");
             if (afterSuccess != null) {
                 afterSuccess.run();
             }
@@ -3095,6 +3097,7 @@ public class MainActivity extends Activity {
             leaveReadModeAfterTouchBottom();
             pinTerminalViewportLocal();
             fitTerminalToCurrentViewSoon("touch-bottom");
+            keepToolbarOnlyXtermSettleAliveAfterControlAction("touch-bottom");
             scrollViewerToTypingPositionOnce("touch-bottom", 180);
         }, exc -> {
             terminalBottomRestoreInFlight = false;
@@ -3771,6 +3774,7 @@ public class MainActivity extends Activity {
                 }
                 pinTerminalViewportLocal();
                 fitTerminalToCurrentViewSoon("send-key");
+                keepToolbarOnlyXtermSettleAliveAfterControlAction("send-key");
                 alignLiveBottomViewportForPassiveEntrySoon("send-key");
             } finally {
                 if (after != null) {
@@ -5388,6 +5392,20 @@ public class MainActivity extends Activity {
         keepToolbarOnlyXtermSettleAlive(reason, generation, 900);
         keepToolbarOnlyXtermSettleAlive(reason, generation, 1600);
         keepToolbarOnlyXtermSettleAlive(reason, generation, PASSIVE_SWITCH_XTERM_SETTLE_LAST_DELAY_MS);
+    }
+
+    private void keepToolbarOnlyXtermSettleAliveAfterControlAction(String reason) {
+        // WHY: v2.49 covers the root gap exposed after the 2026-06-18 22:41
+        // screenshot: normal toolbar-only actions such as Send/Enter, option keys,
+        // and touch-bottom recovery can refit or align xterm after tmux is already
+        // at live bottom without passing through Bottom-core. Without re-arming the
+        // existing bounded row/canvas scrubber, Android can repaint the lower
+        // viewport as dotted filler even though tmux text and phone size are right.
+        // Keep this as a reuse of the proven helper so it still refuses to run in
+        // read mode, while the composer is visible, during gestures, or while a
+        // zoom/pan is active; do not add WebView reloads, hidden xterm focus, IME
+        // reopen, or a broad black lower mask.
+        keepToolbarOnlyXtermSettleAlive(reason + "-toolbar-action");
     }
 
     private void keepToolbarOnlyXtermSettleAlive(String reason, long generation, long delayMs) {

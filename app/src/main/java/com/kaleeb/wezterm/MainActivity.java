@@ -111,7 +111,7 @@ public class MainActivity extends Activity {
     private static final String PREFS = "wezterm";
     private static final String PREF_PIN_REQUESTED = "pin_requested";
     private static final String PREF_FONT_SIZE = "font_size";
-    private static final String APP_VERSION_NAME = "2.46";
+    private static final String APP_VERSION_NAME = "2.47";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
             | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
@@ -121,6 +121,8 @@ public class MainActivity extends Activity {
     private static final int MIN_FONT_SIZE = 8;
     private static final int MAX_FONT_SIZE = 18;
     private static final int TOOLBAR_HEIGHT_DP = 108;
+    private static final int PROMPT_COMPOSER_INPUT_HEIGHT_DP = 44;
+    private static final int PROMPT_COMPOSER_VERTICAL_PADDING_DP = 4;
     private static final long HISTORY_DRAG_THROTTLE_MS = 16;
     private static final int HISTORY_DRAG_LINE_THRESHOLD_DP = 8;
     private static final int HISTORY_DRAG_PAGES_PER_STEP = 1;
@@ -808,7 +810,12 @@ public class MainActivity extends Activity {
         LinearLayout composer = new LinearLayout(this);
         composer.setOrientation(LinearLayout.HORIZONTAL);
         composer.setVisibility(View.GONE);
-        composer.setPadding(dp(8), dp(6), dp(8), dp(6));
+        // WHY: the 2026-06-18 phone screenshot showed the empty native composer
+        // consuming terminal space while the keyboard was already open. Keep the
+        // native composer as the single typing owner, but make its idle row compact
+        // so the terminal still has room to repaint above the IME.
+        composer.setPadding(dp(8), dp(PROMPT_COMPOSER_VERTICAL_PADDING_DP),
+                dp(8), dp(PROMPT_COMPOSER_VERTICAL_PADDING_DP));
         composer.setBackgroundColor(Color.rgb(24, 24, 37));
 
         promptComposerInput = new PromptComposerEditText(this);
@@ -879,7 +886,7 @@ public class MainActivity extends Activity {
         // while this native composer is open, so there is one visible action path.
         composer.addView(promptComposerInput, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(54)
+                dp(PROMPT_COMPOSER_INPUT_HEIGHT_DP)
         ));
 
         return composer;
@@ -1334,7 +1341,11 @@ public class MainActivity extends Activity {
             // painting against the previous row/canvas height, the phone exposes a
             // dotted blank field and a zoomed viewer cannot pan to the true prompt
             // bottom. Dispatch a lightweight resize/redraw only; do not revive
-            // xterm scrollToBottom, WebView reload, or IME focus bursts here.
+            // xterm scrollToBottom, WebView reload, or IME focus bursts here. v2.47
+            // also keeps the row-level dot scrubber alive during composer/keyboard
+            // layout shrink, because the uploaded 21:23 phone screenshot proved the
+            // stale full-view dot grid can appear while the native composer is open,
+            // not only after an Active Sessions switch.
             fitTerminalToCurrentViewSoon("webview-layout");
         });
         view.setOnScrollChangeListener((changedView, scrollX, scrollY, oldScrollX, oldScrollY) -> {
@@ -6297,6 +6308,41 @@ public class MainActivity extends Activity {
         fitTerminalToCurrentView(reason, generation);
         uiHandler.postDelayed(() -> fitTerminalToCurrentView(reason, generation), 140);
         uiHandler.postDelayed(() -> fitTerminalToCurrentView(reason, generation), 420);
+        if (shouldRunLayoutDotScrubber(reason)) {
+            keepLayoutXtermDotScrubberAlive(reason, generation);
+        }
+    }
+
+    private boolean shouldRunLayoutDotScrubber(String reason) {
+        return reason != null
+                && ("webview-layout".equals(reason) || reason.startsWith("composer-"));
+    }
+
+    private void keepLayoutXtermDotScrubberAlive(String reason, long generation) {
+        // WHY: composer/keyboard layout shrink can expose the full-view dotted
+        // field even when tmux capture has no dot rows. Reuse the proven xterm
+        // row/canvas scrubber during layout-only refits, but keep forceLiveBottom
+        // false so tap-to-type does not scroll, focus xterm, reload WebView, open
+        // the IME, or reintroduce the old black-lower-mask false-green.
+        runLayoutXtermDotScrubber(reason, generation);
+        uiHandler.postDelayed(() -> runLayoutXtermDotScrubber(reason, generation), 180);
+        uiHandler.postDelayed(() -> runLayoutXtermDotScrubber(reason, generation), 520);
+        uiHandler.postDelayed(() -> runLayoutXtermDotScrubber(reason, generation), 1100);
+    }
+
+    private void runLayoutXtermDotScrubber(String reason, long generation) {
+        if (webView == null
+                || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT
+                || generation != terminalFitGeneration
+                || readModeSuppressesKeyboard
+                || terminalHistoryViewportActive
+                || liveRestoreInFlight
+                || terminalBottomRestoreInFlight
+                || isTerminalGestureRecoveryActive()
+                || isViewerPanAllowed()) {
+            return;
+        }
+        webView.evaluateJavascript(xtermCanvasSettleScript(reason + "-layout-dot-scrub", false), null);
     }
 
     private void fitTerminalToCurrentView(String reason, long generation) {

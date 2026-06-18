@@ -91,7 +91,7 @@ Safari/Add to Home Screen today; Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=147`, `versionName=2.46`.
+- Built checkpoint: `versionCode=148`, `versionName=2.47`.
 - v1.29 fixes the black-screen resume case where Android focused WEzterm but
   the WebView never opened a fresh ttyd HTTP/WebSocket connection.
 - The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a
@@ -670,6 +670,12 @@ Safari/Add to Home Screen today; Android users use the native APK.
   native-composer drafts; keyboard Enter/IME action submits through the same
   pinned `/submit-text` path as toolbar `Send`. WHY: the phone must not invent a
   Stop-specific state machine or treat Enter differently from Send.
+- v2.47 compacts the native composer and keeps the row-level xterm dot scrubber
+  alive during composer/keyboard layout refits. WHY: the 2026-06-18 real-phone
+  screenshot showed a full dotted terminal field while the native composer and
+  keyboard were visible, not only after Active switching. The fix reuses the
+  proven no-reload/no-focus scrubber with live-bottom forcing disabled, so
+  tap-to-type does not revive hidden xterm IME typing or broad black masks.
 - v2.11 fixes the Active Sessions dotted-field regression that returned after
   v2.10. The APK keeps passive tab switching and does not auto-open the
   composer/keyboard, but the xterm scrubber now hides lower-screen blank-backed

@@ -422,7 +422,18 @@ if scroll_views:
 else:
     root_bounds = bounds(root)
     if not root_bounds:
-        raise SystemExit(1)
+        # WHY: UIAutomator's top-level <hierarchy> node has no bounds on some
+        # Samsung dumps. At this point the proof has already required the exact
+        # Active Sessions dialog title, so use the largest bounded child instead
+        # of failing before the picker can scroll to the real target row.
+        child_bounds = [
+            b for node in root.iter("node")
+            for b in [bounds(node)]
+            if b
+        ]
+        if not child_bounds:
+            raise SystemExit(1)
+        root_bounds = max(child_bounds, key=lambda b: (b[2] - b[0]) * (b[3] - b[1]))
     x1, y1, x2, y2 = root_bounds
 
 width = max(1, x2 - x1)

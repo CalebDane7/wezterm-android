@@ -111,7 +111,7 @@ public class MainActivity extends Activity {
     private static final String PREFS = "wezterm";
     private static final String PREF_PIN_REQUESTED = "pin_requested";
     private static final String PREF_FONT_SIZE = "font_size";
-    private static final String APP_VERSION_NAME = "2.47";
+    private static final String APP_VERSION_NAME = "2.48";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
             | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
@@ -3039,6 +3039,7 @@ public class MainActivity extends Activity {
                 hideDockedPromptComposerForSessionSwitch(reason + "-post-bottom");
                 keepPassiveTabOpenPlainSoon(reason);
                 fitTerminalToCurrentViewSoon(reason);
+                keepToolbarOnlyXtermSettleAlive(reason);
                 alignLiveBottomViewportForPassiveEntrySoon(reason);
                 normalizeXtermCanvasAfterSessionSwitch(reason);
                 scheduleToolbarStatusDotRefresh(150);
@@ -5366,6 +5367,43 @@ public class MainActivity extends Activity {
         keepPassiveSwitchXtermSettleAlive(reason, generation, 900);
         keepPassiveSwitchXtermSettleAlive(reason, generation, 1600);
         keepPassiveSwitchXtermSettleAlive(reason, generation, PASSIVE_SWITCH_XTERM_SETTLE_LAST_DELAY_MS);
+    }
+
+    private void keepToolbarOnlyXtermSettleAlive(String reason) {
+        if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            return;
+        }
+        long generation = ++passiveSwitchXtermSettleGeneration;
+        // WHY: the 2026-06-18 22:10 phone screenshot proved the same lower
+        // dotted xterm blank field can appear in the plain toolbar-only state,
+        // not only after Active/Old switching or while the composer is open.
+        // Bottom-core entry/live-bottom already owns tmux copy-mode exit and
+        // phone-size resize; keep the proven row/canvas scrubber alive for that
+        // toolbar-only repaint window too. This must stay passive: no WebView
+        // reload, no hidden xterm focus, no IME reopen, and no broad black
+        // lower shield.
+        webView.evaluateJavascript(xtermCanvasSettleScript(reason + "-toolbar-only-entry-dot-scrub", true), null);
+        keepToolbarOnlyXtermSettleAlive(reason, generation, 120);
+        keepToolbarOnlyXtermSettleAlive(reason, generation, 360);
+        keepToolbarOnlyXtermSettleAlive(reason, generation, 900);
+        keepToolbarOnlyXtermSettleAlive(reason, generation, 1600);
+        keepToolbarOnlyXtermSettleAlive(reason, generation, PASSIVE_SWITCH_XTERM_SETTLE_LAST_DELAY_MS);
+    }
+
+    private void keepToolbarOnlyXtermSettleAlive(String reason, long generation, long delayMs) {
+        uiHandler.postDelayed(() -> {
+            if (webView == null
+                    || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT
+                    || generation != passiveSwitchXtermSettleGeneration
+                    || readModeSuppressesKeyboard
+                    || terminalHistoryViewportActive
+                    || isDockedPromptComposerVisible()
+                    || isTerminalGestureRecoveryActive()
+                    || isViewerPanAllowed()) {
+                return;
+            }
+            webView.evaluateJavascript(xtermCanvasSettleScript(reason + "-toolbar-only-entry-dot-scrub", true), null);
+        }, Math.max(0, delayMs));
     }
 
     private void keepPassiveSwitchXtermSettleAlive(String reason, long generation, long delayMs) {

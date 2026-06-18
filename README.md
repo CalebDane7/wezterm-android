@@ -91,7 +91,7 @@ Safari/Add to Home Screen today; Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=148`, `versionName=2.47`.
+- Built checkpoint: `versionCode=149`, `versionName=2.48`.
 - v1.29 fixes the black-screen resume case where Android focused WEzterm but
   the WebView never opened a fresh ttyd HTTP/WebSocket connection.
 - The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a
@@ -676,6 +676,12 @@ Safari/Add to Home Screen today; Android users use the native APK.
   keyboard were visible, not only after Active switching. The fix reuses the
   proven no-reload/no-focus scrubber with live-bottom forcing disabled, so
   tap-to-type does not revive hidden xterm IME typing or broad black masks.
+- v2.48 keeps the same row/canvas scrubber alive after toolbar-only
+  entry/live-bottom recovery. WHY: the 2026-06-18 22:10 phone screenshot showed
+  the lower dotted xterm blank field with the native composer hidden and the
+  toolbar in Start state. The fix reuses Bottom-core plus the proven no-reload,
+  no-hidden-focus, no-IME, no-broad-shield xterm settle train instead of treating
+  the composer proof as coverage for toolbar-only viewing.
 - v2.11 fixes the Active Sessions dotted-field regression that returned after
   v2.10. The APK keeps passive tab switching and does not auto-open the
   composer/keyboard, but the xterm scrubber now hides lower-screen blank-backed

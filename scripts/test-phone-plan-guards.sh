@@ -1484,6 +1484,11 @@ if [ -f "$PHONE_ADB_CONNECT" ]; then
     require "$PHONE_ADB_CONNECT" 'protocol faults even while' "Windows ADB port WHY comment must preserve the 5037 protocol-fault regression"
     require "$PHONE_ADB_CONNECT" 'ensure_tailscale_relay()' "phone ADB keepalive must preserve the localhost relay path"
     require "$PHONE_ADB_CONNECT" 'Direct and relay' "ADB keepalive WHY comment must preserve direct-plus-relay repair"
+    require "$PHONE_ADB_CONNECT" 'PHONE_USB_TCPIP_REFRESH_SECONDS' "phone ADB keepalive must keep a throttled USB tcpip refresh interval"
+    require "$PHONE_ADB_CONNECT" 'refresh_tcpip_from_usb_if_present()' "phone ADB keepalive must reassert tcpip 5555 while USB is present"
+    require "$PHONE_ADB_CONNECT" 'while USB is present, keep reasserting tcpip 5555' "phone ADB USB refresh WHY comment must preserve the unplug-later regression"
+    require "$PHONE_ADB_CONNECT" 'refresh_tcpip_from_usb_if_present || true' "phone ADB keepalive must run USB refresh before direct/relay success can short-circuit it"
+    require "$PHONE_ADB_CONNECT" 'phone-adb-connect arm-usb' "phone ADB helper must expose an immediate USB arm command"
 fi
 
 require "$ROOT/build-apk.sh" 'sha256sum build/WEzterm.apk' "build must derive the install page checksum from the signed APK"

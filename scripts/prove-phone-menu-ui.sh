@@ -1544,7 +1544,9 @@ PY
 tap_visible_text_from_current_dump() {
     local text="$1"
     local coords
-    coords="$(python3 - "$DUMP_LOCAL" "$text" <<'PY'
+    local attempt
+    for attempt in 1 2; do
+        coords="$(python3 - "$DUMP_LOCAL" "$text" <<'PY'
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -1563,16 +1565,36 @@ for node in root.iter("node"):
 else:
     raise SystemExit(f"missing text {wanted} in current dump")
 PY
-)"
-    read -r x y <<<"$coords"
-    adb_cmd shell input tap "$x" "$y"
-    sleep 0.8
+        )"
+        read -r x y <<<"$coords"
+        if has_window_focus; then
+            adb_cmd shell input tap "$x" "$y"
+            sleep 0.8
+            return 0
+        fi
+        if [ "${WEZTERM_UI_ALLOW_FOCUS_STEAL:-0}" != "1" ]; then
+            echo "phone menu UI proof failed: focus left WEzterm before tapping '$text' from current dump" >&2
+            adb_cmd shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' >&2 || true
+            exit 1
+        fi
+        # WHY: a real phone notification/app can steal focus in the small window
+        # between a verified WEzterm UI dump and the tap. Never send stale
+        # WEzterm coordinates into WhatsApp/Launcher; recover focus and refresh
+        # the dump before retrying the same visible Android path.
+        wait_for_focus
+        dump_ui
+    done
+    echo "phone menu UI proof failed: focus kept leaving WEzterm before tapping '$text'" >&2
+    adb_cmd shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' >&2 || true
+    exit 1
 }
 
 tap_visible_text_above_toolbar_from_current_dump() {
     local text="$1"
     local coords
-    coords="$(python3 - "$DUMP_LOCAL" "$text" <<'PY'
+    local attempt
+    for attempt in 1 2; do
+        coords="$(python3 - "$DUMP_LOCAL" "$text" <<'PY'
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -1596,10 +1618,27 @@ if not matches:
 matches.sort(key=lambda item: item[2])
 print(matches[0][0], matches[0][1])
 PY
-)"
-    read -r x y <<<"$coords"
-    adb_cmd shell input tap "$x" "$y"
-    sleep 0.8
+        )"
+        read -r x y <<<"$coords"
+        if has_window_focus; then
+            adb_cmd shell input tap "$x" "$y"
+            sleep 0.8
+            return 0
+        fi
+        if [ "${WEZTERM_UI_ALLOW_FOCUS_STEAL:-0}" != "1" ]; then
+            echo "phone menu UI proof failed: focus left WEzterm before tapping dialog text '$text'" >&2
+            adb_cmd shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' >&2 || true
+            exit 1
+        fi
+        # WHY: command-palette taps are destructive if sent to a foreground app
+        # that stole focus after the verified dump. Recover and redump before
+        # using any coordinates from the old WEzterm hierarchy.
+        wait_for_focus
+        dump_ui
+    done
+    echo "phone menu UI proof failed: focus kept leaving WEzterm before tapping dialog text '$text'" >&2
+    adb_cmd shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' >&2 || true
+    exit 1
 }
 
 long_press_text() {

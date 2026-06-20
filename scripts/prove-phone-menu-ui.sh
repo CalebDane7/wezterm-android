@@ -1948,7 +1948,11 @@ import sys
 
 tabs_file, avoid_window, proof_created_window = sys.argv[1], sys.argv[2], sys.argv[3]
 payload = json.load(open(tabs_file, encoding="utf-8"))
-generic = {"", "~", "shell", "bash", "node"}
+# WHY: Raw Terminal is the shared title brain's stable label for an empty
+# shell-only pane. It is valid in Active Sessions, but it is not a useful target
+# for Active-switch visual proof because a blank shell naturally has low paint
+# and can make the black-WebView guard fail for the wrong reason.
+generic = {"", "~", "shell", "bash", "sh", "zsh", "node", "codex", "title error", "raw terminal"}
 for window in payload.get("windows", []):
     window_id = window.get("windowId", "")
     title = window.get("title") or window.get("name") or ""

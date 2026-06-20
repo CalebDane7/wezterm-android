@@ -1491,6 +1491,7 @@ require "$ROOT/scripts/prove-phone-menu-ui.sh" 'READ window can exist before the
 require "$ROOT/scripts/prove-phone-menu-ui.sh" 'reader_source_window="$(tmux_active_window)"' "UI proof must bind reader assertions to the selected source window"
 require "$ROOT/scripts/prove-phone-menu-ui.sh" 'reader window did not name its selected source' "UI proof must diagnose reader/source mismatches without stale orig_window assumptions"
 require "$ROOT/scripts/prove-phone-menu-ui.sh" 'pick_active_switch_target' "UI proof must choose a non-generic Active switch target"
+require "$ROOT/scripts/prove-phone-menu-ui.sh" '"raw terminal"' "UI proof must not choose Raw Terminal as its non-generic Active switch target"
 require "$ROOT/scripts/prove-phone-menu-ui.sh" 'instead of the disposable New-button' "UI proof must not rely on a disposable proof title for Active switching"
 require "$ROOT/scripts/prove-phone-menu-ui.sh" 'dump_has_button_text "Scroll"' "UI proof must verify the real Scroll toolbar button before tapping it from a cached dump"
 require "$ROOT/scripts/prove-phone-menu-ui.sh" 'Physical one-finger slow/fast scroll proved' "UI proof must exercise physical slow-vs-fast swipe behavior"

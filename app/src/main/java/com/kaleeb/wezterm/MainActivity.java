@@ -111,7 +111,7 @@ public class MainActivity extends Activity {
     private static final String PREFS = "wezterm";
     private static final String PREF_PIN_REQUESTED = "pin_requested";
     private static final String PREF_FONT_SIZE = "font_size";
-    private static final String APP_VERSION_NAME = "2.49";
+    private static final String APP_VERSION_NAME = "2.50";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
             | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
@@ -4146,8 +4146,9 @@ public class MainActivity extends Activity {
         // WHY: Active Sessions is the phone's hot tab switcher. It must not wait
         // for `/sessions`, which also scans old Codex sessions and heavier
         // per-window pane status. Use the light `/tabs` payload for immediate
-        // stable `@windowId` Open/Close; Old Sessions keeps the full saved-session
-        // endpoint.
+        // stable `@windowId` Open/Close; Old Sessions has its own old-only
+        // saved-session endpoint so it cannot inherit live-window rows or broad
+        // `/sessions` latency.
         getJsonWithRetry("/tabs?light=1", payload -> showActiveSessionsDialog(payload, "Active Sessions", false), exc ->
                 getJsonWithRetry("/tabs", payload -> showActiveSessionsDialog(payload, "Active Sessions", false))
         );
@@ -4155,7 +4156,11 @@ public class MainActivity extends Activity {
 
     private void showOldSessions() {
         hideDockedPromptComposerForNavigation("old-dialog");
-        getJsonWithRetry("/sessions", this::showOldSessionsDialog, exc ->
+        // WHY: Old Sessions is a saved-session picker, not a live-session scan.
+        // Keep APK Old on the same `/sessions?oldOnly=1` contract as the web
+        // remote so Android cannot drift into showing live rows or stale
+        // process-name titles when the broad `/sessions` payload changes.
+        getJsonWithRetry("/sessions?oldOnly=1", this::showOldSessionsDialog, exc ->
                 toast("WEzterm control is not reachable")
         );
     }

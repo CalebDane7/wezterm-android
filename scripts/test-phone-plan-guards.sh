@@ -58,13 +58,13 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="150"' "current APK version must be bumped for the v2.49 toolbar action dotted-field fix"
-require "$MANIFEST" 'android:versionName="2.49"' "current APK version must be bumped for the v2.49 toolbar action dotted-field fix"
+require "$MANIFEST" 'android:versionCode="151"' "current APK version must be bumped for the v2.50 Old Sessions old-only route fix"
+require "$MANIFEST" 'android:versionName="2.50"' "current APK version must be bumped for the v2.50 Old Sessions old-only route fix"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.49";' "client /config proof must report the same v2.49 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.50";' "client /config proof must report the same v2.50 APK contract as the manifest"
 require "$MAIN" 'customGlyphs=false' "APK terminal URL must disable xterm custom glyphs to stop blank-cell dot glyphs"
 require "$MAIN" 'forceXtermCustomGlyphsFalse' "APK Active/Old settle must force the live xterm runtime customGlyphs option off"
 require "$MAIN" 't.options.customGlyphs=false' "APK must set xterm customGlyphs to boolean false at runtime"
@@ -126,7 +126,8 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=150`, `versionName=2.49`.' "README checkpoint must match the installed v2.49 APK"
+    require "$README" 'Built checkpoint: `versionCode=151`, `versionName=2.50`.' "README checkpoint must match the installed v2.50 APK"
+    require "$README" 'v2.50 keeps Android Old Sessions on the same `/sessions?oldOnly=1`' "README must document the current Android Old Sessions old-only route fix"
     require "$README" 'v2.47 compacts the native composer and keeps the row-level xterm dot scrubber' "README must document the current composer-layout dotted-field fix"
     require "$README" 'v2.49 keeps the same row/canvas scrubber alive after normal toolbar-only actions' "README must document the current toolbar action dotted-field fix"
     require "$README" 'v2.11 fixes the Active Sessions dotted-field regression' "README must document the current Active Sessions dotted-field fix"
@@ -271,8 +272,9 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.49' "install page must advertise the current v2.49 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>150</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.50' "install page must advertise the current v2.50 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>151</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'Android Old Sessions old-only route' "install page must mention the v2.50 Android Old Sessions old-only route fix"
     require "$INSTALL_PAGE" 'composer-open layout dot scrubber' "install page must mention the v2.47 composer-layout dotted-field fix"
     require "$INSTALL_PAGE" 'compact native composer' "install page must mention the v2.47 compact composer fix"
     require "$INSTALL_PAGE" 'toolbar action dotted-tail scrubber' "install page must mention the v2.49 toolbar action dotted-field fix"
@@ -361,7 +363,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.49 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.50 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8088/"' "APK terminal URL must prefer the proven direct Tailnet IP"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"
@@ -380,6 +382,8 @@ require "$MAIN" 'loadTerminalAtIndex(0, reason + "-wake-retry")' "wake retry mus
 require "$MAIN" 'terminalUrlWithOptions(activeTerminalBaseUrl)' "WebView reload fallback must preserve ttyd options on the active endpoint"
 require "$MAIN" 'Mantis owns the shared title system in `/sessions`' "APK must keep server-owned Active Session titles"
 require "$MAIN" 'old sessions must use the same server-provided title' "APK must keep server-owned Old Session titles"
+require "$MAIN" 'getJsonWithRetry("/sessions?oldOnly=1", this::showOldSessionsDialog' "APK Old Sessions must use the same old-only saved-session contract as web Old"
+require "$MAIN" 'Old Sessions is a saved-session picker, not a live-session scan' "APK Old Sessions old-only WHY comment must preserve the title/latency regression"
 require "$ROOT/build-apk.sh" 'direct Tailnet IP terminal/control reachability with MagicDNS fallback' "install page generator must document the direct Tailnet fallback fix"
 require "$ROOT/build-apk.sh" 'launcher re-entry resetting stale MagicDNS tasks to the direct Tailnet IP' "install page generator must document the launcher re-entry reconnect fix"
 require "$ROOT/build-apk.sh" 'app-open Wake-on-LAN packets for the laptop' "install page generator must document the wake-on-open fix"
@@ -509,6 +513,7 @@ require "$MAIN" '"/scrollback/chunk?windowId="' "C5 APK must fetch local history
 require "$MAIN" 'LOCAL_HISTORY_CHUNK_LINES' "C5 APK must keep history chunk size bounded"
 require "$MAIN" 'Mantis owns the shared title system in `/sessions`; Android is a' "APK Active Sessions must keep server title authority"
 require "$MAIN" 'old sessions must use the same server-provided title as Active' "APK Old Sessions must keep server title authority"
+require "$MAIN" 'Android cannot drift into showing live rows or stale' "APK Old Sessions must document why broad /sessions is forbidden"
 require "$MAIN" 'drift from desktop tmux, web remote, and Old Sessions' "APK must not grow a separate Active Sessions title summarizer"
 require "$MAIN" 'never invent a second' "APK must not grow a separate Old Sessions naming table"
 if [ -f "$RUNTIME_PROOF" ]; then
@@ -902,7 +907,7 @@ require "$MAIN" 'raw `/close?fast=1`' "main Close WHY comment must document the 
 require "$MAIN" 'finishSelectedTabOpen(generation, paintShieldGeneration, title, dialogRef);' "Active row selection must dismiss the picker immediately after /select-live succeeds"
 require_absent "$MAIN" ': "/close?fast=1";' "main Close must not fall back to raw close without a stable windowId"
 require "$MAIN" 'getJsonWithRetry("/active"' "main Close must use retry-safe active phone session metadata"
-require "$MAIN" 'getJsonWithRetry("/sessions"' "Active/Old session pickers must use the retry-safe session/date endpoint"
+require "$MAIN" 'getJsonWithRetry("/sessions?oldOnly=1"' "Old Sessions must use the retry-safe old-only session/date endpoint"
 require "$MAIN" 'getJsonWithRetry("/needs-attention"' "Needs Attention must use the retry-safe server endpoint"
 require "$MAIN" 'payload.optString("viewSession"' "sessions UI must read phone view-session metadata"
 require "$MAIN" 'activityGroup' "sessions UI must show date grouping metadata"

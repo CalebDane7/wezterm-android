@@ -2693,6 +2693,7 @@ assert_text "$cli_keys_visible_row"
 tap_visible_text_from_current_dump "$cli_keys_visible_row"
 wait_for_active_window_id_after_visible_tap "$cli_keys_window" "$cli_keys_visible_row"
 cat > "$CLI_KEYS_SCRIPT" <<'PY'
+import os
 import pathlib
 import select
 import sys
@@ -2719,7 +2720,11 @@ def read_escape_sequence(fd):
         ready, _, _ = select.select([fd], [], [], 0.06 if not sequence else 0.02)
         if not ready:
             return sequence
-        chunk = sys.stdin.buffer.read(1)
+        # WHY: this proof intentionally models CLI option pickers that parse
+        # terminal escape sequences. Mixing `select` with Python's buffered
+        # stdin can hide bytes already prefetched after ESC, producing a false
+        # lone-Escape failure even when tmux delivered `ESC [ 3 ~` correctly.
+        chunk = os.read(fd, 1)
         sequence += chunk
         if chunk in b"~ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz":
             return sequence
@@ -2732,7 +2737,7 @@ tty.setraw(fd)
 try:
     render()
     while True:
-        data = sys.stdin.buffer.read(1)
+        data = os.read(fd, 1)
         if data == b"\x1b":
             seq = read_escape_sequence(fd)
             if seq in (b"[A", b"OA"):

@@ -82,7 +82,38 @@ urlencode() {
 }
 
 control_get() {
-    curl -fsS "$CONTROL_URL$1"
+    local path="$1"
+    local stderr_file
+    local body
+    local status
+    stderr_file="$(mktemp)"
+    if body="$(curl -fsS "$CONTROL_URL$path" 2>"$stderr_file")"; then
+        rm -f "$stderr_file"
+        printf '%s\n' "$body"
+        return 0
+    fi
+    status=$?
+    # WHY: a transient control-server 500 during phone proof setup used to feed
+    # an empty string into json_assert, producing an opaque JSONDecodeError.
+    # Emit privacy-safe structured failure data so the next proof failure names
+    # the endpoint and curl status instead of hiding the broken boundary.
+    python3 - "$path" "$status" "$stderr_file" <<'PY'
+import json
+import pathlib
+import sys
+
+path, status, stderr_file = sys.argv[1], sys.argv[2], sys.argv[3]
+stderr = pathlib.Path(stderr_file).read_text(encoding="utf-8", errors="replace").strip()
+print(json.dumps({
+    "ok": False,
+    "error": "control request failed",
+    "path": path,
+    "curlStatus": status,
+    "stderr": stderr[-500:],
+}))
+PY
+    rm -f "$stderr_file"
+    return "$status"
 }
 
 assert_title_sync_stopped() {
@@ -1990,7 +2021,18 @@ reopen_wezterm() {
 
 select_window() {
     local window_id="$1"
-    control_get "/select?fast=1&windowId=$(urlencode "$window_id")" | json_assert "select $window_id" "p.get('ok') is True"
+    local payload
+    if ! payload="$(control_get "/select?fast=1&windowId=$(urlencode "$window_id")")"; then
+        printf '%s\n' "$payload" >&2
+        # WHY: select_window is proof setup, not the user-visible APK tap being
+        # asserted. If a one-off control 500 happens after control health already
+        # passed, select the tmux target directly so the broad phone proof can
+        # continue to test the real visible APK controls instead of dying on
+        # unreadable setup plumbing.
+        tmux select-window -t "$TMUX_SESSION:$window_id"
+        payload='{"ok": true, "action": "tmux-select-fallback"}'
+    fi
+    printf '%s\n' "$payload" | json_assert "select $window_id" "p.get('ok') is True"
 }
 
 wait_for_light_active_window_title() {

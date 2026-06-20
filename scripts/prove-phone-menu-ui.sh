@@ -1193,7 +1193,18 @@ dismiss_native_composer_if_open() {
                 echo "Native composer draft preserved to $draft_file before explicit proof clear"
             fi
         fi
-        if [ -n "$draft" ] && [ "${WEZTERM_UI_ALLOW_CLEAR_DRAFT:-0}" != "1" ]; then
+        local stale_proof_stop_draft=0
+        case "$draft" in
+            PHONE_UI_STOP_DRAFT_*)
+                # WHY: a failed prior phone UI proof can leave its own generated
+                # Stop token in the native composer. Clearing this exact proof
+                # prefix is not user text loss; any non-proof draft still blocks
+                # and is preserved below.
+                stale_proof_stop_draft=1
+                echo "Clearing stale proof-owned Stop draft from native composer"
+                ;;
+        esac
+        if [ -n "$draft" ] && [ "${WEZTERM_UI_ALLOW_CLEAR_DRAFT:-0}" != "1" ] && [ "$stale_proof_stop_draft" != "1" ]; then
             echo "phone menu UI proof blocked: native composer contains unsent text; saved draft to $draft_file and refused to clear it" >&2
             exit 1
         fi
@@ -1206,6 +1217,33 @@ dismiss_native_composer_if_open() {
         fi
         echo "Native composer dismissed before proof step"
     fi
+}
+
+clear_proof_owned_native_composer_draft() {
+    local expected_draft="$1"
+    dump_ui
+    if ! grep -Eq 'class="android.widget.EditText"[^>]*(content-desc|hint)="Type prompt"' "$DUMP_LOCAL"; then
+        return 0
+    fi
+    local draft
+    draft="$(composer_draft_text_from_dump)"
+    if [ "$draft" != "$expected_draft" ]; then
+        dismiss_native_composer_if_open
+        return 0
+    fi
+    # WHY: the Stop proof intentionally leaves its visible draft unsubmitted to
+    # prove Stop is one Escape, not Send. Before the following Close proof can
+    # open Active Sessions, dismiss only this exact proof-owned token; any other
+    # native composer text still blocks and is preserved by
+    # dismiss_native_composer_if_open.
+    press_back
+    sleep 0.2
+    dump_ui
+    if grep -Eq 'class="android.widget.EditText"[^>]*(content-desc|hint)="Type prompt"' "$DUMP_LOCAL"; then
+        press_back
+        sleep 0.3
+    fi
+    echo "Proof-owned Stop draft dismissed before Close proof"
 }
 
 ensure_plain_toolbar() {
@@ -2865,6 +2903,7 @@ tap_text "Stop"
 wait_for_stop_escape
 wait_for_shell "$proof_window"
 echo "Stop button delivered one Escape without submitting the visible native draft"
+clear_proof_owned_native_composer_draft "$STOP_VISIBLE_DRAFT_TOKEN"
 
 echo "phone menu UI proof: Close button closes only disposable session"
 select_window "$proof_window"

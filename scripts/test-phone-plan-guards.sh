@@ -1461,6 +1461,11 @@ if [ -f "$PHONE_ADB_CONNECT" ]; then
     require "$PHONE_ADB_CONNECT" 'install_apk()' "no-USB install helper must remain implemented"
     require "$PHONE_ADB_CONNECT" '127.0.0.1' "relay must keep localhost ADB target"
     require "$PHONE_ADB_CONNECT" 'PHONE_TAILSCALE_IP' "relay must remain Tailscale-backed"
+    require "$PHONE_ADB_CONNECT" 'HOST_ADB_PORT="${PHONE_HOST_ADB_PORT:-5038}"' "Windows USB ADB must stay isolated from WSL localhost:5037 relay conflicts"
+    require "$PHONE_ADB_CONNECT" '"$ADB" -P "$HOST_ADB_PORT"' "Windows adb.exe calls must use the dedicated host ADB port"
+    require "$PHONE_ADB_CONNECT" 'protocol faults even while' "Windows ADB port WHY comment must preserve the 5037 protocol-fault regression"
+    require "$PHONE_ADB_CONNECT" 'ensure_tailscale_relay()' "phone ADB keepalive must preserve the localhost relay path"
+    require "$PHONE_ADB_CONNECT" 'Direct and relay' "ADB keepalive WHY comment must preserve direct-plus-relay repair"
 fi
 
 require "$ROOT/build-apk.sh" 'sha256sum build/WEzterm.apk' "build must derive the install page checksum from the signed APK"

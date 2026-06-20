@@ -698,6 +698,17 @@ dump_ui() {
             sleep 0.5
             has_window_focus && break
         done
+        if ! has_window_focus; then
+            # WHY: after long command-palette proof runs, Samsung can report
+            # Launcher or another foreground app for a little longer than the
+            # fast recovery loop even though `am start -W` succeeds. One final
+            # slower Home + launch mirrors the proven manual recovery and avoids
+            # failing a phone UI proof on focus timing instead of app behavior.
+            adb_cmd shell input keyevent KEYCODE_HOME >/dev/null 2>&1 || true
+            sleep 0.35
+            adb_cmd shell am start -W -n "$ACTIVITY" >/dev/null 2>&1 || true
+            sleep 1.0
+        fi
     fi
     if ! has_window_focus; then
         echo "phone menu UI proof failed: $PACKAGE is not the current focused window; refusing to trust a stale UI dump" >&2

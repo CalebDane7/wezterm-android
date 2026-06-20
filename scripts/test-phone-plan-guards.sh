@@ -628,6 +628,7 @@ if [ -f "$MENU_UI_PROOF" ]; then
     require "$MENU_UI_PROOF" 'foreground app like WhatsApp' "menu UI proof must preserve real-phone foreground-app recovery"
     require "$MENU_UI_PROOF" 'KEYCODE_HOME' "menu UI proof must use Home before relaunch when another app takes focus"
     require "$MENU_UI_PROOF" '_recover_focus' "menu UI proof must retry foreground recovery before trusting UIAutomator dumps"
+    require "$MENU_UI_PROOF" 'slower Home + launch mirrors the proven manual recovery' "menu UI proof must preserve slower final foreground recovery"
     require "$MENU_UI_PROOF" 'could not get idle state' "menu UI proof must preserve UIAutomator idle-timeout diagnostics"
     require "$MENU_UI_PROOF" 'uiautomator dump --compressed' "menu UI proof must retry dumps with compressed mode when live terminal animation prevents idle"
     require "$MENU_UI_PROOF" 'root-only FrameLayout dump' "menu UI proof must reject Samsung root-only empty accessibility dumps"

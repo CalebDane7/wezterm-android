@@ -1342,6 +1342,9 @@ if [ -f "$CONTROL_SERVER" ]; then
     require "$CONTROL_SERVER" 'payload["recentCodexSessions"] = old_sessions' "server must keep recentCodexSessions compatibility alias"
     require "$CONTROL_SERVER" 'def resume_session(self, session_id, cwd="", include_tabs=True, dry_run=False):' "server must implement safe old-session resume"
     require "$CONTROL_SERVER" '"action": "resume-dry-run"' "server must support safe resume dry-run proof"
+    require "$CONTROL_SERVER" 'resume_title = tmux_title_for_generic_repair(codex_session_title_from_state(session_id))' "old-session resume must use the same saved title that Old Sessions displayed"
+    require "$CONTROL_SERVER" 'Naming the new tmux window `RESUME <id>` made Windows/tmux' "old-session resume title WHY comment must preserve the title-mismatch regression"
+    require "$CONTROL_SERVER" '"oldSessionTitle": resume_title' "old-session resume payload must expose the displayed title authority"
     require "$CONTROL_SERVER" 'exec codex --no-alt-screen resume' "old-session resume must use no-alt-screen Codex resume"
     require "$CONTROL_SERVER" 'elif parsed.path == "/resume-session":' "GET /resume-session route must remain"
     require "$CONTROL_SERVER" 'def sessions(self, old_session_limit=30):' "server sessions endpoint must remain implemented with oldSessions limit support"
@@ -1409,9 +1412,10 @@ if [ -f "$MANTIS_OLD_SESSIONS_PICKER" ]; then
 fi
 
 if [ -f "$PHONE_TERMINAL" ]; then
-    require "$PHONE_TERMINAL" 'PHONE_TITLE_SYNC_ENABLED:-0' "title sync must remain disabled by default while phone basics are under proof"
-    require "$PHONE_TERMINAL" 'PHONE_TITLE_WINDOW_IDS' "title sync must require a stable @window-id allowlist before applied renames"
-    require "$PHONE_TERMINAL" 'PHONE_TITLE_DRY_RUN="${PHONE_TITLE_DRY_RUN:-1}"' "title sync must default to dry-run when explicitly enabled"
+    require "$PHONE_TERMINAL" 'PHONE_TITLE_SYNC_ENABLED:-1' "mantis-title-sync must default on as the shared guarded title/status authority"
+    require "$PHONE_TERMINAL" 'shared title/status authority' "phone-terminal title-sync WHY comment must preserve why stale cache/title drift returns if the daemon is opt-in"
+    require "$PHONE_TERMINAL" 'contains its own guarded rename logic' "phone-terminal title-sync guard must not regress to the old broad applied-title-sync model"
+    require_absent "$PHONE_TERMINAL" 'phone title sync refused: set PHONE_TITLE_WINDOW_IDS' "mantis-title-sync must not inherit the legacy broad-sync allowlist refusal"
     require "$PHONE_TERMINAL" 'CONTROL_SERVER="$CONTROL_BIN" python3 <<' "phone-terminal url must import the configured control server for the shared web token"
     require "$PHONE_TERMINAL" 'SourceFileLoader("phone_terminal_control_server_web_token", path)' "phone-terminal url must import the control server beside shared helper modules"
     require "$PHONE_TERMINAL" 'scrollback=$PHONE_SCROLLBACK' "ttyd scrollback must use the configurable large cap"

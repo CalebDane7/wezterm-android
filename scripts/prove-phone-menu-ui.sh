@@ -2869,9 +2869,19 @@ echo "Stop button delivered one Escape without submitting the visible native dra
 echo "phone menu UI proof: Close button closes only disposable session"
 select_window "$proof_window"
 reopen_wezterm
+proof_close_visible_title="$(wait_for_light_active_window_title "$proof_window")"
+# WHY: `/select?fast=1` moves tmux, but Android Close intentionally uses the
+# APK's remembered stable `@windowId` from the visible Active Sessions selection.
+# Without this real UI selection, the confirmation can target a previous phone
+# tab like Phone Keys Test while the proof waits for the proof window to close.
+open_active_picker
+scroll_until_text_any "$proof_close_visible_title"
+tap_visible_text_from_current_dump "$scroll_found_text"
+wait_for_active_window_id_after_visible_tap "$proof_window" "$scroll_found_text"
+ensure_plain_toolbar
 tap_text "Close"
-assert_regex 'text="Close .*\?"' "Close confirmation title"
-tap_text_any "CLOSE" "Close"
+assert_text "Close $proof_close_visible_title?"
+tap_button_text_from_current_dump "CLOSE"
 wait_until_window_gone "$proof_window"
 proof_window=""
 echo "Close button removed disposable session"

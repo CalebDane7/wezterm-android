@@ -1624,6 +1624,9 @@ if [ -f "$BROWSER_PARITY_PROOF" ]; then
     # web work must prove the toolbar, dialogs, token gate, disposable New/Close,
     # Copy/Paste, Upload, Start/Stop, and APK hot-path invariants together.
     require "$BROWSER_PARITY_PROOF" 'button[data-action="active"]' "browser proof must click the rendered Active toolbar button"
+    require "$BROWSER_PARITY_PROOF" 'mantis-phone-control-server' "browser proof must use the live Mantis control server by default"
+    require "$BROWSER_PARITY_PROOF" '.mantis/phone-terminal/web-control-token' "browser proof must use the live Mantis web token by default"
+    require "$BROWSER_PARITY_PROOF" 'split-brain auth layer' "browser proof must document why legacy web tokens are forbidden"
     require "$BROWSER_PARITY_PROOF" 'for label in Active Old New Refresh Bottom Scroll "Copy/Paste" Upload Close Start Stop' "browser proof must verify all APK-equivalent toolbar labels"
     require "$BROWSER_PARITY_PROOF" 'User-Agent: Mozilla/5.0' "browser proof must test browser-like requests, not only curl/API calls"
     require "$BROWSER_PARITY_PROOF" 'X-WEzTerm-CSRF' "browser proof must prove the CSRF header is required for browser mutations"
@@ -1633,7 +1636,7 @@ if [ -f "$BROWSER_PARITY_PROOF" ]; then
     require "$BROWSER_PARITY_PROOF" '__weztermWebSwitchShieldState' "browser proof must verify the web shield state in the rendered page"
     require "$BROWSER_PARITY_PROOF" 'dataset.windowId' "browser proof must select Active rows by explicit tmux window id"
     require "$BROWSER_PARITY_PROOF" 'web Active-switch shield did not activate' "browser proof must fail if the web shield does not activate"
-    require "$BROWSER_PARITY_PROOF" 'web Active-switch shield did not hide after settle' "browser proof must fail if the web shield does not hide after switching"
+    require "$BROWSER_PARITY_PROOF" 'did not hide web Active-switch shield' "browser proof must fail if the web shield does not hide after switching"
     require "$BROWSER_PARITY_PROOF" 'cleanup refused to close' "browser proof cleanup must refuse to close windows it did not title as disposable"
     require "$BROWSER_PARITY_PROOF" 'WEB_BROWSER_PASTE_' "browser proof must prove full text Copy/Paste through the web UI"
     require "$BROWSER_PARITY_PROOF" 'wezterm-web-upload-proof.txt' "browser proof must prove direct browser Upload"

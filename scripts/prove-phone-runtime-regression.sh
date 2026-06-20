@@ -80,6 +80,26 @@ PY
     rm -f "$payload_file"
 }
 
+wait_for_pane_command() {
+    local pane="$1"
+    local expected="$2"
+    local description="$3"
+    local attempts="${4:-50}"
+    local command=""
+
+    for _ in $(seq 1 "$attempts"); do
+        command="$(tmux display-message -p -t "$pane" '#{pane_current_command}')"
+        if [ "$command" = "$expected" ]; then
+            return 0
+        fi
+        sleep 0.1
+    done
+
+    echo "runtime regression proof failed: $description never reached $expected; current command is ${command:-unknown}" >&2
+    tmux capture-pane -p -t "$pane" -S -20 >&2 || true
+    return 1
+}
+
 urlencode() {
     python3 -c 'from urllib.parse import quote; import sys; print(quote(sys.argv[1], safe=""))' "$1"
 }
@@ -353,17 +373,25 @@ for _ in $(seq 1 30); do
 done
 grep -Fq "PHONE_DRAFT_WORLD" "$DRAFT_FILE"
 tmux send-keys -t "$TMUX_SESSION:$proof_window" C-c
+wait_for_pane_command "$TMUX_SESSION:$proof_window" bash "draft proof cleanup"
 
+# WHY: `/stop` is the Android cancel button path. The disposable pane must be
+# selected and sitting at a shell before the raw Escape reader starts; otherwise
+# a race after the previous C-c can make the proof fail with a missing temp file
+# even though the phone/control path delivered Escape correctly.
+curl -fsS "$CONTROL_URL/select-live?fast=1&windowId=${proof_window//@/%40}" | json_assert "reselect stop proof window" "p.get('ok') is True"
 tmux send-keys -t "$TMUX_SESSION:$proof_window" "rm -f '$STOP_FILE'; python3 -c 'import sys,pathlib,termios,tty; fd=sys.stdin.fileno(); old=termios.tcgetattr(fd); tty.setraw(fd); data=sys.stdin.buffer.read(1); termios.tcsetattr(fd, termios.TCSADRAIN, old); pathlib.Path(\"$STOP_FILE\").write_bytes(data)'" Enter
-for _ in $(seq 1 30); do
-    [ "$(tmux display-message -p -t "$TMUX_SESSION:$proof_window" '#{pane_current_command}')" = "python3" ] && break
-    sleep 0.1
-done
+wait_for_pane_command "$TMUX_SESSION:$proof_window" python3 "stop proof reader startup"
 curl -fsS "$CONTROL_URL/stop" | json_assert "stop endpoint single desktop escape" "p.get('ok') is True and p.get('keys') == ['Escape']"
-for _ in $(seq 1 30); do
+for _ in $(seq 1 60); do
     [ -f "$STOP_FILE" ] && [ "$(wc -c < "$STOP_FILE")" -ge 1 ] && break
     sleep 0.1
 done
+if [ ! -s "$STOP_FILE" ]; then
+    echo "runtime regression proof failed: stop proof did not write Escape bytes to $STOP_FILE" >&2
+    tmux capture-pane -p -t "$TMUX_SESSION:$proof_window" -S -20 >&2 || true
+    exit 1
+fi
 python3 - "$STOP_FILE" <<'PY'
 import pathlib, sys
 data = pathlib.Path(sys.argv[1]).read_bytes()

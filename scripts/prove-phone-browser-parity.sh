@@ -5,12 +5,12 @@ trap 'echo "phone browser parity proof failed at line $LINENO while running: $BA
 CONTROL_URL="${PHONE_CONTROL_URL:-http://100.113.254.7:8089}"
 BROWSER_CONTROL_URL="${PHONE_BROWSER_CONTROL_URL:-http://127.0.0.1:8089}"
 TMUX_SESSION="${PHONE_TMUX_SESSION:-main_phone}"
-CONTROL_SERVER="${PHONE_CONTROL_SERVER:-$HOME/.local/bin/phone-terminal-control-server}"
+CONTROL_SERVER="${PHONE_CONTROL_SERVER:-$HOME/.local/bin/mantis-phone-control-server}"
 PHONE_TERMINAL_BIN="${PHONE_TERMINAL_BIN:-$HOME/.local/bin/phone-terminal}"
 BROWSER_SESSION="${PHONE_BROWSER_PROOF_SESSION:-wezterm-web-proof}"
 SCREENSHOT="${PHONE_BROWSER_PROOF_SCREENSHOT:-/tmp/wezterm-web-parity.png}"
 UPLOAD_PROOF_FILE="${PHONE_BROWSER_UPLOAD_PROOF_FILE:-/tmp/wezterm-web-upload-proof.txt}"
-TOKEN_FILE="${PHONE_WEB_TOKEN_FILE:-$HOME/.local/share/phone-terminal/web-control-token}"
+TOKEN_FILE="${PHONE_WEB_TOKEN_FILE:-$HOME/.mantis/phone-terminal/web-control-token}"
 
 orig_window=""
 proof_window=""
@@ -22,8 +22,12 @@ cleanup() {
     if [ -n "${proof_window:-}" ] && tmux list-windows -t "$TMUX_SESSION:" -F '#{window_id}' 2>/dev/null | grep -Fxq "$proof_window"; then
         local current_title
         current_title="$(tmux display-message -p -t "$TMUX_SESSION:$proof_window" '#{window_name}' 2>/dev/null || true)"
-        if [ "$current_title" != "$proof_title" ]; then
-            echo "browser parity cleanup refused to close $proof_window title '$current_title' because it is not '$proof_title'" >&2
+        # WHY: Mantis title-sync is allowed to repair display titles while this
+        # browser proof is running. The proof owns the exact new `@windowId`
+        # discovered after clicking New, so cleanup must use the pre-proof window
+        # snapshot instead of a mutable title that can be repaired to Raw Terminal.
+        if [ -f "$initial_windows_file" ] && grep -Fxq "$proof_window" "$initial_windows_file"; then
+            echo "browser parity cleanup refused to close $proof_window title '$current_title' because it existed before this proof" >&2
             proof_window=""
         fi
     fi
@@ -72,6 +76,14 @@ wait_for_dialog_contains() {
     browser_eval "(() => new Promise((resolve, reject) => { const needle=${needle_json}; const deadline=Date.now()+30000; function tick(){ const dialog=document.querySelector('dialog'); const text=dialog?.innerText||''; if(dialog?.open && text.includes(needle)) return resolve(text); if(Date.now()>deadline) return reject(new Error('dialog did not show '+needle+': '+text)); setTimeout(tick,250); } tick(); }))()" > "$output_path"
 }
 
+wait_for_web_switch_shield_hidden() {
+    local description="$1"
+    local output_path="$2"
+    local description_json
+    description_json="$(json_string "$description")"
+    browser_eval "(() => new Promise((resolve, reject) => { const description=${description_json}; const deadline=Date.now()+7000; let last=null; function tick(){ const getState=window.__weztermWebSwitchShieldState; const state=getState&&getState(); last=state; if(state && !state.active && state.visibility==='hidden') return resolve(state); if(Date.now()>deadline) return reject(new Error(description+' did not hide web Active-switch shield: '+JSON.stringify(last))); setTimeout(tick,150); } tick(); }))()" > "$output_path"
+}
+
 snapshot_windows() {
     local path="$1"
     tmux list-windows -t "$TMUX_SESSION:" -F '#{window_id}' | sort > "$path"
@@ -115,6 +127,23 @@ wait_for_pane_text() {
     exit 1
 }
 
+wait_for_active_window_id() {
+    local expected="$1"
+    local description="$2"
+    local active=""
+
+    for _ in $(seq 1 60); do
+        active="$(tmux display-message -p -t "$TMUX_SESSION:" '#{window_id}' 2>/dev/null || true)"
+        if [ "$active" = "$expected" ]; then
+            return 0
+        fi
+        sleep 0.1
+    done
+
+    echo "browser parity proof failed: $description did not select $expected; active window is ${active:-unknown}" >&2
+    exit 1
+}
+
 ensure_browser_bridge() {
     # WHY: the APK reaches the Tailnet-bound services directly, but this proof
     # runs through Windows Chrome. Keep proof on the real rendered browser path
@@ -135,6 +164,10 @@ ensure_browser_bridge() {
 }
 
 web_token() {
+    # WHY: the shipped web shell is served by the same Mantis control server as
+    # the APK/phone terminal. Reading the older legacy token file makes browser
+    # proof fail with 401 while the real Mantis web surface works, recreating the
+    # split-brain auth layer that hid phone/web regressions.
     if [ -s "$TOKEN_FILE" ]; then
         tr -d '\r\n' < "$TOKEN_FILE"
         return 0
@@ -143,11 +176,13 @@ web_token() {
 import importlib.machinery
 import importlib.util
 import os
+import sys
 
 path = os.environ["CONTROL_SERVER"]
 loader = importlib.machinery.SourceFileLoader("phone_terminal_control_server_web_token", path)
 spec = importlib.util.spec_from_loader(loader.name, loader)
 module = importlib.util.module_from_spec(spec)
+sys.path.insert(0, os.path.dirname(path))
 spec.loader.exec_module(module)
 print(module.ensure_web_control_token())
 PY
@@ -216,10 +251,9 @@ snapshot_windows "$initial_windows_file"
 agent-browser --session "$BROWSER_SESSION" click 'button[data-action="new"]' >/dev/null
 proof_window="$(wait_for_browser_created_window "$before_window" "$initial_windows_file")"
 tmux rename-window -t "$TMUX_SESSION:$proof_window" "$proof_title"
-if [ "$(tmux display-message -p -t "$TMUX_SESSION:$proof_window" '#{window_name}')" != "$proof_title" ]; then
-    echo "browser parity proof failed: disposable window $proof_window did not keep proof title '$proof_title'" >&2
-    exit 1
-fi
+# WHY: title-sync can repair this disposable shell title to Raw Terminal before
+# the proof continues. That is fine; web targeting and cleanup are protected by
+# the stable tmux `@windowId`, not by mutable display text.
 
 echo "web Active switch shield"
 orig_window_json="$(json_string "$orig_window")"
@@ -227,21 +261,13 @@ proof_window_json="$(json_string "$proof_window")"
 agent-browser --session "$BROWSER_SESSION" click 'button[data-action="active"]' >/dev/null
 wait_for_dialog_contains "Active Sessions" /tmp/wezterm-web-shield-active-orig.txt
 browser_eval "(() => { const id=${orig_window_json}; const row=Array.from(document.querySelectorAll('dialog .row')).find(r => r.dataset.windowId === id); if (!row) throw new Error('Active row missing for original window ' + id); row.querySelector('button').click(); const state=window.__weztermWebSwitchShieldState&&window.__weztermWebSwitchShieldState(); if(!state||!state.active) throw new Error('web Active-switch shield did not activate: '+JSON.stringify(state)); return state; })()" >/tmp/wezterm-web-shield-open-orig.json
-sleep 2.0
-if [ "$(tmux display-message -p -t "$TMUX_SESSION:" '#{window_id}')" != "$orig_window" ]; then
-    echo "browser parity proof failed: web Active switch did not select original $orig_window" >&2
-    exit 1
-fi
-browser_eval '(() => { const state=window.__weztermWebSwitchShieldState&&window.__weztermWebSwitchShieldState(); if(!state||state.active||state.visibility!=="hidden") throw new Error("web Active-switch shield did not hide after settle: "+JSON.stringify(state)); return state; })()' >/tmp/wezterm-web-shield-hidden-orig.json
+wait_for_active_window_id "$orig_window" "web Active switch to original"
+wait_for_web_switch_shield_hidden "web Active-switch shield after original switch" /tmp/wezterm-web-shield-hidden-orig.json
 agent-browser --session "$BROWSER_SESSION" click 'button[data-action="active"]' >/dev/null
 wait_for_dialog_contains "Active Sessions" /tmp/wezterm-web-shield-active-proof.txt
 browser_eval "(() => { const id=${proof_window_json}; const row=Array.from(document.querySelectorAll('dialog .row')).find(r => r.dataset.windowId === id); if (!row) throw new Error('Active row missing for proof window ' + id); row.querySelector('button').click(); const state=window.__weztermWebSwitchShieldState&&window.__weztermWebSwitchShieldState(); if(!state||!state.active) throw new Error('web Active-switch shield did not activate for proof return: '+JSON.stringify(state)); return state; })()" >/tmp/wezterm-web-shield-open-proof.json
-sleep 2.0
-if [ "$(tmux display-message -p -t "$TMUX_SESSION:" '#{window_id}')" != "$proof_window" ]; then
-    echo "browser parity proof failed: web Active switch did not return to disposable $proof_window" >&2
-    exit 1
-fi
-browser_eval '(() => { const state=window.__weztermWebSwitchShieldState&&window.__weztermWebSwitchShieldState(); if(!state||state.active||state.visibility!=="hidden") throw new Error("web Active-switch shield did not hide after proof return: "+JSON.stringify(state)); return state; })()' >/tmp/wezterm-web-shield-hidden-proof.json
+wait_for_active_window_id "$proof_window" "web Active switch back to disposable"
+wait_for_web_switch_shield_hidden "web Active-switch shield after proof return" /tmp/wezterm-web-shield-hidden-proof.json
 
 tmux send-keys -t "$TMUX_SESSION:$proof_window" "printf 'WEB_HISTORY_%s\\n' {1..90}" Enter
 wait_for_pane_text "$proof_window" "WEB_HISTORY_90"

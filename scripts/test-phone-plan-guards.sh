@@ -818,6 +818,8 @@ if [ -f "$MANTIS_CONTROL_SERVER" ]; then
     require "$MANTIS_CONTROL_SERVER" 'elif parsed.path == "/send-key":' "Mantis phone control server must route send-key"
     require "$MANTIS_CONTROL_SERVER" '"/active?readOnly=1"' "Mantis website remote status polling must not resize shared desktop tmux windows"
     require "$MANTIS_CONTROL_SERVER" 'function targetPath(path,options={})' "Mantis website remote controls must build stable selected-window request paths"
+    require "$MANTIS_CONTROL_SERVER" 'async function openNewSession()' "Mantis website remote New must select the returned stable window before typing"
+    require "$MANTIS_CONTROL_SERVER" 'prevents Start/Paste from targeting a new tab while the user is still looking at an old one' "Mantis website remote New WHY comment must preserve the visible-target drift root cause"
     require "$MANTIS_CONTROL_SERVER" 'targetPath("/submit-text",{resize:false})' "Mantis website remote Start must submit to the selected window without browser-driven resize"
     require "$MANTIS_CONTROL_SERVER" 'targetPath("/paste",{resize:false})' "Mantis website remote Paste must target the selected window without browser-driven resize"
     require "$MANTIS_CONTROL_SERVER" 'targetPath("/copy-visible")' "Mantis website remote Copy visible must read the selected window, not dynamic active"

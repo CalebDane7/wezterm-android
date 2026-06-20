@@ -616,6 +616,8 @@ if [ -f "$MENU_UI_PROOF" ]; then
     require "$MENU_UI_PROOF" 'assert_no_terminal_dot_grid' "menu UI proof must fail on the Active-switch dotted canvas field"
     require "$MENU_UI_PROOF" 'assert_no_large_black_terminal_mask' "menu UI proof must reject black lower-terminal mask false positives"
     require "$MENU_UI_PROOF" 'wait_for_terminal_screenshot_settled_without_dots' "menu UI proof must wait for paint, no dots, and no black mask together"
+    require "$MENU_UI_PROOF" 'Keep Active-switch checks strict' "menu UI proof must limit longer visual settle to explicit Refresh"
+    require "$MENU_UI_PROOF" '"Refresh toolbar-only" 30 0.5' "menu UI proof must allow explicit Refresh transport reload to settle without weakening Active checks"
     require "$MENU_UI_PROOF" 'terminal dotted canvas grid detected' "dotted-canvas detector must report the exact visual regression"
     require "$MENU_UI_PROOF" 'WEZTERM_UI_ALLOW_CLEAR_DRAFT' "menu UI proof must not silently clear an unsent native composer draft"
     require "$MENU_UI_PROOF" 'UIAutomator reports the hint as text' "menu UI proof must not mistake an empty composer hint for user draft text"

@@ -552,9 +552,11 @@ wait_for_terminal_screenshot_text_pixels() {
 wait_for_terminal_screenshot_settled_without_dots() {
     local screenshot="$1"
     local label="${2:-terminal}"
+    local attempts="${3:-12}"
+    local interval="${4:-0.35}"
     local last_status="/tmp/wezterm-visual-settle-$$_last.log"
     rm -f "$last_status"
-    for _ in $(seq 1 12); do
+    for _ in $(seq 1 "$attempts"); do
         adb_cmd exec-out screencap -p > "$screenshot"
         if assert_terminal_screenshot_has_text_pixels "$screenshot" >"$last_status" 2>&1 \
             && assert_no_terminal_dot_grid "$screenshot" >>"$last_status" 2>&1 \
@@ -563,7 +565,7 @@ wait_for_terminal_screenshot_settled_without_dots() {
             echo "$label visual settled without dots or black mask: $screenshot"
             return 0
         fi
-        sleep 0.35
+        sleep "$interval"
     done
     adb_cmd exec-out screencap -p > "$screenshot"
     assert_terminal_screenshot_has_text_pixels "$screenshot"
@@ -2333,7 +2335,11 @@ if [ "$(tmux_active_window)" != "$proof_window" ]; then
     exit 1
 fi
 wait_for_pane_mode "0"
-wait_for_terminal_screenshot_settled_without_dots /tmp/wezterm-v249-refresh-toolbar-proof.png "Refresh toolbar-only"
+# WHY: explicit Refresh reloads/reconnects the WebView transport. On the real
+# phone this can show a short black reconnect frame that becomes readable a few
+# seconds later. Keep Active-switch checks strict, but give the user-invoked
+# recovery path a longer settle window before failing the black-WebView guard.
+wait_for_terminal_screenshot_settled_without_dots /tmp/wezterm-v249-refresh-toolbar-proof.png "Refresh toolbar-only" 30 0.5
 echo "Refresh button restored live mode"
 
 echo "phone menu UI proof: Scroll menu buttons"

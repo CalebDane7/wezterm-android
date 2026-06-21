@@ -4149,8 +4149,8 @@ public class MainActivity extends Activity {
         // stable `@windowId` Open/Close; Old Sessions has its own old-only
         // saved-session endpoint so it cannot inherit live-window rows or broad
         // `/sessions` latency.
-        getJsonWithRetry("/tabs?light=1", payload -> showActiveSessionsDialog(payload, "Active Sessions", false), exc ->
-                getJsonWithRetry("/tabs", payload -> showActiveSessionsDialog(payload, "Active Sessions", false))
+        getJsonWithRetry("/tabs?light=1", payload -> showActiveSessionsDialog(payload, "Active Sessions", true), exc ->
+                getJsonWithRetry("/tabs", payload -> showActiveSessionsDialog(payload, "Active Sessions", true))
         );
     }
 
@@ -4219,7 +4219,7 @@ public class MainActivity extends Activity {
                     continue;
                 }
                 addSectionHeader(list, group.optString("label", "Sessions"), groupRows.size());
-                addTabRows(list, groupRows, session, dialogRef);
+                addTabRows(list, groupRows, session, dialogRef, activeWindow);
             }
         } else {
             JSONArray windows = payload.getJSONArray("windows");
@@ -4227,7 +4227,7 @@ public class MainActivity extends Activity {
             if (rows.isEmpty() && activeWindow == null) {
                 addSectionHeader(list, "Nothing needs attention", 0);
             } else {
-                addTabRows(list, rows, session, dialogRef);
+                addTabRows(list, rows, session, dialogRef, activeWindow);
             }
         }
 
@@ -4479,10 +4479,20 @@ public class MainActivity extends Activity {
             LinearLayout list,
             List<JSONObject> windows,
             String session,
-            AlertDialog[] dialogRef
+            AlertDialog[] dialogRef,
+            JSONObject skipWindow
     ) throws Exception {
         for (int i = 0; i < windows.size(); i++) {
-            addTabRow(list, windows.get(i), session, dialogRef);
+            JSONObject window = windows.get(i);
+            addTabRow(list, window, session, dialogRef);
+            JSONArray children = window.optJSONArray("children");
+            if (children == null) {
+                continue;
+            }
+            List<JSONObject> childRows = sortedWindows(children, skipWindow);
+            for (int childIndex = 0; childIndex < childRows.size(); childIndex++) {
+                addTabRow(list, childRows.get(childIndex), session, dialogRef);
+            }
         }
     }
 
@@ -4504,7 +4514,7 @@ public class MainActivity extends Activity {
 
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(0, dp(3), 0, dp(3));
+        row.setPadding(window.optBoolean("isChild", false) ? dp(18) : 0, dp(3), 0, dp(3));
 
         LinearLayout openPanel = new LinearLayout(this);
         openPanel.setOrientation(LinearLayout.VERTICAL);
@@ -4535,7 +4545,11 @@ public class MainActivity extends Activity {
         applySessionStatusDot(statusDot, status, window.optBoolean("needsAttention", false), statusLabel);
 
         TextView titleText = new TextView(this);
-        titleText.setText((window.optBoolean("active", false) ? "Current: " : "") + title);
+        titleText.setText(
+                (window.optBoolean("active", false) ? "Current: " : "")
+                        + (window.optBoolean("isChild", false) ? window.optString("roleLabel", "Child") + ": " : "")
+                        + title
+        );
         titleText.setTextSize(15);
         titleText.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         titleText.setTextColor(Color.rgb(255, 96, 112));
@@ -5078,9 +5092,15 @@ public class MainActivity extends Activity {
         String activity = window.optString("activityGroup", "");
         String detail = window.optString("detail", window.optString("command", ""));
         String path = window.optString("shortPath", "");
+        String childSummary = window.optString("childSummary", "");
+        String role = window.optBoolean("isChild", false)
+                ? window.optString("roleLabel", "Child") + " of " + window.optString("parentWindowId", "parent")
+                : "";
         return status
                 + (attention.isEmpty() ? "" : " - " + attention)
                 + " - " + state
+                + (role.isEmpty() ? "" : " - " + role)
+                + (childSummary.isEmpty() ? "" : " - " + childSummary)
                 + (activity.isEmpty() ? "" : " - " + activity)
                 + " - " + detail
                 + (path.isEmpty() ? "" : " - " + path);

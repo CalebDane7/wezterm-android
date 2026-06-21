@@ -1755,6 +1755,7 @@ if [ -f "$PHONE_HOST_KEEPALIVE" ]; then
     require "$PHONE_HOST_KEEPALIVE" 'PHONE_HOST_KEEPALIVE_LOCK_STALE_SECONDS' "host keepalive must have a bounded stale-lock recovery threshold"
     require "$PHONE_HOST_KEEPALIVE" 'removed stale keepalive lock' "host keepalive must log stale lock recovery instead of skipping forever"
     require "$PHONE_HOST_KEEPALIVE" 'pgrep -u "$(id -u)" -f' "host keepalive must prove no live owner before removing a stale lock"
+    require "$PHONE_HOST_KEEPALIVE" 'process_is_keepalive_owner' "host keepalive owner detection must inspect argv, not just match env text"
     require "$PHONE_HOST_KEEPALIVE" 'startup' "host keepalive must support reboot/startup cron mode"
     require "$PHONE_HOST_KEEPALIVE" '--startup' "host keepalive must support explicit startup cron mode"
 else

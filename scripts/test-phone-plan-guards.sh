@@ -1752,6 +1752,9 @@ if [ -f "$PHONE_HOST_KEEPALIVE" ]; then
     require "$PHONE_HOST_KEEPALIVE" 'tmux has-session -t "$TMUX_SESSION"' "host keepalive must prove main_phone still exists"
     require "$PHONE_HOST_KEEPALIVE" 'mantis}" phone start-host' "host keepalive must repair through the idempotent Mantis start-host path"
     require "$PHONE_HOST_KEEPALIVE" 'instead of killing tmux' "host keepalive WHY comment must preserve the no-tmux-kill boundary"
+    require "$PHONE_HOST_KEEPALIVE" 'PHONE_HOST_KEEPALIVE_LOCK_STALE_SECONDS' "host keepalive must have a bounded stale-lock recovery threshold"
+    require "$PHONE_HOST_KEEPALIVE" 'removed stale keepalive lock' "host keepalive must log stale lock recovery instead of skipping forever"
+    require "$PHONE_HOST_KEEPALIVE" 'pgrep -u "$(id -u)" -f' "host keepalive must prove no live owner before removing a stale lock"
     require "$PHONE_HOST_KEEPALIVE" 'startup' "host keepalive must support reboot/startup cron mode"
     require "$PHONE_HOST_KEEPALIVE" '--startup' "host keepalive must support explicit startup cron mode"
 else

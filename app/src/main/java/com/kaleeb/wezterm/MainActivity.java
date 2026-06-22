@@ -2107,8 +2107,8 @@ public class MainActivity extends Activity {
         }
         // WHY: the phone-visible terminal is a read-only capture renderer. Tmux can
         // scroll smoothly on the laptop while the APK looks choppy if the renderer
-        // waits for the 550 ms poll or a single delayed refresh. Keep `/touch-scroll`
-        // itself lightweight, but run a short frame-paced repaint loop during an
+        // waits for the 550 ms poll or a single delayed refresh. Keep `/touch-scroll` itself lightweight,
+        // but run a short frame-paced repaint loop during an
         // active finger gesture so slow drags show intermediate rows and fast flicks
         // still use the existing VelocityTracker/release-burst path.
         long now = System.currentTimeMillis();

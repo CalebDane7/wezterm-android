@@ -2255,11 +2255,13 @@ public class MainActivity extends Activity {
                 toast(payload.optString("error", "Refresh failed"));
                 return;
             }
+            // WHY: Refresh is a visual transport repair. A normal success Toast
+            // covers the live prompt/native composer just like the old Bottom,
+            // Send, and Active-open popups. The repaint itself is the success
+            // signal; keep only real failure Toasts on this path.
             reloadTerminalTransportOnly("fix-view");
-            toast("Refreshed current session");
         }, exc -> {
             reloadTerminalTransportOnly("fix-view");
-            toast("Refreshed terminal transport");
         });
     }
 

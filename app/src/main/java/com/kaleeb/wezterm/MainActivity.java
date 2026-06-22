@@ -113,7 +113,7 @@ public class MainActivity extends Activity {
     private static final String PREFS = "wezterm";
     private static final String PREF_PIN_REQUESTED = "pin_requested";
     private static final String PREF_FONT_SIZE = "font_size";
-    private static final String APP_VERSION_NAME = "2.57";
+    private static final String APP_VERSION_NAME = "2.58";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
             | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
@@ -184,6 +184,7 @@ public class MainActivity extends Activity {
     private PopupWindow sessionSwitchLowerPopupShield;
     private LinearLayout promptComposerBar;
     private EditText promptComposerInput;
+    private TextView sessionTitleStrip;
     private Button startToolbarButton;
     private TextView toolbarStatusDot;
     private SharedPreferences prefs;
@@ -425,6 +426,7 @@ public class MainActivity extends Activity {
         root.setKeepScreenOn(true);
         LinearLayout toolbar = bottomBar();
         promptComposerBar = buildPromptComposer();
+        sessionTitleStrip = buildSessionTitleStrip();
         applySystemBarPadding(root, toolbar);
 
         terminalFrame = new FrameLayout(this);
@@ -472,6 +474,10 @@ public class MainActivity extends Activity {
         root.addView(promptComposerBar, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+        root.addView(sessionTitleStrip, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(22)
         ));
         root.addView(toolbar, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -896,6 +902,23 @@ public class MainActivity extends Activity {
         return composer;
     }
 
+    private TextView buildSessionTitleStrip() {
+        TextView title = new TextView(this);
+        // WHY: phone users lose the desktop tmux title bar but still need a
+        // constant target check before typing/sending. Keep this native, compact,
+        // and read-only so it cannot resize tmux or steal WebView focus.
+        title.setSingleLine(true);
+        title.setEllipsize(TextUtils.TruncateAt.END);
+        title.setGravity(android.view.Gravity.CENTER);
+        title.setTextSize(12);
+        title.setTextColor(Color.rgb(166, 173, 200));
+        title.setBackgroundColor(Color.rgb(24, 24, 37));
+        title.setPadding(dp(8), 0, dp(8), 0);
+        title.setText("WEzTerm");
+        title.setContentDescription("Active session title");
+        return title;
+    }
+
     private LinearLayout bottomBar() {
         LinearLayout toolbar = new LinearLayout(this);
         toolbar.setOrientation(LinearLayout.VERTICAL);
@@ -1201,6 +1224,7 @@ public class MainActivity extends Activity {
             JSONObject window = payload.optJSONObject("window");
             if (window != null) {
                 rememberActivePhoneWindow(window, "toolbar-status");
+                updateSessionTitleStrip(window);
                 applySessionStatusDot(
                         toolbarStatusDot,
                         window.optString("status", "unknown"),
@@ -1213,6 +1237,7 @@ public class MainActivity extends Activity {
             if (generation != toolbarStatusGeneration || !activityResumed) {
                 return;
             }
+            updateSessionTitleStrip("WEzterm control unreachable");
             applySessionStatusDot(toolbarStatusDot, "unknown", true, "WEzterm control unreachable");
             scheduleToolbarStatusDotRefresh(TOOLBAR_STATUS_POLL_MS);
         });
@@ -5079,6 +5104,29 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void updateSessionTitleStrip(JSONObject window) {
+        if (window == null) {
+            return;
+        }
+        String title = window.optString("title", "");
+        if (title.trim().isEmpty()) {
+            title = window.optString("name", "");
+        }
+        if (title.trim().isEmpty()) {
+            title = window.optString("windowId", "WEzTerm");
+        }
+        updateSessionTitleStrip(title);
+    }
+
+    private void updateSessionTitleStrip(String title) {
+        if (sessionTitleStrip == null) {
+            return;
+        }
+        String display = title == null || title.trim().isEmpty() ? "WEzTerm" : title.trim();
+        sessionTitleStrip.setText(display);
+        sessionTitleStrip.setContentDescription("Active session: " + display);
+    }
+
     private String promptComposerTargetKey() {
         if (hasStableWindowId(currentPhoneWindowId)) {
             return currentPhoneWindowId.trim();
@@ -5138,6 +5186,7 @@ public class MainActivity extends Activity {
                 ? selectedPhoneWindowId
                 : title.trim();
         selectedPhoneWindowUpdatedAtMs = System.currentTimeMillis();
+        updateSessionTitleStrip(selectedPhoneWindowTitle);
     }
 
     private void clearRememberedCloseTarget(String reason) {

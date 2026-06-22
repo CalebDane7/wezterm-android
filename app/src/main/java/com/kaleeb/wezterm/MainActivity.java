@@ -82,8 +82,8 @@ import java.util.Locale;
 import java.util.UUID;
 
 public class MainActivity extends Activity {
-    private static final String TERMINAL_URL = "http://100.113.254.7:8088/";
-    private static final String MAGIC_DNS_TERMINAL_URL = "http://kaleeblaptop-1.taildbdeee.ts.net:8088/";
+    private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer";
+    private static final String MAGIC_DNS_TERMINAL_URL = "http://kaleeblaptop-1.taildbdeee.ts.net:8089/terminal-renderer";
     private static final String[] TERMINAL_URLS = {
             TERMINAL_URL,
             MAGIC_DNS_TERMINAL_URL
@@ -112,7 +112,7 @@ public class MainActivity extends Activity {
     private static final String PREFS = "wezterm";
     private static final String PREF_PIN_REQUESTED = "pin_requested";
     private static final String PREF_FONT_SIZE = "font_size";
-    private static final String APP_VERSION_NAME = "2.52";
+    private static final String APP_VERSION_NAME = "2.53";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
             | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
@@ -2062,16 +2062,15 @@ public class MainActivity extends Activity {
         int fontSize = prefs.getInt(PREF_FONT_SIZE, DEFAULT_FONT_SIZE);
         markTerminalLoadStarted();
         // WHY: the live host currently answers immediately on the direct Tailnet
-        // IP while the MagicDNS name can stall before the phone ever reaches ttyd.
-        // Prefer the proven IP and keep MagicDNS only as a fallback; otherwise the
-        // APK shows "WEzterm control unreachable" even though tmux, ttyd, and the
-        // control server are healthy. This must stay aligned with the control URL
-        // fallback below so Active/Old titles keep coming from the shared server.
-        // WHY: real-phone v1.93/v1.94 proof showed the Android xterm canvas
-        // renderer could keep repainting a dotted blank-tail field even after
-        // Active-switch canvas clear/fill scripts ran. The APK URL overrides
-        // the ttyd server default with DOM rendering so blank rows are normal
-        // WebView text/background paint, not a stale canvas texture layer.
+        // IP while the MagicDNS name can stall before the phone reaches the
+        // control server. Prefer the proven IP and keep MagicDNS only as a
+        // fallback so Active/Old titles and the visual renderer come from the
+        // same shared server.
+        // WHY: the 2026-06-22 gap/black-box regression proved raw ttyd is the
+        // wrong visual owner for APK/web: fitting ttyd mutates shared tmux
+        // geometry, while not fitting leaves a huge bottom gap. The APK renders
+        // the control server's read-only capture stream and keeps tmux commands
+        // on stable @windowId control endpoints.
         webView.loadUrl(terminalUrlWithOptions(activeTerminalBaseUrl, fontSize));
         pinTerminalViewportSoon(reason);
         focusTerminalInputSoon(false);
@@ -2355,7 +2354,7 @@ public class MainActivity extends Activity {
     private String terminalDomReadyScript() {
         return "(function(){"
                 + "try{"
-                + "return !!(window.term||window.terminal||document.querySelector('.xterm-rows,.xterm-screen,.xterm-helper-textarea,canvas'));"
+                + "return !!(document.querySelector('[data-mantis-capture-renderer=\"1\"]')||window.term||window.terminal||document.querySelector('.xterm-rows,.xterm-screen,.xterm-helper-textarea,canvas'));"
                 + "}catch(e){return false;}"
                 + "})()";
     }
@@ -6602,6 +6601,7 @@ public class MainActivity extends Activity {
                 : "";
         return "(function(){"
                 + "try{"
+                + "if(document.querySelector('[data-mantis-capture-renderer=\"1\"]')){return ({status:'capture-renderer',needsReconnect:false});}"
                 + "var t=window.term||window.terminal;"
                 + "var el=document.querySelector('.xterm-helper-textarea, .xterm textarea, textarea');"
                 + "var root=document.querySelector('.xterm');"
@@ -6870,11 +6870,15 @@ public class MainActivity extends Activity {
         JSONObject probe = parseJavascriptObject(value);
         boolean missingTerminal = true;
         if (probe != null) {
+            boolean hasCapture = probe.optBoolean("hasCapture", false);
             boolean hasTerm = probe.optBoolean("hasTerm", false);
             boolean hasCanvas = probe.optBoolean("hasCanvas", false);
             int canvasWidth = probe.optInt("canvasWidth", 0);
             int canvasHeight = probe.optInt("canvasHeight", 0);
             boolean hasError = probe.has("error");
+            if (hasCapture) {
+                missingTerminal = false;
+            } else {
             // WHY: ttyd is forced to xterm's canvas renderer for Android
             // performance. Canvas output can be visibly painted while DOM text is
             // empty, so `textLength == 0` must never trigger a reload by itself.
@@ -6888,6 +6892,7 @@ public class MainActivity extends Activity {
             // disturbing the user's terminal.
             missingTerminal = hasError || (!hasTerm && !hasCanvas)
                     || (hasTerm && hasCanvas && (canvasWidth <= 0 || canvasHeight <= 0));
+            }
         }
         if (!missingTerminal) {
             return;
@@ -6917,11 +6922,12 @@ public class MainActivity extends Activity {
         // harness, where they fail the build instead of reloading the user's pane.
         return "(function(){"
                 + "try{"
+                + "var capture=document.querySelector('[data-mantis-capture-renderer=\"1\"]');"
                 + "var term=document.querySelector('.xterm');"
                 + "var rows=document.querySelector('.xterm-rows');"
                 + "var text=(rows&&rows.innerText||document.body&&document.body.innerText||'').trim();"
                 + "var canvas=document.querySelector('canvas');"
-                + "return ({hasTerm:!!term,hasCanvas:!!canvas,canvasWidth:canvas?canvas.width:0,canvasHeight:canvas?canvas.height:0,textLength:text.length});"
+                + "return ({hasCapture:!!capture,hasTerm:!!term,hasCanvas:!!canvas,canvasWidth:canvas?canvas.width:0,canvasHeight:canvas?canvas.height:0,textLength:text.length});"
                 + "}catch(e){return ({error:String(e)});}"
                 + "})()";
     }

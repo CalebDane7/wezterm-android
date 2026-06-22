@@ -113,7 +113,7 @@ public class MainActivity extends Activity {
     private static final String PREFS = "wezterm";
     private static final String PREF_PIN_REQUESTED = "pin_requested";
     private static final String PREF_FONT_SIZE = "font_size";
-    private static final String APP_VERSION_NAME = "2.56";
+    private static final String APP_VERSION_NAME = "2.57";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
             | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
@@ -912,7 +912,7 @@ public class MainActivity extends Activity {
         topRow.addView(toolbarNavigationButton("Active", v -> showActiveSessions()));
         topRow.addView(toolbarNavigationButton("Old", v -> showOldSessions()));
         topRow.addView(toolbarNavigationButton("New", v ->
-                controlAndSettleLiveBottom("/new?fast=1", "New session opened", "new-session")));
+                controlAndSettleLiveBottom("/new?fast=1", "", "new-session")));
         // WHY: during upgrades, the user should not have to close the Android
         // task or hunt for the same tmux tab just to refresh the terminal
         // transport. This button preserves the current tmux window, returns it
@@ -3912,10 +3912,33 @@ public class MainActivity extends Activity {
                 toast(payload.optString("error", "Paste failed"));
                 return;
             }
-            toast("Pasted");
+            settleLiveBottomAfterPaste("clipboard-paste");
             hideDockedPromptComposer(false, true);
             focusTerminalInputSoon(false);
         }, exc -> toast("WEzterm control is not reachable"));
+    }
+
+    private void settleLiveBottomAfterPaste(String reason) {
+        long generation = terminalModeGeneration;
+        // WHY: upload/clipboard paste success is visible as text in the terminal.
+        // A normal success Toast covers the exact bottom prompt/attachment path the
+        // phone workflow needs to inspect, so paste success must settle the live
+        // viewer quietly while keeping error Toasts for real failures.
+        uiHandler.postDelayed(() -> {
+            if (generation != terminalModeGeneration || readModeSuppressesKeyboard || terminalHistoryViewportActive) {
+                return;
+            }
+            getJsonWithRetry(appendStableWindowQuery("/live-bottom"), payload -> {
+                if (generation != terminalModeGeneration) {
+                    return;
+                }
+                pinTerminalViewportLocal();
+                fitTerminalToCurrentViewSoon(reason);
+                keepToolbarOnlyXtermSettleAliveAfterControlAction(reason);
+                scrollViewerToTypingPositionOnce(reason, 180);
+                scheduleToolbarStatusDotRefresh(150);
+            }, exc -> toast("WEzterm control is not reachable"));
+        }, 180);
     }
 
     private String clipboardTextFromClip(ClipData clip) {
@@ -4014,7 +4037,6 @@ public class MainActivity extends Activity {
             if (uris == null || uris.isEmpty()) {
                 return;
             }
-            toast("Uploading " + uris.size() + " files");
             for (Uri uri : uris) {
                 if (uri != null) {
                     uploadMediaUri(uri, true);
@@ -4034,7 +4056,6 @@ public class MainActivity extends Activity {
             toast("Media is too large for phone upload: " + humanBytes(declaredSize));
             return;
         }
-        toast(fromShare ? "Uploading shared media" : "Uploading media");
         String finalContentType = contentType;
         new Thread(() -> {
             HttpURLConnection connection = null;
@@ -4175,11 +4196,11 @@ public class MainActivity extends Activity {
                         toast(pastePayload.optString("error", "Paste path failed"));
                         return;
                     }
-                    toast("Uploaded path pasted");
+                    settleLiveBottomAfterPaste("upload-paste");
                     hideDockedPromptComposer(false, true);
                     focusTerminalInputSoon(false);
                 }, exc -> toast("WEzterm control is not reachable")))
-                .setNegativeButton("Copy path", (dialog, which) -> toast("Uploaded path copied"))
+                .setNegativeButton("Copy path", null)
                 .setNeutralButton("OK", null)
                 .show();
     }
@@ -4326,7 +4347,7 @@ public class MainActivity extends Activity {
             if (dialogRef[0] != null) {
                 dialogRef[0].dismiss();
             }
-            controlAndSettleLiveBottom("/new?fast=1", "New session", "new-session");
+                    controlAndSettleLiveBottom("/new?fast=1", "", "new-session");
         }));
         actions.addView(activeDialogActionButton("Rename", v -> {
             if (dialogRef[0] != null) {
@@ -4942,7 +4963,7 @@ public class MainActivity extends Activity {
                 .setPositiveButton("Resume", (dialog, which) -> {
                     String path = "/resume-session?fast=1&sessionId=" + urlEncode(sessionId)
                             + "&cwd=" + urlEncode(cwd);
-                    controlAndSettleLiveBottom(path, "Old session opened", "old-session");
+                    controlAndSettleLiveBottom(path, "", "old-session");
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
@@ -4958,7 +4979,7 @@ public class MainActivity extends Activity {
         // look stuck in the picker instead of opening the selected Codex session.
         String path = "/resume-session?fast=1&sessionId=" + urlEncode(sessionId)
                 + "&cwd=" + urlEncode(cwd);
-        controlAndSettleLiveBottom(path, "Old session opened", "old-session", title);
+        controlAndSettleLiveBottom(path, "", "old-session", title);
     }
 
     private void confirmResumeCrashedSession(String sessionId, String cwd, String title) {
@@ -4972,7 +4993,7 @@ public class MainActivity extends Activity {
                 .setPositiveButton("Restore", (dialog, which) -> {
                     String path = "/resume-session?fast=1&sessionId=" + urlEncode(sessionId)
                             + "&cwd=" + urlEncode(cwd);
-                    controlAndSettleLiveBottom(path, "Crashed session restored", "crashed-session");
+                    controlAndSettleLiveBottom(path, "", "crashed-session");
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
@@ -4985,7 +5006,7 @@ public class MainActivity extends Activity {
         }
         String path = "/resume-session?fast=1&sessionId=" + urlEncode(sessionId)
                 + "&cwd=" + urlEncode(cwd);
-        controlAndSettleLiveBottom(path, "Crashed session restored", "crashed-session", title);
+        controlAndSettleLiveBottom(path, "", "crashed-session", title);
     }
 
     private void confirmClose() {
@@ -5203,7 +5224,6 @@ public class MainActivity extends Activity {
 
     private void controlAndSettleLiveBottom(String path, String message, String reason, String targetTitle) {
         if (sessionSwitchInFlight) {
-            toast("Opening session...");
             return;
         }
         suppressTerminalBodyTapForPassiveNavigation(reason + "-dispatch");
@@ -5287,9 +5307,10 @@ public class MainActivity extends Activity {
         if (generation != terminalModeGeneration) {
             return;
         }
-        if (message != null && !message.isEmpty()) {
-            toast(message);
-        }
+        // WHY: Active/New/Old/Crashed open success is already visible as the
+        // selected terminal. Android Toasts sit over the bottom typing/upload zone
+        // and block fast retap after choosing a session, so normal session-open
+        // success must stay silent while errors still toast from failure paths.
         // WHY: passive tab-open settle must finish in the toolbar-only Start
         // state. Refocusing the hidden xterm textarea here reintroduced the
         // duplicate-writing and no-Backspace IME path while the real fix only
@@ -5303,7 +5324,6 @@ public class MainActivity extends Activity {
 
     private void selectTabForTyping(int index, String windowId, String title, AlertDialog[] dialogRef) {
         if (sessionSwitchInFlight) {
-            toast("Opening session...");
             return;
         }
         suppressTerminalBodyTapForPassiveNavigation("select-live-dispatch");
@@ -5317,7 +5337,6 @@ public class MainActivity extends Activity {
         }
         sessionSwitchInFlight = true;
         long paintShieldGeneration = showSessionSwitchPaintShield("select-live");
-        toast("Opening " + title);
         // WHY: opening a tab from the phone should never require a separate Live
         // tap or Enter press. The select happens first, then the selected tab is
         // forced back to the live bottom. Android keeps this as passive navigation:
@@ -5389,7 +5408,10 @@ public class MainActivity extends Activity {
         if (generation != terminalModeGeneration) {
             return;
         }
-        toast("Opened " + title);
+        // WHY: the 2026-06-22 real APK screenshots showed "Opened <title>" was
+        // still covering/freezing the bottom typing/upload area after v2.55/v2.56.
+        // The selected tab and status dot are the success signal; keep this path
+        // silent unless an error occurs.
         // WHY: Active switch must end like an automatic Bottom press, not like a
         // tap-to-type. Keeping this path detached from xterm focus is what makes
         // the visible toolbar return to Start and prevents the duplicate-writing

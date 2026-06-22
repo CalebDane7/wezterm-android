@@ -92,7 +92,7 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=157`, `versionName=2.56`.
+- Built checkpoint: `versionCode=158`, `versionName=2.57`.
 - v1.29 fixes the black-screen resume case where Android focused WEzterm but
   the WebView never opened a fresh ttyd HTTP/WebSocket connection.
 - The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a
@@ -723,6 +723,11 @@ Android users use the native APK.
   adds bounded viewer-only zoomed-Bottom alignment. WHY: the prompt/composer can
   still be obscured by redundant success popups or stranded below a zoomed
   WebView even when tmux is already at live bottom.
+- v2.57 suppresses normal session-open, upload, and paste success Toasts, keeps
+  error Toasts, and quietly settles live bottom after upload/clipboard paste.
+  WHY: real APK screenshots showed the remaining "Opened ..." popup and upload
+  success feedback covering/freezing the bottom typing/upload area even after
+  v2.55/v2.56 removed the first success-toast paths.
 - v2.11 fixes the Active Sessions dotted-field regression that returned after
   v2.10. The APK keeps passive tab switching and does not auto-open the
   composer/keyboard, but the xterm scrubber now hides lower-screen blank-backed

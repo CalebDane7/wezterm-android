@@ -92,7 +92,7 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=155`, `versionName=2.54`.
+- Built checkpoint: `versionCode=156`, `versionName=2.55`.
 - v1.29 fixes the black-screen resume case where Android focused WEzterm but
   the WebView never opened a fresh ttyd HTTP/WebSocket connection.
 - The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a
@@ -714,6 +714,11 @@ Android users use the native APK.
   The APK now requests the old readable 132-column logical grid and refreshes
   the capture renderer after protected `/scroll` and `/touch-scroll` actions
   without reloading WebView or resizing tmux.
+- v2.55 removes success Toast overlays from Bottom and scroll visual recovery.
+  WHY: the v2.54 APK proved the prompt rows existed in the capture renderer,
+  but Android's "At live bottom"/Page success Toast covered the prompt area and
+  recreated the "can't see the bottom text" regression. Failures still toast;
+  success navigation stays visually quiet so the terminal remains readable.
 - v2.11 fixes the Active Sessions dotted-field regression that returned after
   v2.10. The APK keeps passive tab switching and does not auto-open the
   composer/keyboard, but the xterm scrubber now hides lower-screen blank-backed

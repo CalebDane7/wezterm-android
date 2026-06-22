@@ -113,7 +113,7 @@ public class MainActivity extends Activity {
     private static final String PREFS = "wezterm";
     private static final String PREF_PIN_REQUESTED = "pin_requested";
     private static final String PREF_FONT_SIZE = "font_size";
-    private static final String APP_VERSION_NAME = "2.54";
+    private static final String APP_VERSION_NAME = "2.55";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
             | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
@@ -2230,7 +2230,10 @@ public class MainActivity extends Activity {
     }
 
     private void goLiveBottom() {
-        restoreLiveForViewing("At live bottom");
+        // WHY: Bottom is visual recovery. A success Toast sits over the live
+        // prompt area on the APK and recreated the "can't see bottom text"
+        // regression; failures still toast from the HTTP control callback.
+        restoreLiveForViewing("");
     }
 
     private void refreshTerminalTransport() {
@@ -3331,7 +3334,9 @@ public class MainActivity extends Activity {
                         goLiveBottom();
                     } else if (which == 1) {
                         enterReadMode();
-                        scrollTerminal("top", "History top", false);
+                        // WHY: success Toasts for visual scroll controls cover
+                        // the terminal bottom/prompt on Android; errors still toast.
+                        scrollTerminal("top", "", false);
                     } else if (which == 2) {
                         enterReadMode();
                         control("/read-session", "Session reader", false);
@@ -3339,10 +3344,10 @@ public class MainActivity extends Activity {
                         showLocalHistoryViewer();
                     } else if (which == 4) {
                         enterReadMode();
-                        scrollTerminal("pageUp", "Page up", false);
+                        scrollTerminal("pageUp", "", false);
                     } else if (which == 5) {
                         enterReadMode();
-                        scrollTerminal("pageDown", "Page down", false);
+                        scrollTerminal("pageDown", "", false);
                     }
                 })
                 .setNegativeButton("Cancel", null)
@@ -3634,17 +3639,19 @@ public class MainActivity extends Activity {
                         startCurrentTask();
                     } else if (which == 10) {
                         enterReadMode();
-                        scrollTerminal("top", "History top", false);
+                        // WHY: these are visual navigation controls. Success
+                        // Toasts cover the live prompt area; error Toasts remain.
+                        scrollTerminal("top", "", false);
                     } else if (which == 11) {
                         openFullSessionReader();
                     } else if (which == 12) {
                         showLocalHistoryViewer();
                     } else if (which == 13) {
                         enterReadMode();
-                        scrollTerminal("pageUp", "Page up", false);
+                        scrollTerminal("pageUp", "", false);
                     } else if (which == 14) {
                         enterReadMode();
-                        scrollTerminal("pageDown", "Page down", false);
+                        scrollTerminal("pageDown", "", false);
                     } else if (which == 15) {
                         openInstallPage();
                     } else if (which == 16) {

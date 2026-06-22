@@ -84,6 +84,7 @@ import java.util.UUID;
 public class MainActivity extends Activity {
     private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer";
     private static final String MAGIC_DNS_TERMINAL_URL = "http://kaleeblaptop-1.taildbdeee.ts.net:8089/terminal-renderer";
+    private static final int APK_CAPTURE_RENDERER_COLS = 132;
     private static final String[] TERMINAL_URLS = {
             TERMINAL_URL,
             MAGIC_DNS_TERMINAL_URL
@@ -112,7 +113,7 @@ public class MainActivity extends Activity {
     private static final String PREFS = "wezterm";
     private static final String PREF_PIN_REQUESTED = "pin_requested";
     private static final String PREF_FONT_SIZE = "font_size";
-    private static final String APP_VERSION_NAME = "2.53";
+    private static final String APP_VERSION_NAME = "2.54";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
             | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
@@ -1993,11 +1994,13 @@ public class MainActivity extends Activity {
                 if (readModeGeneration == terminalModeGeneration) {
                     keepReadModeIfCurrent(readModeGeneration);
                 }
+                refreshCaptureRendererSoon("touch-scroll-bottom-edge");
                 return;
             }
             if (readModeGeneration == terminalModeGeneration) {
                 keepReadModeIfCurrent(readModeGeneration);
             }
+            refreshCaptureRendererSoon("touch-scroll");
             drainPendingHistoryScroll();
         }, exc -> {
             historyScrollRequestInFlight = false;
@@ -2085,6 +2088,12 @@ public class MainActivity extends Activity {
     private String terminalUrlWithOptions(String baseUrl, int fontSize) {
         return baseUrl
                 + "?fontSize=" + fontSize
+                // WHY: the capture renderer is read-only, so it must emulate the
+                // old readable 132-column APK grid without resizing tmux. Letting
+                // it auto-measure the narrow WebView produced the 55-column Claude
+                // wrap regression; resizing tmux would revive the Windows/web
+                // black-box regression.
+                + "&cols=" + APK_CAPTURE_RENDERER_COLS
                 + "&disableLeaveAlert=true"
                 + "&rendererType=dom"
                 + "&customGlyphs=false"
@@ -3132,6 +3141,7 @@ public class MainActivity extends Activity {
             }
             leaveReadModeAfterTouchBottom();
             pinTerminalViewportLocal();
+            refreshCaptureRendererSoon("touch-bottom");
             fitTerminalToCurrentViewSoon("touch-bottom");
             keepToolbarOnlyXtermSettleAliveAfterControlAction("touch-bottom");
             scrollViewerToTypingPositionOnce("touch-bottom", 180);
@@ -6186,7 +6196,33 @@ public class MainActivity extends Activity {
             } else {
                 keepReadModeIfCurrent(readModeGeneration);
             }
+            refreshCaptureRendererSoon("control-" + path);
         });
+    }
+
+    private void refreshCaptureRendererSoon(String reason) {
+        if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            return;
+        }
+        // WHY: APK scroll/buttons still mutate tmux state through the proven
+        // `/scroll` and `/touch-scroll` endpoints. The v2.53 read-only renderer
+        // regressed by polling slowly and looking frozen after those controls.
+        // Refresh only the capture renderer object; never reload the WebView,
+        // focus xterm, or resize tmux from this path.
+        webView.evaluateJavascript(
+                "(function(){"
+                        + "try{"
+                        + "var r=window.__mantisCaptureRenderer;"
+                        + "if(r&&typeof r.refresh==='function'){"
+                        + "setTimeout(function(){r.refresh();},30);"
+                        + "setTimeout(function(){r.refresh();},180);"
+                        + "return 'capture-refresh';"
+                        + "}"
+                        + "return 'not-capture';"
+                        + "}catch(e){return 'err';}"
+                + "})()",
+                null
+        );
     }
 
     private void focusTerminalInputSoon() {

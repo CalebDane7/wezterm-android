@@ -92,7 +92,7 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=154`, `versionName=2.53`.
+- Built checkpoint: `versionCode=155`, `versionName=2.54`.
 - v1.29 fixes the black-screen resume case where Android focused WEzterm but
   the WebView never opened a fresh ttyd HTTP/WebSocket connection.
 - The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a
@@ -708,6 +708,12 @@ Android users use the native APK.
   resizing and left the APK with a giant bottom gap. The capture renderer wraps
   recent tmux rows to the phone viewport without writing phone geometry back to
   the desktop window.
+- v2.54 restores APK scroll/readability on that capture stream. WHY: v2.53
+  protected Windows/web from phone-owned tmux resizing but let the APK renderer
+  auto-measure a narrow 55-column grid and ignore tmux copy-mode scroll state.
+  The APK now requests the old readable 132-column logical grid and refreshes
+  the capture renderer after protected `/scroll` and `/touch-scroll` actions
+  without reloading WebView or resizing tmux.
 - v2.11 fixes the Active Sessions dotted-field regression that returned after
   v2.10. The APK keeps passive tab switching and does not auto-open the
   composer/keyboard, but the xterm scrubber now hides lower-screen blank-backed

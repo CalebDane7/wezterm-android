@@ -58,14 +58,16 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="154"' "current APK version must be bumped for the v2.53 capture-renderer gap fix"
-require "$MANIFEST" 'android:versionName="2.53"' "current APK version must be bumped for the v2.53 capture-renderer gap fix"
+require "$MANIFEST" 'android:versionCode="155"' "current APK version must be bumped for the v2.54 capture-renderer scroll/readability fix"
+require "$MANIFEST" 'android:versionName="2.54"' "current APK version must be bumped for the v2.54 capture-renderer scroll/readability fix"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.53";' "client /config proof must report the same v2.53 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.54";' "client /config proof must report the same v2.54 APK contract as the manifest"
 require "$MAIN" 'http://100.113.254.7:8089/terminal-renderer' "APK visual URL must use the non-resizing control-server capture renderer"
+require "$MAIN" 'APK_CAPTURE_RENDERER_COLS = 132' "APK capture renderer must preserve the readable 132-column logical grid"
+require "$MAIN" 'refreshCaptureRendererSoon' "APK scroll controls must repaint the capture renderer without reloading or resizing tmux"
 require "$MAIN" 'data-mantis-capture-renderer' "APK probes must recognize the capture renderer as a healthy terminal surface"
 require "$MAIN" 'customGlyphs=false' "APK terminal URL must disable xterm custom glyphs to stop blank-cell dot glyphs"
 require "$MAIN" 'forceXtermCustomGlyphsFalse' "APK Active/Old settle must force the live xterm runtime customGlyphs option off"
@@ -128,7 +130,8 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=154`, `versionName=2.53`.' "README checkpoint must match the installed v2.53 APK"
+    require "$README" 'Built checkpoint: `versionCode=155`, `versionName=2.54`.' "README checkpoint must match the installed v2.54 APK"
+    require "$README" 'v2.54 restores APK scroll/readability' "README must document the current APK capture-renderer scroll/readability fix"
     require "$README" 'v2.53 moves the APK visual surface to the control server' "README must document the current non-resizing capture-renderer gap fix"
     require "$README" 'v2.52 makes native composer Send/Enter idempotent' "README must document the current native composer submit idempotency fix"
     require "$README" 'v2.51 keeps native Android Active Sessions on the grouped/display row' "README must document the current Android Active Sessions display-row fix"
@@ -277,8 +280,9 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.53' "install page must advertise the current v2.53 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>154</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.54' "install page must advertise the current v2.54 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>155</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'APK capture-renderer scroll/readability' "install page must mention the v2.54 capture-renderer scroll/readability fix"
     require "$INSTALL_PAGE" 'APK non-resizing capture renderer' "install page must mention the v2.53 capture-renderer gap/gutter fix"
     require "$INSTALL_PAGE" 'native composer Send/Enter idempotency' "install page must mention the v2.52 native composer duplicate-submit fix"
     require "$INSTALL_PAGE" 'Android Active Sessions display-row filtering' "install page must mention the v2.51 Android Active Sessions display-row fix"
@@ -371,7 +375,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.53 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.54 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"

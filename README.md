@@ -2,7 +2,7 @@
 
 Native Android launcher for the phone terminal workflow.
 
-WEzterm opens a Tailscale-hosted `ttyd` terminal that attaches to the desktop
+WEzterm opens a Tailscale-hosted control-server renderer backed by the desktop
 `main_phone` tmux view. The Android app adds phone-first controls so the user
 does not have to remember SSH hosts, tmux shortcuts, or terminal key chords.
 
@@ -61,9 +61,9 @@ See [Apple User Support](docs/apple-users.md).
 
 - Android package: `com.kaleeb.wezterm`
 - Android source: `app/src/main/java/com/kaleeb/wezterm/MainActivity.java`
-- Terminal URL: `http://100.113.254.7:8088/`
+- Terminal URL: `http://100.113.254.7:8089/terminal-renderer`
 - Control URL: `http://100.113.254.7:8089`
-- MagicDNS fallback: `http://kaleeblaptop-1.taildbdeee.ts.net:8088/` and
+- MagicDNS fallback: `http://kaleeblaptop-1.taildbdeee.ts.net:8089/terminal-renderer` and
   `http://kaleeblaptop-1.taildbdeee.ts.net:8089`
 - Desktop terminal service: `~/.local/bin/phone-terminal`
 - Control server: `~/.local/bin/phone-terminal-control-server`
@@ -85,13 +85,14 @@ scripts/macos-host-preflight.sh
 ```
 
 WHY: Apple support should not fork the architecture. The fast path is still
-tmux for persistence, ttyd for browser terminal transport, the control server
-for phone buttons, and Tailscale for private reachability. iPhone/iPad users use
-Safari/Add to Home Screen today; Android users use the native APK.
+tmux for persistence, the control server for the visual capture renderer and
+phone buttons, ttyd only as the legacy/debug terminal transport, and Tailscale
+for private reachability. iPhone/iPad users use Safari/Add to Home Screen today;
+Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=153`, `versionName=2.52`.
+- Built checkpoint: `versionCode=154`, `versionName=2.53`.
 - v1.29 fixes the black-screen resume case where Android focused WEzterm but
   the WebView never opened a fresh ttyd HTTP/WebSocket connection.
 - The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a
@@ -701,6 +702,12 @@ Safari/Add to Home Screen today; Android users use the native APK.
   flight. WHY: Android can deliver both an IME editor action and an Enter key
   event for one visible Send before the async submit clears the composer; that
   must be one pinned paste+Enter, not duplicate text in tmux.
+- v2.53 moves the APK visual surface to the control server's read-only
+  `/terminal-renderer` capture stream. WHY: raw ttyd fitting either resized the
+  shared linked tmux window and created the Windows/web black gutter, or stopped
+  resizing and left the APK with a giant bottom gap. The capture renderer wraps
+  recent tmux rows to the phone viewport without writing phone geometry back to
+  the desktop window.
 - v2.11 fixes the Active Sessions dotted-field regression that returned after
   v2.10. The APK keeps passive tab switching and does not auto-open the
   composer/keyboard, but the xterm scrubber now hides lower-screen blank-backed

@@ -58,13 +58,15 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="153"' "current APK version must be bumped for the v2.52 native composer submit idempotency fix"
-require "$MANIFEST" 'android:versionName="2.52"' "current APK version must be bumped for the v2.52 native composer submit idempotency fix"
+require "$MANIFEST" 'android:versionCode="154"' "current APK version must be bumped for the v2.53 capture-renderer gap fix"
+require "$MANIFEST" 'android:versionName="2.53"' "current APK version must be bumped for the v2.53 capture-renderer gap fix"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.52";' "client /config proof must report the same v2.52 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.53";' "client /config proof must report the same v2.53 APK contract as the manifest"
+require "$MAIN" 'http://100.113.254.7:8089/terminal-renderer' "APK visual URL must use the non-resizing control-server capture renderer"
+require "$MAIN" 'data-mantis-capture-renderer' "APK probes must recognize the capture renderer as a healthy terminal surface"
 require "$MAIN" 'customGlyphs=false' "APK terminal URL must disable xterm custom glyphs to stop blank-cell dot glyphs"
 require "$MAIN" 'forceXtermCustomGlyphsFalse' "APK Active/Old settle must force the live xterm runtime customGlyphs option off"
 require "$MAIN" 't.options.customGlyphs=false' "APK must set xterm customGlyphs to boolean false at runtime"
@@ -126,7 +128,8 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=153`, `versionName=2.52`.' "README checkpoint must match the installed v2.52 APK"
+    require "$README" 'Built checkpoint: `versionCode=154`, `versionName=2.53`.' "README checkpoint must match the installed v2.53 APK"
+    require "$README" 'v2.53 moves the APK visual surface to the control server' "README must document the current non-resizing capture-renderer gap fix"
     require "$README" 'v2.52 makes native composer Send/Enter idempotent' "README must document the current native composer submit idempotency fix"
     require "$README" 'v2.51 keeps native Android Active Sessions on the grouped/display row' "README must document the current Android Active Sessions display-row fix"
     require "$README" 'v2.50 keeps Android Old Sessions on the same `/sessions?oldOnly=1`' "README must document the current Android Old Sessions old-only route fix"
@@ -274,8 +277,9 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.52' "install page must advertise the current v2.52 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>153</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.53' "install page must advertise the current v2.53 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>154</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'APK non-resizing capture renderer' "install page must mention the v2.53 capture-renderer gap/gutter fix"
     require "$INSTALL_PAGE" 'native composer Send/Enter idempotency' "install page must mention the v2.52 native composer duplicate-submit fix"
     require "$INSTALL_PAGE" 'Android Active Sessions display-row filtering' "install page must mention the v2.51 Android Active Sessions display-row fix"
     require "$INSTALL_PAGE" 'Android Old Sessions old-only route' "install page must mention the v2.50 Android Old Sessions old-only route fix"
@@ -367,9 +371,9 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.52 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.53 Install' "install redirect page must not point users at a stale version label"
 fi
-require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8088/"' "APK terminal URL must prefer the proven direct Tailnet IP"
+require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"
 require "$MAIN" 'private static final String CONTROL_URL = "http://100.113.254.7:8089"' "APK control URL must prefer the proven direct Tailnet IP"
 require "$MAIN" 'CONTROL_URLS' "control API must retry across direct Tailnet IP and MagicDNS"
@@ -412,14 +416,14 @@ require "$MAIN" 'requestAnimationFrame(redraw)' "layout refit must repeat redraw
 require "$MAIN" 'clearXtermCanvasLayers' "Active switching must clear stale transparent xterm canvas layers before redraw"
 require "$MAIN" 'source-over black canvas fill' "Active-switch WHY comment must preserve the v1.94 clearRect regression"
 require "$MAIN" "ctx.fillStyle='#000000';ctx.fillRect(0,0,w,h)" "Active-switch settle must black-fill xterm canvases before xterm redraw"
-require "$MAIN" 'real-phone v1.93/v1.94 proof showed the Android xterm canvas' "APK renderer WHY comment must preserve the failed real-phone proof chain"
+require "$MAIN" 'the 2026-06-22 gap/black-box regression proved raw ttyd' "APK renderer WHY comment must preserve the failed raw-ttyd geometry proof chain"
 require "$MAIN" 'rendererType=dom' "APK terminal URL must bypass Android xterm canvas renderer artifacts"
 require_absent "$MAIN" '+ "&rendererType=canvas"' "APK terminal URL must not force the Android xterm canvas renderer"
 require "$MAIN" 'settleEntryLiveBottomSoon("page-finished")' "APK page-finished must converge to live bottom without a manual Bottom tap"
 require "$MAIN" 'settleEntryLiveBottomSoon("resume")' "APK resume must converge to live bottom without a manual Bottom tap"
 require "$MAIN" 'ENTRY_LIVE_BOTTOM_SETTLE_MIN_INTERVAL_MS' "APK entry live-bottom settle must be bounded"
 require "$MAIN" 'entryBottomCoreGeneration' "APK entry live-bottom settle must generation-cancel stale Bottom-core callbacks"
-require "$MAIN" 'terminalDomReadyScript()' "APK entry live-bottom settle must wait for ttyd/xterm DOM before Bottom-core"
+require "$MAIN" 'terminalDomReadyScript()' "APK entry live-bottom settle must wait for renderer DOM before Bottom-core"
 require "$MAIN" 'runEntryBottomCoreRecovery' "APK entry live-bottom settle must call the shared Bottom-core only from a guarded passive path"
 require "$MAIN" 'reason + "-entry-bottom-core"' "APK entry Bottom-core must be identifiable in proof/debug output"
 require "$MAIN" 'The user-proven Android APK failure is that first entry' "APK entry live-bottom settle WHY comment must preserve the user screenshot root cause"

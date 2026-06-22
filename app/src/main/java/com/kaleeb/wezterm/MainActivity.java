@@ -114,7 +114,7 @@ public class MainActivity extends Activity {
     private static final String PREFS = "wezterm";
     private static final String PREF_PIN_REQUESTED = "pin_requested";
     private static final String PREF_FONT_SIZE = "font_size";
-    private static final String APP_VERSION_NAME = "2.59";
+    private static final String APP_VERSION_NAME = "2.60";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
             | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
@@ -138,7 +138,7 @@ public class MainActivity extends Activity {
     private static final int HISTORY_DRAG_SLOW_PENDING_MAX_REPEATS = 2;
     private static final int HISTORY_DRAG_FAST_MOVE_REPEATS = 6;
     private static final int HISTORY_DRAG_FLING_MOVE_REPEATS = 10;
-    private static final long TOUCH_SCROLL_RENDER_PULSE_MS = 64;
+    private static final long TOUCH_SCROLL_RENDER_PULSE_MS = 16;
     private static final long TOUCH_SCROLL_RENDER_PULSE_WINDOW_MS = 850;
     private static final float HISTORY_DRAG_RELEASE_MIN_LINES = 2f;
     private static final int TOUCH_SCROLL_LIVE_BOTTOM_SNAP_LINES = 16;
@@ -2108,7 +2108,7 @@ public class MainActivity extends Activity {
         // WHY: the phone-visible terminal is a read-only capture renderer. Tmux can
         // scroll smoothly on the laptop while the APK looks choppy if the renderer
         // waits for the 550 ms poll or a single delayed refresh. Keep `/touch-scroll` itself lightweight,
-        // but run a short frame-paced repaint loop during an
+        // but run a frame-rate bounded repaint loop during an
         // active finger gesture so slow drags show intermediate rows and fast flicks
         // still use the existing VelocityTracker/release-burst path.
         long now = System.currentTimeMillis();

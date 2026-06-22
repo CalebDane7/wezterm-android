@@ -58,13 +58,13 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="160"' "current APK version must be bumped for the v2.59 scroll-frame contract"
-require "$MANIFEST" 'android:versionName="2.59"' "current APK version must be bumped for the v2.59 scroll-frame contract"
+require "$MANIFEST" 'android:versionCode="161"' "current APK version must be bumped for the v2.60 scroll-frame cadence contract"
+require "$MANIFEST" 'android:versionName="2.60"' "current APK version must be bumped for the v2.60 scroll-frame cadence contract"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.59";' "client /config proof must report the same v2.59 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.60";' "client /config proof must report the same v2.60 APK contract as the manifest"
 require "$MAIN" 'http://100.113.254.7:8089/terminal-renderer' "APK visual URL must use the non-resizing control-server capture renderer"
 require "$MAIN" 'APK_CAPTURE_RENDERER_COLS = 132' "APK capture renderer must preserve the readable 132-column logical grid"
 require "$MAIN" 'refreshCaptureRendererSoon' "APK scroll controls must repaint the capture renderer without reloading or resizing tmux"
@@ -130,7 +130,8 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=160`, `versionName=2.59`.' "README checkpoint must match the installed v2.59 APK"
+    require "$README" 'Built checkpoint: `versionCode=161`, `versionName=2.60`.' "README checkpoint must match the installed v2.60 APK"
+    require "$README" 'v2.60 tightens that capture-renderer pulse' "README must document the current 16 ms touch-scroll renderer cadence fix"
     require "$README" 'v2.59 smooths APK one-finger history scrolling' "README must document the current historical-sample/frame-paced touch-scroll fix"
     require "$README" 'v2.58 adds a compact native active-session title strip' "README must document the current title-strip target-confirmation fix"
     require "$README" 'v2.57 suppresses normal session-open, upload, and paste success Toasts' "README must document the current no-popup session/upload fix"
@@ -285,8 +286,8 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.59' "install page must advertise the current v2.59 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>160</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.60' "install page must advertise the current v2.60 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>161</code>' "install page versionCode must match the manifest"
     require "$INSTALL_PAGE" 'historical MOVE sample handling' "install page must mention the v2.59 historical MOVE sample fix"
     require "$INSTALL_PAGE" 'frame-paced APK touch-scroll repaint' "install page must mention the v2.59 frame-paced repaint fix"
     require "$INSTALL_PAGE" 'compact active session title strip' "install page must mention the v2.58 target-confirmation strip"
@@ -387,7 +388,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.59 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.60 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"
@@ -861,6 +862,8 @@ if [ -f "$MANTIS_CONTROL_SERVER" ]; then
     require "$MANTIS_CONTROL_SERVER" '"working": "running"' "Mantis cached Working status must map to Android's green running dot"
     require "$MANTIS_CONTROL_SERVER" 'Cached title-sync status' "Mantis light tabs must not flatten Active rows to fake Ready statuses"
     require_absent "$MANTIS_CONTROL_SERVER" 'Fast active picker' "Mantis light tabs must not hardcode every Active row to grey Ready"
+    require "$MANTIS_CONTROL_SERVER" 'refreshQueued=false' "Mantis capture renderer must queue a follow-up repaint when a frame fetch is already in flight"
+    require "$MANTIS_CONTROL_SERVER" 'Queue exactly one follow-up repaint' "Mantis capture renderer WHY comment must preserve the APK choppy-scroll root cause"
 fi
 require "$MAIN" 'private LinearLayout toolbarRow()' "toolbar must stay split into readable rows"
 require "$MAIN" 'setTouchableBackground(button' "toolbar buttons must keep visible ripple/tap feedback"
@@ -1204,7 +1207,7 @@ require "$MAIN" 'isNearTmuxLiveBottom(payload)' "near-bottom restore must use se
 require "$MAIN" 'payload.has("scrollPosition")' "near-bottom restore must require explicit server scrollPosition data"
 require "$MAIN" 'restoreTouchLiveBottomQuietly();' "near-bottom lineDown after finger-up must use the quiet bottom restore path"
 require "$MAIN" 'extra downward' "live-bottom edge WHY comment must prevent down-scroll bounce regressions"
-require "$MAIN" 'TOUCH_SCROLL_RENDER_PULSE_MS = 64' "APK touch-scroll repaint pulse cadence must stay explicit"
+require "$MAIN" 'TOUCH_SCROLL_RENDER_PULSE_MS = 16' "APK touch-scroll repaint pulse cadence must stay frame-rate bounded"
 require "$MAIN" 'TOUCH_SCROLL_RENDER_PULSE_WINDOW_MS = 850' "APK touch-scroll repaint pulse window must stay bounded"
 require "$MAIN" 'Choreographer.getInstance().postFrameCallback' "APK touch scroll must use frame-paced renderer refreshes instead of only coarse polling"
 require "$MAIN" 'keepCaptureRendererPulsingDuringTouch' "APK touch scroll must keep the read-only capture renderer repainting while the finger moves"
@@ -1216,6 +1219,7 @@ require "$MAIN" 'event.getHistoricalY(i)' "APK one-finger scroll must replay his
 require "$MAIN" 'event.getHistoricalEventTime(i)' "APK one-finger scroll must preserve historical event timing"
 require "$MAIN" 'Android may batch multiple MOVE coordinates' "historical-sample WHY comment must preserve the APK choppy-scroll root cause"
 require "$MAIN" 'Keep `/touch-scroll` itself lightweight' "frame-pulse WHY comment must preserve the separation between repaint cadence and tmux movement"
+require "$MAIN" 'frame-rate bounded repaint loop' "frame-pulse WHY comment must preserve that APK visual smoothness is a renderer cadence fix"
 require "$MAIN" '"/touch-scroll?where="' "one-finger touch scroll must use the lightweight tmux-only endpoint"
 require "$MAIN" 'restoreTouchLiveBottomQuietly()' "finger-up at live bottom must quietly exit tmux copy-mode"
 require "$MAIN" '"/touch-scroll?where=bottom&repeat=1"' "finger-up bottom restore must use lightweight touch-scroll, not the heavy /scroll endpoint"

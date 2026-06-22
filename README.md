@@ -91,7 +91,7 @@ Safari/Add to Home Screen today; Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=151`, `versionName=2.50`.
+- Built checkpoint: `versionCode=152`, `versionName=2.51`.
 - v1.29 fixes the black-screen resume case where Android focused WEzterm but
   the WebView never opened a fresh ttyd HTTP/WebSocket connection.
 - The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a
@@ -692,6 +692,11 @@ Safari/Add to Home Screen today; Android users use the native APK.
   route as web Old. WHY: title authority lives on the server row builder; if
   Android uses the broad `/sessions` scan again, future live-window fields or
   process-name fallbacks can make an old row open under the wrong-looking title.
+- v2.51 keeps native Android Active Sessions on the grouped/display row
+  contract used by web. WHY: `/tabs.windows` is intentionally flat for internal
+  diagnostics and can include child/proof lanes; the APK must show real
+  top-level operator sessions while preserving parent metadata such as
+  `1 child lane`.
 - v2.11 fixes the Active Sessions dotted-field regression that returned after
   v2.10. The APK keeps passive tab switching and does not auto-open the
   composer/keyboard, but the xterm scrubber now hides lower-screen blank-backed

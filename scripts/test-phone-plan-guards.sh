@@ -58,13 +58,13 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="151"' "current APK version must be bumped for the v2.50 Old Sessions old-only route fix"
-require "$MANIFEST" 'android:versionName="2.50"' "current APK version must be bumped for the v2.50 Old Sessions old-only route fix"
+require "$MANIFEST" 'android:versionCode="152"' "current APK version must be bumped for the v2.51 Active Sessions display-row fix"
+require "$MANIFEST" 'android:versionName="2.51"' "current APK version must be bumped for the v2.51 Active Sessions display-row fix"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.50";' "client /config proof must report the same v2.50 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.51";' "client /config proof must report the same v2.51 APK contract as the manifest"
 require "$MAIN" 'customGlyphs=false' "APK terminal URL must disable xterm custom glyphs to stop blank-cell dot glyphs"
 require "$MAIN" 'forceXtermCustomGlyphsFalse' "APK Active/Old settle must force the live xterm runtime customGlyphs option off"
 require "$MAIN" 't.options.customGlyphs=false' "APK must set xterm customGlyphs to boolean false at runtime"
@@ -126,7 +126,8 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=151`, `versionName=2.50`.' "README checkpoint must match the installed v2.50 APK"
+    require "$README" 'Built checkpoint: `versionCode=152`, `versionName=2.51`.' "README checkpoint must match the installed v2.51 APK"
+    require "$README" 'v2.51 keeps native Android Active Sessions on the grouped/display row' "README must document the current Android Active Sessions display-row fix"
     require "$README" 'v2.50 keeps Android Old Sessions on the same `/sessions?oldOnly=1`' "README must document the current Android Old Sessions old-only route fix"
     require "$README" 'v2.47 compacts the native composer and keeps the row-level xterm dot scrubber' "README must document the current composer-layout dotted-field fix"
     require "$README" 'v2.49 keeps the same row/canvas scrubber alive after normal toolbar-only actions' "README must document the current toolbar action dotted-field fix"
@@ -272,8 +273,9 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.50' "install page must advertise the current v2.50 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>151</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.51' "install page must advertise the current v2.51 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>152</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'Android Active Sessions display-row filtering' "install page must mention the v2.51 Android Active Sessions display-row fix"
     require "$INSTALL_PAGE" 'Android Old Sessions old-only route' "install page must mention the v2.50 Android Old Sessions old-only route fix"
     require "$INSTALL_PAGE" 'composer-open layout dot scrubber' "install page must mention the v2.47 composer-layout dotted-field fix"
     require "$INSTALL_PAGE" 'compact native composer' "install page must mention the v2.47 compact composer fix"
@@ -363,7 +365,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.50 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.51 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8088/"' "APK terminal URL must prefer the proven direct Tailnet IP"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"
@@ -516,6 +518,9 @@ require "$MAIN" 'old sessions must use the same server-provided title as Active'
 require "$MAIN" 'Android cannot drift into showing live rows or stale' "APK Old Sessions must document why broad /sessions is forbidden"
 require "$MAIN" 'drift from desktop tmux, web remote, and Old Sessions' "APK must not grow a separate Active Sessions title summarizer"
 require "$MAIN" 'never invent a second' "APK must not grow a separate Old Sessions naming table"
+require "$MAIN" 'payload.optJSONArray("displayWindows")' "APK Active Sessions must prefer display/top rows before flat windows"
+require "$MAIN" 'addTabRows(list, groupRows, session, dialogRef, activeWindow, false)' "APK Active Sessions must not render child rows under grouped parent rows"
+require "$MAIN" 'rows must not reappear under their parent while web stays clean' "APK Active Sessions child-row guard must preserve the no-leak WHY comment"
 if [ -f "$RUNTIME_PROOF" ]; then
     require "$RUNTIME_PROOF" 'sessions activity groups' "runtime proof must check session/date picker data"
     require "$RUNTIME_PROOF" 'old parent sessions by date' "runtime proof must check old parent Codex sessions"
@@ -793,16 +798,16 @@ if [ -f "$MANTIS_CONTROL_SERVER" ]; then
     require "$MANTIS_CONTROL_SERVER" 'tmux 3.4 on this phone lane delivered `DC` as a lone Escape' "Mantis phone control server must preserve the Delete sequence WHY"
     require "$MANTIS_CONTROL_SERVER" 'splitting the characters with sleeps can race CLI' "Mantis phone control server must preserve the Delete split-sequence timeout root cause"
     require "$MANTIS_CONTROL_SERVER" 'run_tmux("send-keys", "-t", target, "-l", "\x1b[3~")' "Mantis phone control server must send forward Delete as one literal ESC [ 3 ~ sequence"
-    require "$MANTIS_CONTROL_SERVER" 'self.state.live_bottom_fast(window_id)' "Mantis live-bottom route must pass stable windowId through to the server method"
+    require "$MANTIS_CONTROL_SERVER" 'self.state.live_bottom_fast(window_id, trim_tail=trim_tail)' "Mantis live-bottom route must pass stable windowId through to the server method"
     require "$MANTIS_CONTROL_SERVER" 'self.live_bottom_fast(window_id=window_id)' "Mantis select-live must run Bottom-core on the selected stable windowId"
     require "$MANTIS_CONTROL_SERVER" 'def phone_client_size(self):' "Mantis select-live must know the real phone client size"
     require "$MANTIS_CONTROL_SERVER" 'rc, output, _ = run_tmux_optional(' "Mantis phone-size helper must unpack run_tmux_optional without 500s"
     require "$MANTIS_CONTROL_SERVER" '"list-clients",' "Mantis phone-size helper must read attached phone clients instead of shell dimensions"
-    require "$MANTIS_CONTROL_SERVER" 'def resize_selected_window_to_phone_client(self, target):' "Mantis select-live must resize linked windows to the phone client"
+    require "$MANTIS_CONTROL_SERVER" 'def resize_selected_window_to_phone_client(self, target, trim_tail=False):' "Mantis select-live must resize linked windows to the phone client"
     require "$MANTIS_CONTROL_SERVER" 'run_tmux_optional("resize-window", "-t", target, "-x", str(width), "-y", str(height))' "Mantis select-live must force the selected linked window to phone dimensions"
     require "$MANTIS_CONTROL_SERVER" 'old 180x38 desktop size' "Mantis resize WHY comment must preserve the linked-window row-count root cause"
     require "$MANTIS_CONTROL_SERVER" 'active_window(self, read_only=False)' "Mantis active status must keep APK resize default while allowing web read-only polling"
-    require "$MANTIS_CONTROL_SERVER" 'tiny' "Mantis phone-size helper must preserve the tiny web-client resize regression guard"
+    require "$MANTIS_CONTROL_SERVER" 'small/wide viewport sizes' "Mantis phone-size helper must preserve the web-client resize regression guard"
     require "$MANTIS_CONTROL_SERVER" 'direct `/live-bottom?windowId=@id`' "Mantis Bottom-core must resize stable live-bottom targets, not only select-live"
     require "$MANTIS_CONTROL_SERVER" 'Bottom-core owns the final viewport' "Mantis live-bottom resize WHY comment must preserve the toolbar Bottom dotted-tail root cause"
     require "$MANTIS_CONTROL_SERVER" 'target = f"{self.active_target_session()}:{stable_window_id}"' "Mantis live-bottom must qualify stable windowId in the phone view before resizing"
@@ -1503,8 +1508,9 @@ fi
 if [ -f "$TMUX_CONF" ]; then
     require "$TMUX_CONF" 'range=user|x#{window_id}' "tmux status close target must remain a user mouse range on stable @window ids"
     require "$TMUX_CONF" 'run-shell -b' "tmux close confirmation must capture the clicked @window before y/n confirmation"
-    require "$TMUX_CONF" 'record-clean-close' "tmux status X must mark approved closes before kill-window"
-    require "$TMUX_CONF" 'font coordinates proved the visible' "tmux close WHY comment must document the padded [x] coordinate regression"
+    require "$TMUX_CONF" 'mantis-phone-control-server close-window' "tmux status X must route approved closes through the control server"
+    require "$TMUX_CONF" 'records the clean-close' "tmux status X must preserve clean-close ledger intent before kill-window"
+    require "$TMUX_CONF" 'contract: useful title, stable status color, and a padded `[x]` close' "tmux close WHY comment must document the padded [x] status-contract regression"
 fi
 
 if [ -f "$PHONE_ADB_CONNECT" ]; then

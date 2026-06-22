@@ -111,7 +111,7 @@ public class MainActivity extends Activity {
     private static final String PREFS = "wezterm";
     private static final String PREF_PIN_REQUESTED = "pin_requested";
     private static final String PREF_FONT_SIZE = "font_size";
-    private static final String APP_VERSION_NAME = "2.50";
+    private static final String APP_VERSION_NAME = "2.51";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
             | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
@@ -4219,15 +4219,21 @@ public class MainActivity extends Activity {
                     continue;
                 }
                 addSectionHeader(list, group.optString("label", "Sessions"), groupRows.size());
-                addTabRows(list, groupRows, session, dialogRef, activeWindow);
+                addTabRows(list, groupRows, session, dialogRef, activeWindow, false);
             }
         } else {
-            JSONArray windows = payload.getJSONArray("windows");
+            JSONArray windows = payload.optJSONArray("displayWindows");
+            if (windows == null) {
+                windows = payload.optJSONArray("topWindows");
+            }
+            if (windows == null) {
+                windows = payload.getJSONArray("windows");
+            }
             List<JSONObject> rows = sortedWindows(windows, activeWindow);
             if (rows.isEmpty() && activeWindow == null) {
                 addSectionHeader(list, "Nothing needs attention", 0);
             } else {
-                addTabRows(list, rows, session, dialogRef, activeWindow);
+                addTabRows(list, rows, session, dialogRef, activeWindow, !preferGroups);
             }
         }
 
@@ -4480,11 +4486,19 @@ public class MainActivity extends Activity {
             List<JSONObject> windows,
             String session,
             AlertDialog[] dialogRef,
-            JSONObject skipWindow
+            JSONObject skipWindow,
+            boolean includeChildRows
     ) throws Exception {
         for (int i = 0; i < windows.size(); i++) {
             JSONObject window = windows.get(i);
             addTabRow(list, window, session, dialogRef);
+            // WHY: `/tabs` keeps child metadata so the parent row can say
+            // "1 child lane" and diagnostics can inspect workers. The phone's
+            // visible Active Sessions list is operator-facing, so child/proof
+            // rows must not reappear under their parent while web stays clean.
+            if (!includeChildRows) {
+                continue;
+            }
             JSONArray children = window.optJSONArray("children");
             if (children == null) {
                 continue;

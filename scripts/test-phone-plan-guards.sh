@@ -58,13 +58,13 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="156"' "current APK version must be bumped for the v2.55 toast-free Bottom/Scroll visual recovery fix"
-require "$MANIFEST" 'android:versionName="2.55"' "current APK version must be bumped for the v2.55 toast-free Bottom/Scroll visual recovery fix"
+require "$MANIFEST" 'android:versionCode="157"' "current APK version must be bumped for the v2.56 toast-free Send/Start and zoomed-Bottom visual recovery fix"
+require "$MANIFEST" 'android:versionName="2.56"' "current APK version must be bumped for the v2.56 toast-free Send/Start and zoomed-Bottom visual recovery fix"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.55";' "client /config proof must report the same v2.55 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.56";' "client /config proof must report the same v2.56 APK contract as the manifest"
 require "$MAIN" 'http://100.113.254.7:8089/terminal-renderer' "APK visual URL must use the non-resizing control-server capture renderer"
 require "$MAIN" 'APK_CAPTURE_RENDERER_COLS = 132' "APK capture renderer must preserve the readable 132-column logical grid"
 require "$MAIN" 'refreshCaptureRendererSoon' "APK scroll controls must repaint the capture renderer without reloading or resizing tmux"
@@ -130,7 +130,8 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=156`, `versionName=2.55`.' "README checkpoint must match the installed v2.55 APK"
+    require "$README" 'Built checkpoint: `versionCode=157`, `versionName=2.56`.' "README checkpoint must match the installed v2.56 APK"
+    require "$README" 'v2.56 suppresses normal Send/Start success Toasts' "README must document the current prompt/composer visibility fix"
     require "$README" 'v2.55 removes success Toast overlays' "README must document the current toast-free Bottom/Scroll visual recovery fix"
     require "$README" 'v2.54 restores APK scroll/readability' "README must document the current APK capture-renderer scroll/readability fix"
     require "$README" 'v2.53 moves the APK visual surface to the control server' "README must document the current non-resizing capture-renderer gap fix"
@@ -281,8 +282,10 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.55' "install page must advertise the current v2.55 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>156</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.56' "install page must advertise the current v2.56 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>157</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'toast-free Send/Start prompt visibility' "install page must mention the v2.56 prompt visibility fix"
+    require "$INSTALL_PAGE" 'bounded zoomed-Bottom viewer alignment' "install page must mention the v2.56 zoomed Bottom alignment fix"
     require "$INSTALL_PAGE" 'toast-free Bottom/Scroll visual recovery' "install page must mention the v2.55 toast-free Bottom/Scroll fix"
     require "$INSTALL_PAGE" 'APK capture-renderer scroll/readability' "install page must mention the v2.54 capture-renderer scroll/readability fix"
     require "$INSTALL_PAGE" 'APK non-resizing capture renderer' "install page must mention the v2.53 capture-renderer gap/gutter fix"
@@ -377,7 +380,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.55 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.56 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"
@@ -900,6 +903,11 @@ require "$MAIN" '"Type prompt safely"' "menus must expose the native safe prompt
 require "$MAIN" '"Start / send Enter"' "menus must expose the explicit Start/send route"
 require "$MAIN" 'restoreLiveForViewing("")' "visible Bottom must stay passive without covering the live prompt with a success Toast"
 require "$MAIN" "success Toast sits over the live" "Bottom WHY comment must preserve why success Toasts stay disabled"
+require "$MAIN" 'submitDockedPromptText(text, "")' "normal docked Send must not show a success Toast over typing"
+require "$MAIN" 'submitSafePrompt(text, "")' "normal safe prompt submit must not show a success Toast over typing"
+require "$MAIN" 'successToast != null && !successToast.trim().isEmpty()' "empty success Toast must mean no popup, not fallback Prompt sent"
+require "$MAIN" 'scrollViewerToTypingPositionAfterBottom' "explicit Bottom must retry zoomed viewer-only bottom alignment"
+require "$MAIN" 'does not change' "zoomed Bottom WHY comment must forbid shared tmux resize"
 require "$MAIN" 'visible Bottom toolbar button is navigation/readability' "Bottom WHY comment must preserve no automatic keyboard/composer behavior"
 require "$MAIN" 'runBottomButtonLiveBottomRecovery("live-bottom-view"' "Bottom must use the shared Bottom-core live-bottom recovery without opening the composer"
 require "$MAIN" 'restoreLiveAfterTabOpen("select-live", switchSettleGeneration, paintShieldGeneration)' "Active tab open must immediately run the shared Bottom-core live-bottom recovery"
@@ -1213,7 +1221,7 @@ require "$MAIN" 'reason + "-toolbar-only-entry-dot-scrub"' "toolbar-only dotted-
 require "$MAIN" '22:10 phone screenshot proved the same lower' "toolbar-only dot scrubber WHY comment must preserve the missed proof state"
 require "$MAIN" 'no WebView' "toolbar-only dot scrubber must not revive WebView reload regressions"
 require "$MAIN" 'no hidden xterm focus, no IME reopen, and no broad black' "toolbar-only dot scrubber must not revive focus/keyboard/black-mask regressions"
-require "$MAIN" 'scrollViewerToTypingPositionOnce("touch-bottom"' "one-finger live-bottom restore must move the zoomed Android viewer to true bottom without retry bounce"
+require "$MAIN" 'scrollViewerToTypingPositionAfterBottom("touch-bottom")' "one-finger live-bottom restore must move the zoomed Android viewer to true bottom without retry bounce"
 require "$MAIN" 'without reviving xterm' "zoomed bottom WHY comment must preserve the no-refresh/no-duplicate-typing constraint"
 
 require "$MAIN" 'terminalFocusAndReconnectProbeScript' "focus path must keep narrow reconnect overlay detection"

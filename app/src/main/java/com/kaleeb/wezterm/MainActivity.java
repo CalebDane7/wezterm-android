@@ -113,7 +113,7 @@ public class MainActivity extends Activity {
     private static final String PREFS = "wezterm";
     private static final String PREF_PIN_REQUESTED = "pin_requested";
     private static final String PREF_FONT_SIZE = "font_size";
-    private static final String APP_VERSION_NAME = "2.55";
+    private static final String APP_VERSION_NAME = "2.56";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
             | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
@@ -2458,7 +2458,10 @@ public class MainActivity extends Activity {
                 toast(payload.optString("error", "Send failed"));
                 return;
             }
-            toast("Sent");
+            // WHY: success Toasts sit directly over the live prompt/native
+            // composer on the phone. Start/Send success is already visible in the
+            // terminal state; keep error Toasts, but do not cover typing with a
+            // redundant "Sent" popup.
             hideDockedPromptComposer(false, true);
             focusTerminalInputSoon(false);
             settleLiveBottomAfterSend("send-enter");
@@ -2612,7 +2615,7 @@ public class MainActivity extends Activity {
     }
 
     private void submitDockedPromptText(String text) {
-        submitDockedPromptText(text, "Prompt sent");
+        submitDockedPromptText(text, "");
     }
 
     private void submitDockedPromptText(String text, String successToast) {
@@ -2833,7 +2836,7 @@ public class MainActivity extends Activity {
     }
 
     private void submitSafePrompt(String text) {
-        submitSafePrompt(text, "Prompt sent");
+        submitSafePrompt(text, "");
     }
 
     private void submitSafePrompt(String text, String successToast) {
@@ -2880,7 +2883,9 @@ public class MainActivity extends Activity {
                 toast(payload.optString("error", "Send failed"));
                 return;
             }
-            toast(successToast == null || successToast.trim().isEmpty() ? "Prompt sent" : successToast);
+            if (successToast != null && !successToast.trim().isEmpty()) {
+                toast(successToast);
+            }
             finishPromptComposerSubmit(submitFingerprint);
             hideDockedPromptComposer(true, false);
             focusTerminalInputSoon(false);
@@ -3091,6 +3096,13 @@ public class MainActivity extends Activity {
                 fitTerminalToCurrentViewSoon(reason);
                 keepToolbarOnlyXtermSettleAlive(reason);
                 alignLiveBottomViewportForPassiveEntrySoon(reason);
+                // WHY: explicit Bottom confirms tmux is at live bottom, but a
+                // zoomed Android WebView can still be panned above the final prompt.
+                // Use bounded viewer-only retries after the Bottom core settles so
+                // one skipped frame cannot strand the user above the text. Preserve
+                // scrollX and do not resize tmux, reset pinch zoom, or revive the old
+                // scrollToBottom/scrollIntoView loop.
+                scrollViewerToTypingPositionAfterBottom(reason);
                 normalizeXtermCanvasAfterSessionSwitch(reason);
                 scheduleToolbarStatusDotRefresh(150);
             }
@@ -3147,7 +3159,7 @@ public class MainActivity extends Activity {
             refreshCaptureRendererSoon("touch-bottom");
             fitTerminalToCurrentViewSoon("touch-bottom");
             keepToolbarOnlyXtermSettleAliveAfterControlAction("touch-bottom");
-            scrollViewerToTypingPositionOnce("touch-bottom", 180);
+            scrollViewerToTypingPositionAfterBottom("touch-bottom");
         }, exc -> {
             terminalBottomRestoreInFlight = false;
             toast("WEzterm control is not reachable");
@@ -6596,6 +6608,19 @@ public class MainActivity extends Activity {
         uiHandler.postDelayed(() -> scrollViewerToTypingPosition(reason, generation), Math.max(0, delayMs));
     }
 
+    private void scrollViewerToTypingPositionAfterBottom(String reason) {
+        // WHY: Bottom/touch-bottom are explicit recovery actions. Earlier one-shot
+        // alignment could fire while WebView content height was still settling or
+        // while the Bottom HTTP callback was clearing gesture state, so zoomed users
+        // saw "at bottom" with the final text still below the viewport. Keep this
+        // viewer-only and bounded: it preserves horizontal pan, does not change
+        // tmux/window size, and remains generation-cancellable by later pinch/pan.
+        long generation = ++viewerTypingPositionGeneration;
+        scrollViewerToTypingPosition(reason + "-bottom-align", generation, false);
+        uiHandler.postDelayed(() -> scrollViewerToTypingPosition(reason + "-bottom-align", generation, false), 180);
+        uiHandler.postDelayed(() -> scrollViewerToTypingPosition(reason + "-bottom-align", generation, false), 520);
+    }
+
     private void cancelViewerTypingPositionRetries(String reason) {
         // WHY: delayed bottom-position retries from composer/live-bottom recovery
         // must not fire after the user starts a native WebView pan or pinch. Those
@@ -6607,13 +6632,20 @@ public class MainActivity extends Activity {
         if (webView == null || !isViewerZoomed()) {
             return;
         }
+        scrollViewerToTypingPosition(reason, generation, true);
+    }
+
+    private void scrollViewerToTypingPosition(String reason, long generation, boolean blockDuringGestureRecovery) {
+        if (webView == null || !isViewerZoomed()) {
+            return;
+        }
         webView.postDelayed(() -> {
             if (webView == null
                     || !isViewerZoomed()
                     || generation != viewerTypingPositionGeneration
                     || readModeSuppressesKeyboard
                     || terminalHistoryViewportActive
-                    || isTerminalGestureRecoveryActive()) {
+                    || (blockDuringGestureRecovery && isTerminalGestureRecoveryActive())) {
                 return;
             }
             int contentHeightPx = Math.round(webView.getContentHeight() * webViewScale);

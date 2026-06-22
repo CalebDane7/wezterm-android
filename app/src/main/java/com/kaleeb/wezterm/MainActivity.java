@@ -1618,7 +1618,11 @@ public class MainActivity extends Activity {
                 return true;
             }
             if (shouldRestoreTyping) {
-                restoreLiveForTyping("Typing ready");
+                // WHY: the composer itself is the success signal. A tap-to-type
+                // success Toast sits over the same bottom area the user is trying to
+                // inspect, recreating the v2.57 popup-over-prompt regression while
+                // the keyboard/composer is opening.
+                restoreLiveForTyping("");
                 recycleTerminalViewerDownEvent();
                 return true;
             }
@@ -4347,7 +4351,7 @@ public class MainActivity extends Activity {
             if (dialogRef[0] != null) {
                 dialogRef[0].dismiss();
             }
-                    controlAndSettleLiveBottom("/new?fast=1", "", "new-session");
+            controlAndSettleLiveBottom("/new?fast=1", "", "new-session");
         }));
         actions.addView(activeDialogActionButton("Rename", v -> {
             if (dialogRef[0] != null) {

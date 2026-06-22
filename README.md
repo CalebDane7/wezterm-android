@@ -91,7 +91,7 @@ Safari/Add to Home Screen today; Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=152`, `versionName=2.51`.
+- Built checkpoint: `versionCode=153`, `versionName=2.52`.
 - v1.29 fixes the black-screen resume case where Android focused WEzterm but
   the WebView never opened a fresh ttyd HTTP/WebSocket connection.
 - The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a
@@ -697,6 +697,10 @@ Safari/Add to Home Screen today; Android users use the native APK.
   diagnostics and can include child/proof lanes; the APK must show real
   top-level operator sessions while preserving parent metadata such as
   `1 child lane`.
+- v2.52 makes native composer Send/Enter idempotent while `/submit-text` is in
+  flight. WHY: Android can deliver both an IME editor action and an Enter key
+  event for one visible Send before the async submit clears the composer; that
+  must be one pinned paste+Enter, not duplicate text in tmux.
 - v2.11 fixes the Active Sessions dotted-field regression that returned after
   v2.10. The APK keeps passive tab switching and does not auto-open the
   composer/keyboard, but the xterm scrubber now hides lower-screen blank-backed

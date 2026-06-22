@@ -79,6 +79,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
 
 public class MainActivity extends Activity {
     private static final String TERMINAL_URL = "http://100.113.254.7:8088/";
@@ -111,7 +112,7 @@ public class MainActivity extends Activity {
     private static final String PREFS = "wezterm";
     private static final String PREF_PIN_REQUESTED = "pin_requested";
     private static final String PREF_FONT_SIZE = "font_size";
-    private static final String APP_VERSION_NAME = "2.51";
+    private static final String APP_VERSION_NAME = "2.52";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
             | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
@@ -251,6 +252,8 @@ public class MainActivity extends Activity {
     private String promptComposerDraftTargetKey = "";
     private long promptComposerDraftLocalGeneration = 0;
     private long promptComposerVisibilityGeneration = 0;
+    private boolean promptComposerSubmitInFlight = false;
+    private String promptComposerSubmitFingerprint = "";
     private long toolbarStatusGeneration = 0;
     private long terminalWakeRetryGeneration = 0;
     private long lastWakeOnLanAtMs = 0;
@@ -2845,21 +2848,29 @@ public class MainActivity extends Activity {
             }
             return;
         }
-        long generation = leaveReadModeForLiveInput();
         String stableTargetKey = hasStableWindowId(targetKey) ? targetKey.trim() : promptComposerTargetKey();
+        String submitFingerprint = stableTargetKey + "\n" + value;
+        if (!beginPromptComposerSubmit(submitFingerprint)) {
+            return;
+        }
+        String submitIdempotencyKey = "phone-submit-" + UUID.randomUUID().toString();
+        long generation = leaveReadModeForLiveInput();
         // WHY: visible phone drafts are local-only until Send, so the submit
         // request must use the draft's pinned `@windowId`, not a later `/active`
         // value. This is the durable guard against prompts being pasted into a
         // different active session after tab switches, polling, or proof setup.
-        postText(appendStableWindowQuery("/submit-text", stableTargetKey), value, payload -> {
+        postTextWithIdempotency(appendStableWindowQuery("/submit-text", stableTargetKey), value, submitIdempotencyKey, payload -> {
             if (generation != terminalModeGeneration) {
+                finishPromptComposerSubmit(submitFingerprint);
                 return;
             }
             if (!payload.optBoolean("ok", false)) {
+                finishPromptComposerSubmit(submitFingerprint);
                 toast(payload.optString("error", "Send failed"));
                 return;
             }
             toast(successToast == null || successToast.trim().isEmpty() ? "Prompt sent" : successToast);
+            finishPromptComposerSubmit(submitFingerprint);
             hideDockedPromptComposer(true, false);
             focusTerminalInputSoon(false);
             settleLiveBottomAfterSend("submit-text");
@@ -2867,11 +2878,37 @@ public class MainActivity extends Activity {
                 afterSuccess.run();
             }
         }, exc -> {
+            finishPromptComposerSubmit(submitFingerprint);
             toast("WEzterm control is not reachable");
             if (afterFailure != null) {
                 afterFailure.run();
             }
         });
+    }
+
+    private boolean beginPromptComposerSubmit(String fingerprint) {
+        if (promptComposerSubmitInFlight) {
+            if (!fingerprint.equals(promptComposerSubmitFingerprint)) {
+                toast("Prompt send in progress");
+            }
+            // WHY: Android IMEs can deliver both an editor-action callback and an
+            // Enter key event for one visible Send. The composer is cleared only
+            // after `/submit-text` succeeds, so duplicate callbacks in that
+            // async window must be ignored instead of pasting the same draft
+            // twice into tmux.
+            return false;
+        }
+        promptComposerSubmitInFlight = true;
+        promptComposerSubmitFingerprint = fingerprint;
+        return true;
+    }
+
+    private void finishPromptComposerSubmit(String fingerprint) {
+        if (!promptComposerSubmitInFlight || !fingerprint.equals(promptComposerSubmitFingerprint)) {
+            return;
+        }
+        promptComposerSubmitInFlight = false;
+        promptComposerSubmitFingerprint = "";
     }
 
     private long enterReadMode() {
@@ -7061,12 +7098,33 @@ public class MainActivity extends Activity {
         postTextAttempt(path, text, callback, failureCallback, 0);
     }
 
+    private void postTextWithIdempotency(
+            String path,
+            String text,
+            String idempotencyKey,
+            JsonCallback callback,
+            FailureCallback failureCallback
+    ) {
+        postTextAttempt(path, text, callback, failureCallback, 0, idempotencyKey);
+    }
+
     private void postTextAttempt(
             String path,
             String text,
             JsonCallback callback,
             FailureCallback failureCallback,
             int controlUrlIndex
+    ) {
+        postTextAttempt(path, text, callback, failureCallback, controlUrlIndex, "");
+    }
+
+    private void postTextAttempt(
+            String path,
+            String text,
+            JsonCallback callback,
+            FailureCallback failureCallback,
+            int controlUrlIndex,
+            String idempotencyKey
     ) {
         new Thread(() -> {
             HttpURLConnection connection = null;
@@ -7080,6 +7138,14 @@ public class MainActivity extends Activity {
                 connection.setConnectTimeout(3000);
                 connection.setReadTimeout(5000);
                 connection.setRequestProperty("Content-Type", "text/plain; charset=utf-8");
+                if (idempotencyKey != null && !idempotencyKey.trim().isEmpty()) {
+                    // WHY: `/submit-text` mutates tmux by pasting and pressing Enter.
+                    // If the phone loses the first response and retries against the
+                    // fallback control URL, the same visible Send must not paste
+                    // twice. Use the standard Idempotency-Key retry pattern while
+                    // keeping legacy callers without this header working.
+                    connection.setRequestProperty("Idempotency-Key", idempotencyKey.trim());
+                }
                 connection.setFixedLengthStreamingMode(bytes.length);
                 try (OutputStream outputStream = connection.getOutputStream()) {
                     outputStream.write(bytes);
@@ -7106,7 +7172,8 @@ public class MainActivity extends Activity {
                                     text,
                                     callback,
                                     failureCallback,
-                                    controlUrlIndex + 1
+                                    controlUrlIndex + 1,
+                                    idempotencyKey
                             ),
                             CONTROL_SAFE_RETRY_DELAY_MS
                     );

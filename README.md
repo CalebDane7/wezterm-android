@@ -92,7 +92,7 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=158`, `versionName=2.57`.
+- Built checkpoint: `versionCode=159`, `versionName=2.58`.
 - v1.29 fixes the black-screen resume case where Android focused WEzterm but
   the WebView never opened a fresh ttyd HTTP/WebSocket connection.
 - The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a
@@ -728,6 +728,10 @@ Android users use the native APK.
   WHY: real APK screenshots showed the remaining "Opened ..." popup and upload
   success feedback covering/freezing the bottom typing/upload area even after
   v2.55/v2.56 removed the first success-toast paths.
+- v2.58 adds a compact native active-session title strip above the phone
+  controls. WHY: the desktop tmux title bar is not visible in the APK, and the
+  operator needs a constant target check before typing or sending without
+  scrolling to the top of the terminal.
 - v2.11 fixes the Active Sessions dotted-field regression that returned after
   v2.10. The APK keeps passive tab switching and does not auto-open the
   composer/keyboard, but the xterm scrubber now hides lower-screen blank-backed

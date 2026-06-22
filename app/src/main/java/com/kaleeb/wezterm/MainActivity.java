@@ -32,6 +32,7 @@ import android.text.InputType;
 import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.view.HapticFeedbackConstants;
+import android.view.Choreographer;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.VelocityTracker;
@@ -113,7 +114,7 @@ public class MainActivity extends Activity {
     private static final String PREFS = "wezterm";
     private static final String PREF_PIN_REQUESTED = "pin_requested";
     private static final String PREF_FONT_SIZE = "font_size";
-    private static final String APP_VERSION_NAME = "2.58";
+    private static final String APP_VERSION_NAME = "2.59";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
             | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
@@ -137,6 +138,8 @@ public class MainActivity extends Activity {
     private static final int HISTORY_DRAG_SLOW_PENDING_MAX_REPEATS = 2;
     private static final int HISTORY_DRAG_FAST_MOVE_REPEATS = 6;
     private static final int HISTORY_DRAG_FLING_MOVE_REPEATS = 10;
+    private static final long TOUCH_SCROLL_RENDER_PULSE_MS = 64;
+    private static final long TOUCH_SCROLL_RENDER_PULSE_WINDOW_MS = 850;
     private static final float HISTORY_DRAG_RELEASE_MIN_LINES = 2f;
     private static final int TOUCH_SCROLL_LIVE_BOTTOM_SNAP_LINES = 16;
     private static final float HISTORY_DRAG_FAST_VELOCITY_PX_PER_SEC = 760f;
@@ -237,6 +240,8 @@ public class MainActivity extends Activity {
     private String pendingHistoryScrollWhere = "";
     private int pendingHistoryScrollRepeats = 0;
     private long pendingHistoryScrollGeneration = 0;
+    private boolean touchScrollRenderPulseScheduled = false;
+    private long touchScrollRenderPulseUntilMs = 0;
     private long terminalTouchGestureGeneration = 0;
     private long lastHistoryDragAtMs = 0;
     private long terminalLastHistoryDragEventAtMs = 0;
@@ -1571,39 +1576,10 @@ public class MainActivity extends Activity {
                 terminalHistoryDragActive = true;
                 terminalLastHistoryDragY = terminalTouchStartY;
                 enterReadMode();
+                keepCaptureRendererPulsingDuringTouch("touch-scroll-start");
             }
 
-            float step = event.getY() - terminalLastHistoryDragY;
-            long now = System.currentTimeMillis();
-            // WHY: v1.42 used page-sized HTTP scrolls. That could not paint
-            // continuously under a finger, so the screen appeared frozen and
-            // then jumped to a random-looking page. Use line-sized tmux
-            // copy-mode movement for drag; the explicit Scroll menu still owns
-            // jump-to-top, page-up/down, reader, and live-bottom recovery.
-            int lineThreshold = Math.max(terminalTouchSlop, dp(HISTORY_DRAG_LINE_THRESHOLD_DP));
-            if (Math.abs(step) >= lineThreshold && now - lastHistoryDragAtMs >= HISTORY_DRAG_THROTTLE_MS) {
-                int repeats = historyDragRepeats(step, lineThreshold, event);
-                terminalLastHistoryDragY = event.getY();
-                terminalLastHistoryDragEventAtMs = event.getEventTime();
-                lastHistoryDragAtMs = now;
-                String where = step > 0 ? "lineUp" : "lineDown";
-                if (terminalTouchReachedLiveBottom && "lineDown".equals(where)) {
-                    // WHY: once tmux has hit the live bottom, extra downward
-                    // finger motion has nowhere meaningful to go. Sending more
-                    // lineDown requests would re-enter/cancel copy-mode on every
-                    // MOVE and looks like a page refresh/bounce at the bottom.
-                    // Swallow only the continued downward edge; reversing upward
-                    // still immediately re-enters tmux history.
-                    terminalLastHistoryDragY = event.getY();
-                    terminalLastHistoryDragEventAtMs = event.getEventTime();
-                    lastHistoryDragAtMs = now;
-                    return true;
-                }
-                if ("lineUp".equals(where)) {
-                    terminalTouchReachedLiveBottom = false;
-                }
-                scrollTerminalFromTouch(where, repeats);
-            }
+            processHistoryDragEventSamples(event);
             return true;
         }
 
@@ -1619,6 +1595,7 @@ public class MainActivity extends Activity {
             boolean shouldRestoreLiveBottomFromRelease = false;
             if (action == MotionEvent.ACTION_UP && terminalHistoryDragActive) {
                 shouldRestoreLiveBottomFromRelease = dispatchHistoryReleaseFling(event);
+                keepCaptureRendererPulsingDuringTouch("touch-scroll-release");
             }
             boolean shouldRestoreTyping = action == MotionEvent.ACTION_UP
                     && startedInHistoryViewport
@@ -1806,13 +1783,58 @@ public class MainActivity extends Activity {
         terminalForwardingTouchToViewer = false;
     }
 
-    private int historyDragRepeats(float step, int lineThreshold, MotionEvent event) {
+    private void processHistoryDragEventSamples(MotionEvent event) {
+        // WHY: Android may batch multiple MOVE coordinates into one MotionEvent.
+        // Using only the final point makes the laptop/tmux state look smooth while
+        // the APK jumps in larger chunks. Process historical Y samples with their
+        // own event times, but keep the protected `/touch-scroll` throttle and
+        // repeat caps so a fast flick is still fast and a slow drag stays readable.
+        int historySize = event.getHistorySize();
+        for (int i = 0; i < historySize; i++) {
+            processHistoryDragSample(event.getHistoricalY(i), event.getHistoricalEventTime(i));
+        }
+        processHistoryDragSample(event.getY(), event.getEventTime());
+    }
+
+    private void processHistoryDragSample(float y, long eventTimeMs) {
+        float step = y - terminalLastHistoryDragY;
+        // WHY: v1.42 used page-sized HTTP scrolls. That could not paint
+        // continuously under a finger, so the screen appeared frozen and then
+        // jumped to a random-looking page. Use line-sized tmux copy-mode movement
+        // for drag; the explicit Scroll menu still owns jump-to-top, page-up/down,
+        // reader, and live-bottom recovery.
+        int lineThreshold = Math.max(terminalTouchSlop, dp(HISTORY_DRAG_LINE_THRESHOLD_DP));
+        if (Math.abs(step) < lineThreshold
+                || eventTimeMs - lastHistoryDragAtMs < HISTORY_DRAG_THROTTLE_MS) {
+            return;
+        }
+        int repeats = historyDragRepeats(step, lineThreshold, eventTimeMs);
+        terminalLastHistoryDragY = y;
+        terminalLastHistoryDragEventAtMs = eventTimeMs;
+        lastHistoryDragAtMs = eventTimeMs;
+        String where = step > 0 ? "lineUp" : "lineDown";
+        if (terminalTouchReachedLiveBottom && "lineDown".equals(where)) {
+            // WHY: once tmux has hit the live bottom, extra downward finger motion
+            // has nowhere meaningful to go. Sending more lineDown requests would
+            // re-enter/cancel copy-mode on every MOVE and looks like a page
+            // refresh/bounce at the bottom. Swallow only the continued downward
+            // edge; reversing upward still immediately re-enters tmux history.
+            return;
+        }
+        if ("lineUp".equals(where)) {
+            terminalTouchReachedLiveBottom = false;
+        }
+        keepCaptureRendererPulsingDuringTouch("touch-scroll-move");
+        scrollTerminalFromTouch(where, repeats);
+    }
+
+    private int historyDragRepeats(float step, int lineThreshold, long eventTimeMs) {
         float velocity = 0f;
         if (terminalVelocityTracker != null) {
             terminalVelocityTracker.computeCurrentVelocity(1000);
             velocity = Math.abs(terminalVelocityTracker.getYVelocity());
         }
-        long eventDeltaMs = Math.max(1, event.getEventTime() - terminalLastHistoryDragEventAtMs);
+        long eventDeltaMs = Math.max(1, eventTimeMs - terminalLastHistoryDragEventAtMs);
         float segmentVelocity = Math.abs(step) * 1000f / eventDeltaMs;
         velocity = Math.max(velocity, segmentVelocity);
         float distanceLines = Math.abs(step) / Math.max(1f, lineThreshold);
@@ -2030,6 +2052,7 @@ public class MainActivity extends Activity {
                 keepReadModeIfCurrent(readModeGeneration);
             }
             refreshCaptureRendererSoon("touch-scroll");
+            keepCaptureRendererPulsingDuringTouch("touch-scroll-response");
             drainPendingHistoryScroll();
         }, exc -> {
             historyScrollRequestInFlight = false;
@@ -2076,6 +2099,61 @@ public class MainActivity extends Activity {
             return;
         }
         sendHistoryScrollFromTouch(nextWhere, Math.max(1, nextRepeats), nextGeneration);
+    }
+
+    private void keepCaptureRendererPulsingDuringTouch(String reason) {
+        if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            return;
+        }
+        // WHY: the phone-visible terminal is a read-only capture renderer. Tmux can
+        // scroll smoothly on the laptop while the APK looks choppy if the renderer
+        // waits for the 550 ms poll or a single delayed refresh. Keep `/touch-scroll`
+        // itself lightweight, but run a short frame-paced repaint loop during an
+        // active finger gesture so slow drags show intermediate rows and fast flicks
+        // still use the existing VelocityTracker/release-burst path.
+        long now = System.currentTimeMillis();
+        touchScrollRenderPulseUntilMs = Math.max(
+                touchScrollRenderPulseUntilMs,
+                now + TOUCH_SCROLL_RENDER_PULSE_WINDOW_MS
+        );
+        if (touchScrollRenderPulseScheduled) {
+            return;
+        }
+        touchScrollRenderPulseScheduled = true;
+        postCaptureRendererPulseFrame(reason);
+    }
+
+    private void postCaptureRendererPulseFrame(String reason) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            Choreographer.getInstance().postFrameCallback(frameTimeNanos ->
+                    runCaptureRendererTouchPulse(reason));
+            return;
+        }
+        uiHandler.post(() -> runCaptureRendererTouchPulse(reason));
+    }
+
+    private void runCaptureRendererTouchPulse(String reason) {
+        touchScrollRenderPulseScheduled = false;
+        if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (now > touchScrollRenderPulseUntilMs) {
+            return;
+        }
+        refreshCaptureRendererNow(reason);
+        boolean stillTouchScrolling = terminalHistoryDragActive
+                || historyScrollRequestInFlight
+                || !pendingHistoryScrollWhere.isEmpty()
+                || terminalBottomRestoreInFlight;
+        if (!stillTouchScrolling) {
+            return;
+        }
+        touchScrollRenderPulseScheduled = true;
+        uiHandler.postDelayed(
+                () -> postCaptureRendererPulseFrame(reason),
+                TOUCH_SCROLL_RENDER_PULSE_MS
+        );
     }
 
     private void clearPendingHistoryScroll() {
@@ -6297,6 +6375,14 @@ public class MainActivity extends Activity {
     }
 
     private void refreshCaptureRendererSoon(String reason) {
+        refreshCaptureRenderer(reason, true);
+    }
+
+    private void refreshCaptureRendererNow(String reason) {
+        refreshCaptureRenderer(reason, false);
+    }
+
+    private void refreshCaptureRenderer(String reason, boolean includeFollowUp) {
         if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
             return;
         }
@@ -6305,13 +6391,15 @@ public class MainActivity extends Activity {
         // regressed by polling slowly and looking frozen after those controls.
         // Refresh only the capture renderer object; never reload the WebView,
         // focus xterm, or resize tmux from this path.
+        String followUp = includeFollowUp ? "setTimeout(run,180);" : "";
         webView.evaluateJavascript(
                 "(function(){"
                         + "try{"
                         + "var r=window.__mantisCaptureRenderer;"
                         + "if(r&&typeof r.refresh==='function'){"
-                        + "setTimeout(function(){r.refresh();},30);"
-                        + "setTimeout(function(){r.refresh();},180);"
+                        + "var run=function(){r.refresh();};"
+                        + "if(typeof requestAnimationFrame==='function'){requestAnimationFrame(run);}else{setTimeout(run,16);}"
+                        + followUp
                         + "return 'capture-refresh';"
                         + "}"
                         + "return 'not-capture';"

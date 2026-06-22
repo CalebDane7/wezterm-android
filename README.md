@@ -92,7 +92,7 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=159`, `versionName=2.58`.
+- Built checkpoint: `versionCode=160`, `versionName=2.59`.
 - v1.29 fixes the black-screen resume case where Android focused WEzterm but
   the WebView never opened a fresh ttyd HTTP/WebSocket connection.
 - The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a
@@ -732,6 +732,13 @@ Android users use the native APK.
   controls. WHY: the desktop tmux title bar is not visible in the APK, and the
   operator needs a constant target check before typing or sending without
   scrolling to the top of the terminal.
+- v2.59 smooths APK one-finger history scrolling without changing the protected
+  slow/fast flick constants. WHY: Android can batch MOVE samples and the
+  read-only capture renderer can wait on coarse polling, making the phone look
+  choppy while tmux/laptop movement is already smooth. The APK now processes
+  historical MOVE samples and runs a short frame-paced capture-renderer refresh
+  pulse during touch-scroll; `/touch-scroll` remains the lightweight tmux-only
+  path.
 - v2.11 fixes the Active Sessions dotted-field regression that returned after
   v2.10. The APK keeps passive tab switching and does not auto-open the
   composer/keyboard, but the xterm scrubber now hides lower-screen blank-backed

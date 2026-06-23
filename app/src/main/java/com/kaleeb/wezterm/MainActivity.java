@@ -2103,8 +2103,8 @@ public class MainActivity extends Activity {
                 ? terminalModeGeneration
                 : enterReadMode();
         historyScrollRequestInFlight = true;
-        String path = "/touch-scroll?where=" + urlEncode(where)
-                + "&repeat=" + Math.max(1, repeats);
+        String path = appendStableWindowQuery("/touch-scroll?where=" + urlEncode(where)
+                + "&repeat=" + Math.max(1, repeats));
         getJson(path, payload -> {
             historyScrollRequestInFlight = false;
             if (gestureGeneration != terminalTouchGestureGeneration) {

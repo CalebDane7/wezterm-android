@@ -1222,6 +1222,7 @@ require "$MAIN" 'HISTORY_DRAG_FLING_VELOCITY_PX_PER_SEC' "fast flick threshold m
 require "$MAIN" 'terminalTouchGestureGeneration' "touch scrolling must generation-cancel stale delayed responses"
 require "$MAIN" 'pendingHistoryScrollGeneration' "pending touch scrolls must belong to the current gesture"
 require "$MAIN" 'sendHistoryScrollFromTouch(where, boundedRepeats, gestureGeneration)' "touch scrolling must batch through bounded generation-tagged server repeats"
+require "$MAIN" 'String path = appendStableWindowQuery("/touch-scroll?where=" + urlEncode(where)' "touch scrolling must target the stable phone windowId instead of whichever tmux window is selected"
 require "$MAIN" 'String where = step > 0 ? "lineUp" : "lineDown"' "touch scroll must use line-sized server movement, not page jumps"
 require "$MAIN" 'scrollTerminalFromTouch(where, repeats)' "touch scroll must dispatch the explicit line-sized direction"
 require "$MAIN" 'dispatchHistoryReleaseFling(event)' "fast flick must add a bounded ACTION_UP burst so it moves farther than slow drag"

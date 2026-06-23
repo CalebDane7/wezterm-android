@@ -2413,7 +2413,11 @@ public class MainActivity extends Activity {
         // drags use this server path now; do not replace it with WebView scroll
         // because that only moves the browser viewport and brought back the
         // "can't reach the real top" loop.
-        String path = "/scroll?where=" + urlEncode(where);
+        // WHY: visible Scroll menu actions must target the same stable tmux
+        // window as touch-scroll. A bare `/scroll` follows whichever pane
+        // `main_phone` currently selected and reintroduces the cross-lane
+        // scroll drift that made Page up/Page down look broken on the APK.
+        String path = appendStableWindowQuery("/scroll?where=" + urlEncode(where));
         control(path, message, refocusTerminal);
     }
 
@@ -3347,7 +3351,7 @@ public class MainActivity extends Activity {
         // must not run the heavier `/scroll?where=bottom` recovery or reload/focus
         // helpers. Those helpers are still available through explicit Scroll ->
         // live bottom and Refresh, where a visible recovery jump is intentional.
-        getJson("/touch-scroll?where=bottom&repeat=1", payload -> {
+        getJson(appendStableWindowQuery("/touch-scroll?where=bottom&repeat=1"), payload -> {
             terminalBottomRestoreInFlight = false;
             if (gestureGeneration != terminalTouchGestureGeneration) {
                 return;

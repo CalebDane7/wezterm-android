@@ -118,7 +118,7 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_FILENAME_PREFIX = "upload_filename_";
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
-    private static final String APP_VERSION_NAME = "2.61";
+    private static final String APP_VERSION_NAME = "2.62";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
             | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
@@ -963,6 +963,7 @@ public class MainActivity extends Activity {
         ));
         topRow.addView(toolbarNavigationButton("Active", v -> showActiveSessions()));
         topRow.addView(toolbarNavigationButton("Old", v -> showOldSessions()));
+        topRow.addView(toolbarNavigationButton("Workspace", v -> showWorkspaces()));
         topRow.addView(toolbarNavigationButton("New", v ->
                 controlAndSettleLiveBottom("/new?fast=1", "", "new-session")));
         // WHY: during upgrades, the user should not have to close the Android
@@ -1074,12 +1075,11 @@ public class MainActivity extends Activity {
             installPlainToolbarTapHandler(button);
         }
         // WHY: 10-11sp toolbar labels were a logged "font too small" complaint on
-        // QHD. Raised to 12-13sp for faster glance-and-tap. The length>9 step-down is
-        // kept so the single long label `Copy/Paste` drops one notch (12sp) to stay
-        // inside its narrow Row-2 column; setSingleLine means any overflow ellipsizes,
-        // and prove-phone-menu-ui.sh greps the exact label `Copy/Paste`, so a clip
-        // would fail that proof rather than ship silently.
-        button.setTextSize(label.length() > 9 ? 12 : 13);
+        // QHD. Raised to 12-13sp for faster glance-and-tap. The >=9 step-down is
+        // kept so `Workspace` and `Copy/Paste` stay readable inside narrow columns;
+        // setSingleLine means any overflow ellipsizes, and prove-phone-menu-ui.sh
+        // greps the exact labels so a clip fails proof rather than shipping silently.
+        button.setTextSize(label.length() >= 9 ? 12 : 13);
         button.setSingleLine(true);
         button.setIncludeFontPadding(false);
         button.setMinWidth(0);
@@ -4515,6 +4515,17 @@ public class MainActivity extends Activity {
         );
     }
 
+    private void showWorkspaces() {
+        hideDockedPromptComposerForNavigation("workspace-dialog");
+        // WHY: the phone Workspace button must be the same user-facing restore
+        // surface as desktop `[Workspace]` and `/web`, not a backend-only command.
+        // The control server owns snapshot recommendation so Android cannot drift
+        // into loading a reduced post-restart `last.json`.
+        getJsonWithRetry("/workspace-list?limit=40", this::showWorkspaceDialog, exc ->
+                toast("WEzterm control is not reachable")
+        );
+    }
+
     private void showCrashedSessions() {
         hideDockedPromptComposerForNavigation("crashed-dialog");
         getJsonWithRetry("/crashed-sessions", this::showCrashedSessionsDialog, exc ->
@@ -4696,6 +4707,60 @@ public class MainActivity extends Activity {
                 .show();
         dialogRef[0] = dialog;
         scrollView.post(() -> scrollView.scrollTo(0, 0));
+    }
+
+    private void showWorkspaceDialog(JSONObject payload) throws Exception {
+        JSONArray snapshots = payload.optJSONArray("snapshots");
+        ScrollView scrollView = new ScrollView(this);
+        scrollView.setFocusable(false);
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        list.setFocusable(false);
+        list.setPadding(dp(8), dp(6), dp(8), dp(6));
+        scrollView.addView(list);
+
+        final AlertDialog[] dialogRef = new AlertDialog[1];
+        addWorkspaceDialogActions(list, dialogRef);
+
+        String recommendedReason = payload.optString("recommendedReason", "");
+        if (!recommendedReason.trim().isEmpty()) {
+            TextView note = new TextView(this);
+            note.setText("Default restore: " + recommendedReason);
+            note.setTextSize(12);
+            note.setTextColor(Color.rgb(166, 173, 200));
+            note.setPadding(0, 0, 0, dp(8));
+            list.addView(note);
+        }
+
+        if (snapshots == null || snapshots.length() == 0) {
+            addSectionHeader(list, "No workspace snapshots found", 0);
+        } else {
+            for (int i = 0; i < snapshots.length(); i++) {
+                addWorkspaceSnapshotRow(list, snapshots.getJSONObject(i), dialogRef);
+            }
+        }
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Workspace")
+                .setView(scrollView)
+                .setNegativeButton("Cancel", null)
+                .show();
+        dialogRef[0] = dialog;
+        scrollView.post(() -> scrollView.scrollTo(0, 0));
+    }
+
+    private void addWorkspaceDialogActions(LinearLayout list, AlertDialog[] dialogRef) {
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.setPadding(0, 0, 0, dp(8));
+        actions.addView(activeDialogActionButton("Save", v -> saveWorkspaceAndReopenDialog(dialogRef)));
+        actions.addView(activeDialogActionButton("Close out", v -> confirmCloseOutWorkspace(dialogRef)));
+        actions.addView(activeDialogActionButton("Cancel", v -> {
+            if (dialogRef[0] != null) {
+                dialogRef[0].dismiss();
+            }
+        }));
+        list.addView(actions);
     }
 
     private void showCrashedSessionsDialog(JSONObject payload) throws Exception {
@@ -5103,6 +5168,87 @@ public class MainActivity extends Activity {
         list.addView(row);
     }
 
+    private void addWorkspaceSnapshotRow(
+            LinearLayout list,
+            JSONObject snapshot,
+            AlertDialog[] dialogRef
+    ) {
+        String path = snapshot.optString("path", "");
+        String title = workspaceSnapshotTitle(snapshot);
+        String detail = workspaceSnapshotDetail(snapshot);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(0, dp(3), 0, dp(3));
+
+        LinearLayout openPanel = new LinearLayout(this);
+        openPanel.setOrientation(LinearLayout.VERTICAL);
+        openPanel.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        openPanel.setPadding(dp(10), dp(8), dp(10), dp(8));
+        setTouchableBackground(openPanel, Color.rgb(49, 50, 68), Color.rgb(137, 180, 250));
+        openPanel.setClickable(true);
+        openPanel.setOnClickListener(v -> {
+            flashTap(v);
+            openWorkspaceSnapshot(path, title, dialogRef);
+        });
+
+        TextView titleText = new TextView(this);
+        titleText.setText(title);
+        titleText.setTextSize(15);
+        titleText.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        titleText.setTextColor(snapshot.optBoolean("isRecommended", false)
+                ? Color.rgb(166, 227, 161)
+                : Color.rgb(205, 214, 244));
+        titleText.setSingleLine(false);
+        titleText.setMaxLines(Integer.MAX_VALUE);
+        titleText.setEllipsize(null);
+        titleText.setIncludeFontPadding(false);
+        titleText.setHorizontallyScrolling(false);
+
+        TextView detailText = new TextView(this);
+        detailText.setText(detail);
+        detailText.setTextSize(12);
+        detailText.setTextColor(Color.rgb(166, 173, 200));
+        detailText.setSingleLine(false);
+        detailText.setMaxLines(3);
+        detailText.setIncludeFontPadding(false);
+
+        openPanel.addView(titleText, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+        openPanel.addView(detailText, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+
+        Button load = new Button(this);
+        load.setText("Load");
+        load.setAllCaps(false);
+        load.setTextSize(12);
+        load.setTextColor(Color.rgb(30, 30, 46));
+        setTouchableBackground(load, Color.rgb(166, 227, 161), Color.rgb(148, 226, 213));
+        load.setPadding(dp(3), 0, dp(3), 0);
+        load.setOnClickListener(v -> {
+            flashTap(v);
+            openWorkspaceSnapshot(path, title, dialogRef);
+        });
+
+        row.addView(openPanel, new LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1
+        ));
+        LinearLayout.LayoutParams loadParams = new LinearLayout.LayoutParams(
+                dp(92),
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        load.setMinHeight(dp(72));
+        loadParams.setMargins(dp(6), 0, 0, 0);
+        row.addView(load, loadParams);
+        list.addView(row);
+    }
+
     private void addCrashedSessionRow(
             LinearLayout list,
             JSONObject session,
@@ -5271,6 +5417,85 @@ public class MainActivity extends Activity {
         String path = "/resume-session?fast=1&sessionId=" + urlEncode(sessionId)
                 + "&cwd=" + urlEncode(cwd);
         controlAndSettleLiveBottom(path, "", "crashed-session", title);
+    }
+
+    private String workspaceSnapshotTitle(JSONObject snapshot) {
+        return workspaceSnapshotTime(snapshot) + " · " + workspaceSnapshotLabel(snapshot);
+    }
+
+    private String workspaceSnapshotTime(JSONObject snapshot) {
+        String createdAt = snapshot.optString("createdAt", "");
+        if (createdAt.trim().isEmpty()) {
+            return "unknown";
+        }
+        return createdAt.replace("T", " ").substring(0, Math.min(19, createdAt.length()));
+    }
+
+    private String workspaceSnapshotLabel(JSONObject snapshot) {
+        String reason = snapshot.optString("saveReason", "");
+        if (snapshot.optBoolean("isRecommended", false)) {
+            return "Recommended workspace";
+        }
+        if (snapshot.optBoolean("isLatest", false)) {
+            return "autosave".equals(reason) ? "Latest autosave" : "Latest workspace";
+        }
+        if ("workspace-close-out-all".equals(reason) || "close-out".equals(reason)) {
+            return "Close-out save";
+        }
+        return reason.trim().isEmpty() ? "Saved workspace" : reason;
+    }
+
+    private String workspaceSnapshotDetail(JSONObject snapshot) {
+        return snapshot.optInt("windowCount", 0) + " windows · "
+                + snapshot.optInt("exactRestoreCount", 0) + " exact · "
+                + snapshot.optString("path", "");
+    }
+
+    private void saveWorkspaceAndReopenDialog(AlertDialog[] dialogRef) {
+        if (dialogRef[0] != null) {
+            dialogRef[0].dismiss();
+        }
+        getJsonWithRetry("/workspace-save", payload -> showWorkspaces(), exc ->
+                toast("WEzterm control is not reachable")
+        );
+    }
+
+    private void confirmCloseOutWorkspace(AlertDialog[] dialogRef) {
+        if (dialogRef[0] != null) {
+            dialogRef[0].dismiss();
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Close out workspace?")
+                .setMessage("This saves the current workspace first, then closes the saved tmux windows and keeps a restore anchor.")
+                .setPositiveButton("Save + Close", (dialog, which) ->
+                        getJsonWithRetry("/workspace-close-out?yes=1", payload -> {
+                            if (!payload.optBoolean("ok", false)) {
+                                toast(payload.optString("error", "Workspace close-out failed"));
+                                return;
+                            }
+                            clearRememberedCloseTarget("workspace-close-out");
+                            refreshCaptureRendererSoon("workspace-close-out");
+                            scheduleToolbarStatusDotRefresh(0);
+                        }, exc -> toast("WEzterm control is not reachable"))
+                )
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void openWorkspaceSnapshot(String path, String title, AlertDialog[] dialogRef) {
+        if (path == null || path.trim().isEmpty()) {
+            toast("Workspace snapshot path missing");
+            return;
+        }
+        if (dialogRef[0] != null) {
+            dialogRef[0].dismiss();
+        }
+        // WHY: Workspace Load opens several tmux windows, then should land on the
+        // saved active tab just like Old Sessions lands on the resumed tab. Route
+        // through the Bottom-like settle path so the phone does not fire a hidden
+        // restore and leave the user staring at the previous session.
+        String requestPath = "/workspace-restore?yes=1&path=" + urlEncode(path);
+        controlAndSettleLiveBottom(requestPath, "", "workspace-restore", title);
     }
 
     private void confirmClose() {

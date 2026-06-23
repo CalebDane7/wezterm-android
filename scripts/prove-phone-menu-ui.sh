@@ -977,7 +977,7 @@ terminal = None
 buttons = []
 nav_top = None
 screen_bottom = 0
-toolbar_labels = {"Active", "Old", "New", "Refresh", "Bottom", "Scroll", "Copy/Paste", "Upload", "Close", "Start", "Stop"}
+toolbar_labels = {"Active", "Old", "Workspace", "New", "Refresh", "Bottom", "Scroll", "Copy/Paste", "Upload", "Close", "Start", "Stop"}
 composer_top = None
 
 def parse_bounds(value):
@@ -2209,7 +2209,7 @@ ensure_toolbar
 ensure_plain_toolbar
 
 echo "phone menu UI proof: toolbar labels"
-for label in Active Old New Refresh Bottom Scroll "Copy/Paste" Upload Close Start Stop; do
+for label in Active Old Workspace New Refresh Bottom Scroll "Copy/Paste" Upload Close Start Stop; do
     assert_toolbar_button_text "$label"
 done
 assert_absent "Tabs"

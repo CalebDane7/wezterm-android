@@ -17,8 +17,8 @@ See [Apple User Support](docs/apple-users.md).
 - Opens as a real Android app named `WEzterm`, not a Chrome shortcut.
 - Connects to the desktop terminal over Tailscale.
 - Shows a bottom toolbar with the primary work controls: `Active`, `Old`,
-  `New`, `Refresh`, `Scroll`, `Copy/Paste`, `Upload`, `Close`, `Start`, and
-  `Stop`.
+  `Workspace`, `New`, `Refresh`, `Scroll`, `Copy/Paste`, `Upload`, `Close`,
+  `Start`, and `Stop`.
 - Uses stable tmux window IDs for selecting and closing active sessions.
 - Orders the Active Sessions picker newest-first by tmux activity and snaps it to
   the top when opened.
@@ -92,7 +92,7 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=162`, `versionName=2.61`.
+- Built checkpoint: `versionCode=163`, `versionName=2.62`.
 - v1.29 fixes the black-screen resume case where Android focused WEzterm but
   the WebView never opened a fresh ttyd HTTP/WebSocket connection.
 - The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a
@@ -750,6 +750,11 @@ Android users use the native APK.
   foreground upload dialog; the user needs the attachment/path to remain visible
   or inspectable after refresh, navigate, return, or next-view checks without
   re-uploading, and the success/result UI must not cover immediate typing.
+- v2.62 adds a native `Workspace` toolbar button that uses the same control
+  server snapshot list as desktop `[Workspace]` and browser `/web`: Save
+  Workspace, Load a saved snapshot, and confirmed Close out of all. WHY:
+  workspace recovery is not proven if the backend works but the selector, APK,
+  or web surface does not expose the same restore action.
 - v2.11 fixes the Active Sessions dotted-field regression that returned after
   v2.10. The APK keeps passive tab switching and does not auto-open the
   composer/keyboard, but the xterm scrubber now hides lower-screen blank-backed

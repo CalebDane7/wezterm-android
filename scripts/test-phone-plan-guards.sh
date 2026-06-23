@@ -58,13 +58,13 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="162"' "current APK version must be bumped for the v2.61 upload-persistence contract"
-require "$MANIFEST" 'android:versionName="2.61"' "current APK version must be bumped for the v2.61 upload-persistence contract"
+require "$MANIFEST" 'android:versionCode="163"' "current APK version must be bumped for the v2.62 workspace control contract"
+require "$MANIFEST" 'android:versionName="2.62"' "current APK version must be bumped for the v2.62 workspace control contract"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.61";' "client /config proof must report the same v2.61 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.62";' "client /config proof must report the same v2.62 APK contract as the manifest"
 require "$MAIN" 'http://100.113.254.7:8089/terminal-renderer' "APK visual URL must use the non-resizing control-server capture renderer"
 require "$MAIN" 'APK_CAPTURE_RENDERER_COLS = 132' "APK capture renderer must preserve the readable 132-column logical grid"
 require "$MAIN" 'refreshCaptureRendererSoon' "APK scroll controls must repaint the capture renderer without reloading or resizing tmux"
@@ -130,7 +130,7 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=162`, `versionName=2.61`.' "README checkpoint must match the installed v2.61 APK"
+    require "$README" 'Built checkpoint: `versionCode=163`, `versionName=2.62`.' "README checkpoint must match the installed v2.62 APK"
     require "$README" 'removes the automatic upload-success dialog' "README must document the current upload popup-block fix"
     require "$README" 'v2.60 tightens that capture-renderer pulse' "README must document the current 16 ms touch-scroll renderer cadence fix"
     require "$README" 'v2.59 smooths APK one-finger history scrolling' "README must document the current historical-sample/frame-paced touch-scroll fix"
@@ -287,8 +287,9 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.61' "install page must advertise the current v2.61 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>162</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.62' "install page must advertise the current v2.62 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>163</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'Workspace Save/Load/Close' "install page must mention the v2.62 workspace control fix"
     require "$INSTALL_PAGE" 'per-window upload persistence' "install page must mention the v2.61 upload persistence fix"
     require "$INSTALL_PAGE" 'modal-free upload completion' "install page must mention the v2.61 upload popup-block fix"
     require "$INSTALL_PAGE" 'historical MOVE sample handling' "install page must mention the v2.59 historical MOVE sample fix"
@@ -391,7 +392,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.61 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.62 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"
@@ -576,7 +577,7 @@ if [ -f "$MENU_UI_PROOF" ]; then
     require "$MENU_UI_PROOF" 'assert_installed_package_version' "menu UI proof must reject stale installed APKs before testing phone behavior"
     require "$MENU_UI_PROOF" 'versionCode=$EXPECTED_VERSION_CODE' "menu UI proof must compare the installed package versionCode to the source manifest"
     require "$MENU_UI_PROOF" 'versionName=$EXPECTED_VERSION_NAME' "menu UI proof must compare the installed package versionName to the source manifest"
-    require "$MENU_UI_PROOF" 'for label in Active Old New Refresh Bottom Scroll "Copy/Paste" Upload Close Start Stop' "menu UI proof must check every bottom toolbar label"
+    require "$MENU_UI_PROOF" 'for label in Active Old Workspace New Refresh Bottom Scroll "Copy/Paste" Upload Close Start Stop' "menu UI proof must check every bottom toolbar label"
     require "$MENU_UI_PROOF" 'tap_visible_text_from_current_dump "Old"' "menu UI proof must open Old Sessions from a stable toolbar dump"
     require "$MENU_UI_PROOF" 'wait_for_visible_text "Old Sessions" "Old Sessions"' "menu UI proof must wait for the Old Sessions dialog after tapping Old"
     require "$MENU_UI_PROOF" 'wait_for_visible_text "Resume" "Resume"' "menu UI proof must wait for old-session resume actions"
@@ -750,7 +751,7 @@ require "$MAIN" 'applyToolbarActionRole(stopButton, Color.rgb(243, 139, 168)' "S
 require "$MAIN" 'applyToolbarActionRole(closeButton, Color.rgb(243, 139, 168)' "Close must keep the red destructive role"
 require "$MAIN" 'button.setTextColor(Color.rgb(30, 30, 46))' "role-colored toolbar buttons must keep dark readable label text"
 require "$MAIN" 'button.setMinHeight(dp(48))' "toolbar buttons must keep the 48dp touch target floor from the visual audit"
-require "$MAIN" 'button.setTextSize(label.length() > 9 ? 12 : 13)' "toolbar labels must keep the readable mobile text size with long-label step-down"
+require "$MAIN" 'button.setTextSize(label.length() >= 9 ? 12 : 13)' "toolbar labels must keep the readable mobile text size with long-label step-down"
 require "$MAIN" 'dot.setTextSize(14)' "toolbar status dot must keep the larger legible visual-audit size"
 require_absent "$MAIN" 'button.setMinHeight(dp(44))' "toolbar touch targets must not regress to the old 44dp floor"
 require_absent "$MAIN" 'dot.setTextSize(10)' "toolbar status dot must not regress to the old tiny 10sp glyph"
@@ -1054,6 +1055,12 @@ require "$MAIN" 'restoreDockedPromptComposerFocus("window-focus")' "window-focus
 require "$MAIN" 'restoreDockedPromptComposerFocus("resume")' "resume must preserve visible native composer focus instead of stealing xterm focus"
 require "$MAIN" 'toolbarNavigationButton("Active"' "Active toolbar navigation must dismiss the native composer before opening sessions"
 require "$MAIN" 'toolbarNavigationButton("Old"' "Old Sessions toolbar navigation must dismiss the native composer before opening sessions"
+require "$MAIN" 'toolbarNavigationButton("Workspace", v -> showWorkspaces())' "Workspace toolbar navigation must expose the shared workspace picker"
+require "$MAIN" 'getJsonWithRetry("/workspace-list?limit=40"' "Workspace picker must use the shared server snapshot list"
+require "$MAIN" '"/workspace-restore?yes=1&path="' "Workspace Load must call the shared restore endpoint"
+require "$MAIN" '"/workspace-save"' "Workspace Save must call the shared save endpoint"
+require "$MAIN" '"/workspace-close-out?yes=1"' "Workspace Close out must call the shared close-out endpoint"
+require "$MAIN" 'reduced post-restart `last.json`' "Workspace WHY comment must preserve the reduced-last.json root cause"
 require "$MAIN" 'hideDockedPromptComposerForNavigation("toolbar-' "toolbar navigation must preserve drafts while dismissing the composer"
 require "$MAIN" 'fire on ACTION_DOWN before Samsung' "plain toolbar tap WHY comment must preserve the IME ACTION_UP cancellation fix"
 require "$MAIN" 'terminalBodyTapSuppressedUntilMs' "Active switch must suppress row-tap ACTION_UP fall-through into tap-to-type"
@@ -1791,7 +1798,7 @@ if [ -f "$BROWSER_PARITY_PROOF" ]; then
     require "$BROWSER_PARITY_PROOF" 'mantis-phone-control-server' "browser proof must use the live Mantis control server by default"
     require "$BROWSER_PARITY_PROOF" '.mantis/phone-terminal/web-control-token' "browser proof must use the live Mantis web token by default"
     require "$BROWSER_PARITY_PROOF" 'split-brain auth layer' "browser proof must document why legacy web tokens are forbidden"
-    require "$BROWSER_PARITY_PROOF" 'for label in Active Old New Refresh Bottom Scroll "Copy/Paste" Upload Close Start Stop' "browser proof must verify all APK-equivalent toolbar labels"
+    require "$BROWSER_PARITY_PROOF" 'for label in Active Old Workspace New Refresh Bottom Scroll "Copy/Paste" Upload Close Start Stop' "browser proof must verify all APK-equivalent toolbar labels"
     require "$BROWSER_PARITY_PROOF" 'User-Agent: Mozilla/5.0' "browser proof must test browser-like requests, not only curl/API calls"
     require "$BROWSER_PARITY_PROOF" 'X-WEzTerm-CSRF' "browser proof must prove the CSRF header is required for browser mutations"
     require "$BROWSER_PARITY_PROOF" 'wildcard CORS is still live' "browser proof must fail if wildcard CORS returns"

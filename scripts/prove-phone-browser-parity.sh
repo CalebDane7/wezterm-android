@@ -222,7 +222,7 @@ agent-browser --session "$BROWSER_SESSION" open "$BROWSER_CONTROL_URL/web?token=
 agent-browser --session "$BROWSER_SESSION" wait 2500 >/dev/null
 agent-browser --session "$BROWSER_SESSION" screenshot "$SCREENSHOT" >/dev/null
 agent-browser --session "$BROWSER_SESSION" snapshot -i > /tmp/wezterm-web-snapshot.txt
-for label in Active Old New Refresh Bottom Scroll "Copy/Paste" Upload Close Start Stop; do
+for label in Active Old Workspace New Refresh Bottom Scroll "Copy/Paste" Upload Close Start Stop; do
     grep -Fq "$label" /tmp/wezterm-web-snapshot.txt
 done
 browser_eval '(() => { const frame = document.querySelector("#terminal-frame"); if (!frame || !frame.src.includes(":8088")) throw new Error("terminal iframe did not load ttyd"); return frame.src; })()' >/tmp/wezterm-web-frame.txt

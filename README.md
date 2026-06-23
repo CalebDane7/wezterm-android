@@ -92,7 +92,7 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=165`, `versionName=2.64`.
+- Built checkpoint: `versionCode=166`, `versionName=2.65`.
 - v1.29 fixes the black-screen resume case where Android focused WEzterm but
   the WebView never opened a fresh ttyd HTTP/WebSocket connection.
 - The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a
@@ -759,6 +759,13 @@ Android users use the native APK.
   the title/toolbar chrome after the rejected v2.63 ordering change. WHY: the
   text board must stay above the controls, and the keyboard-hidden state must
   not leave a separate black dead zone below oversized buttons.
+- v2.65 keeps the terminal's real live cursor row visible while the native
+  composer and Samsung keyboard are open. The APK pulses the read-only capture
+  renderer after composer/Bottom layout changes, the control server marks tmux's
+  live cursor row before blank-tail trimming, and Android navigation bars use
+  transient immersive hide instead of a permanent dead strip under the toolbar.
+  WHY: the user needs to see the terminal bottom where input lands, not only the
+  messages after Send, and the earlier toolbar-colored strip still wasted space.
 - v2.11 fixes the Active Sessions dotted-field regression that returned after
   v2.10. The APK keeps passive tab switching and does not auto-open the
   composer/keyboard, but the xterm scrubber now hides lower-screen blank-backed

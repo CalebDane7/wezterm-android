@@ -40,6 +40,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewConfiguration;
 import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.view.Window;
 import android.view.WindowManager;
 import android.view.animation.AccelerateDecelerateInterpolator;
@@ -118,7 +119,7 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_FILENAME_PREFIX = "upload_filename_";
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
-    private static final String APP_VERSION_NAME = "2.64";
+    private static final String APP_VERSION_NAME = "2.65";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
             | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
@@ -269,6 +270,7 @@ public class MainActivity extends Activity {
     private long toolbarStatusGeneration = 0;
     private long terminalWakeRetryGeneration = 0;
     private long lastWakeOnLanAtMs = 0;
+    private long lastNavigationHideAtMs = 0;
     private int terminalUrlIndex = 0;
     private String activeTerminalBaseUrl = TERMINAL_URL;
     private String activeControlBaseUrl = CONTROL_URL;
@@ -325,6 +327,7 @@ public class MainActivity extends Activity {
         if (getIntent().getBooleanExtra("pin_shortcut", false)) {
             requestHomeShortcutOnce();
         }
+        hideNavigationDeadStrip("create");
         wakeLaptopForTerminal("app-open");
         loadTerminal();
         handleIncomingMediaShare(getIntent());
@@ -421,6 +424,7 @@ public class MainActivity extends Activity {
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus && webView != null) {
+            hideNavigationDeadStrip("window-focus");
             if (isDockedPromptComposerVisible()) {
                 restoreDockedPromptComposerFocus("window-focus");
             } else {
@@ -1363,6 +1367,44 @@ public class MainActivity extends Activity {
             // nav strip is visually attached instead of a separate black spacer.
             window.setNavigationBarColor(Color.rgb(24, 24, 37));
         }
+        hideNavigationDeadStrip("configure-window");
+    }
+
+    private void hideNavigationDeadStrip(String reason) {
+        Window window = getWindow();
+        if (window == null) {
+            return;
+        }
+        View decor = window.getDecorView();
+        if (decor == null) {
+            return;
+        }
+        // WHY: matching the navigation-bar color still left a full Android nav
+        // region below the toolbar that the user read as wasted black space. Use
+        // Android's immersive navigation-bar API with transient swipe reveal so
+        // the APK buttons occupy the actual bottom without a permanent spacer.
+        long now = System.currentTimeMillis();
+        boolean requestInsets = now - lastNavigationHideAtMs > 900;
+        lastNavigationHideAtMs = now;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowInsetsController controller = window.getInsetsController();
+            if (controller != null) {
+                controller.setSystemBarsBehavior(
+                        WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                );
+                controller.hide(WindowInsets.Type.navigationBars());
+            }
+            if (requestInsets) {
+                decor.post(decor::requestApplyInsets);
+            }
+            return;
+        }
+        decor.setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        );
     }
 
     private void keepScreenAwakeForActiveTerminal() {
@@ -7922,6 +7964,9 @@ public class MainActivity extends Activity {
             if (params != null) {
                 params.height = dp(TOOLBAR_HEIGHT_DP) + bottom;
                 toolbar.setLayoutParams(params);
+            }
+            if (keyboardReserve == 0) {
+                view.post(() -> hideNavigationDeadStrip("insets-no-keyboard"));
             }
             return insets;
         });

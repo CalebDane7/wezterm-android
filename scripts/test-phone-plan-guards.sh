@@ -58,13 +58,16 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="165"' "current APK version must be bumped for the v2.64 bottom-viewport visibility contract"
-require "$MANIFEST" 'android:versionName="2.64"' "current APK version must be bumped for the v2.64 bottom-viewport visibility contract"
+require "$MANIFEST" 'android:versionCode="166"' "current APK version must be bumped for the v2.65 bottom-cursor visibility contract"
+require "$MANIFEST" 'android:versionName="2.65"' "current APK version must be bumped for the v2.65 bottom-cursor visibility contract"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.64";' "client /config proof must report the same v2.64 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.65";' "client /config proof must report the same v2.65 APK contract as the manifest"
+require "$MAIN" 'refreshCaptureRendererForLayoutChange' "composer/Bottom layout changes must pulse the capture renderer so the live cursor row repaints above the keyboard"
+require "$MAIN" 'hideNavigationDeadStrip' "APK must hide the permanent Android navigation-strip dead space below the toolbar"
+require "$MAIN" 'BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE' "hidden navigation bars must remain recoverable by swipe, not hard-disabled"
 require "$MAIN" 'http://100.113.254.7:8089/terminal-renderer' "APK visual URL must use the non-resizing control-server capture renderer"
 require "$MAIN" 'APK_CAPTURE_RENDERER_COLS = 132' "APK capture renderer must preserve the readable 132-column logical grid"
 require "$MAIN" 'refreshCaptureRendererSoon' "APK scroll controls must repaint the capture renderer without reloading or resizing tmux"
@@ -130,7 +133,7 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=165`, `versionName=2.64`.' "README checkpoint must match the installed v2.64 APK"
+    require "$README" 'Built checkpoint: `versionCode=166`, `versionName=2.65`.' "README checkpoint must match the installed v2.65 APK"
     require "$README" 'removes the automatic upload-success dialog' "README must document the current upload popup-block fix"
     require "$README" 'v2.60 tightens that capture-renderer pulse' "README must document the current 16 ms touch-scroll renderer cadence fix"
     require "$README" 'v2.59 smooths APK one-finger history scrolling' "README must document the current historical-sample/frame-paced touch-scroll fix"
@@ -287,12 +290,13 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.64' "install page must advertise the current v2.64 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>165</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.65' "install page must advertise the current v2.65 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>166</code>' "install page versionCode must match the manifest"
     require "$INSTALL_PAGE" 'Workspace Save/Load/Close' "install page must mention the v2.62 workspace control fix"
     require "$INSTALL_PAGE" 'composer-above-buttons layout' "install page must mention the restored composer-above-buttons layout"
-    require "$INSTALL_PAGE" 'compact v2.64 toolbar chrome' "install page must mention the compact bottom toolbar fix"
-    require "$INSTALL_PAGE" 'toolbar-colored Android navigation strip' "install page must mention the no-black-bottom nav-strip fix"
+    require "$INSTALL_PAGE" 'compact v2.65 toolbar chrome' "install page must mention the compact bottom toolbar fix"
+    require "$INSTALL_PAGE" 'capture-renderer cursor-row refresh' "install page must mention the visible bottom cursor fix"
+    require "$INSTALL_PAGE" 'immersive Android navigation strip' "install page must mention the no-dead-strip nav fix"
     require "$INSTALL_PAGE" 'per-window upload persistence' "install page must mention the v2.61 upload persistence fix"
     require "$INSTALL_PAGE" 'modal-free upload completion' "install page must mention the v2.61 upload popup-block fix"
     require "$INSTALL_PAGE" 'historical MOVE sample handling' "install page must mention the v2.59 historical MOVE sample fix"
@@ -395,7 +399,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.64 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.65 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"
@@ -755,7 +759,7 @@ require "$MAIN" 'applyToolbarActionRole(startToolbarButton, Color.rgb(166, 227, 
 require "$MAIN" 'applyToolbarActionRole(stopButton, Color.rgb(243, 139, 168)' "Stop must keep the red destructive role"
 require "$MAIN" 'applyToolbarActionRole(closeButton, Color.rgb(243, 139, 168)' "Close must keep the red destructive role"
 require "$MAIN" 'button.setTextColor(Color.rgb(30, 30, 46))' "role-colored toolbar buttons must keep dark readable label text"
-require "$MAIN" 'button.setMinHeight(dp(42))' "toolbar buttons must keep the compact v2.64 touch target after the bottom-space complaint"
+require "$MAIN" 'button.setMinHeight(dp(42))' "toolbar buttons must keep the compact v2.65 touch target after the bottom-space complaint"
 require "$MAIN" 'button.setTextSize(label.length() >= 9 ? 10 : 13)' "toolbar labels must fit long mobile toolbar labels such as Workspace"
 require "$MAIN" 'dot.setTextSize(14)' "toolbar status dot must keep the larger legible visual-audit size"
 require_absent "$MAIN" 'button.setMinHeight(dp(48))' "toolbar buttons must not return to the oversized v2.63/v2.62 chrome"

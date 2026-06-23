@@ -58,13 +58,13 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="161"' "current APK version must be bumped for the v2.60 scroll-frame cadence contract"
-require "$MANIFEST" 'android:versionName="2.60"' "current APK version must be bumped for the v2.60 scroll-frame cadence contract"
+require "$MANIFEST" 'android:versionCode="162"' "current APK version must be bumped for the v2.61 upload-persistence contract"
+require "$MANIFEST" 'android:versionName="2.61"' "current APK version must be bumped for the v2.61 upload-persistence contract"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.60";' "client /config proof must report the same v2.60 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.61";' "client /config proof must report the same v2.61 APK contract as the manifest"
 require "$MAIN" 'http://100.113.254.7:8089/terminal-renderer' "APK visual URL must use the non-resizing control-server capture renderer"
 require "$MAIN" 'APK_CAPTURE_RENDERER_COLS = 132' "APK capture renderer must preserve the readable 132-column logical grid"
 require "$MAIN" 'refreshCaptureRendererSoon' "APK scroll controls must repaint the capture renderer without reloading or resizing tmux"
@@ -130,7 +130,8 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=161`, `versionName=2.60`.' "README checkpoint must match the installed v2.60 APK"
+    require "$README" 'Built checkpoint: `versionCode=162`, `versionName=2.61`.' "README checkpoint must match the installed v2.61 APK"
+    require "$README" 'removes the automatic upload-success dialog' "README must document the current upload popup-block fix"
     require "$README" 'v2.60 tightens that capture-renderer pulse' "README must document the current 16 ms touch-scroll renderer cadence fix"
     require "$README" 'v2.59 smooths APK one-finger history scrolling' "README must document the current historical-sample/frame-paced touch-scroll fix"
     require "$README" 'v2.58 adds a compact native active-session title strip' "README must document the current title-strip target-confirmation fix"
@@ -286,8 +287,10 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.60' "install page must advertise the current v2.60 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>161</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.61' "install page must advertise the current v2.61 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>162</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'per-window upload persistence' "install page must mention the v2.61 upload persistence fix"
+    require "$INSTALL_PAGE" 'modal-free upload completion' "install page must mention the v2.61 upload popup-block fix"
     require "$INSTALL_PAGE" 'historical MOVE sample handling' "install page must mention the v2.59 historical MOVE sample fix"
     require "$INSTALL_PAGE" 'frame-paced APK touch-scroll repaint' "install page must mention the v2.59 frame-paced repaint fix"
     require "$INSTALL_PAGE" 'compact active session title strip' "install page must mention the v2.58 target-confirmation strip"
@@ -388,7 +391,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.60 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.61 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"
@@ -751,7 +754,7 @@ require "$MAIN" 'button.setTextSize(label.length() > 9 ? 12 : 13)' "toolbar labe
 require "$MAIN" 'dot.setTextSize(14)' "toolbar status dot must keep the larger legible visual-audit size"
 require_absent "$MAIN" 'button.setMinHeight(dp(44))' "toolbar touch targets must not regress to the old 44dp floor"
 require_absent "$MAIN" 'dot.setTextSize(10)' "toolbar status dot must not regress to the old tiny 10sp glyph"
-require "$MAIN" 'getJson("/active"' "toolbar status dot must use the cheap active-window status source"
+require "$MAIN" 'getJson("/active?readOnly=1"' "toolbar status dot must use the cheap read-only active-window status source"
 require "$MAIN" 'applySessionStatusDot' "toolbar dot and Active Sessions dots must share status colors/animation"
 require "$MAIN" 'ObjectAnimator.ofFloat(' "status dot pulse must use a property animator, not legacy full-view AlphaAnimation"
 require "$MAIN" 'View.ALPHA' "status dot pulse must animate only the dot alpha property"
@@ -925,8 +928,10 @@ require "$MAIN" 'success must stay silent' "session-open WHY comment must protec
 require "$MAIN" 'still covering/freezing the bottom typing/upload area' "Active-open WHY comment must preserve the exact v2.57 popup failure"
 require "$MAIN" 'private TextView sessionTitleStrip;' "APK must keep the compact native active-session title strip"
 require "$MAIN" 'constant target check before typing/sending' "session title strip WHY comment must preserve the wrong-session typing regression"
+require "$MAIN" 'getJson("/active?readOnly=1"' "APK title/status polling must use read-only active status so desktop/web tmux geometry is not resized"
 require "$MAIN" 'updateSessionTitleStrip(window)' "active polling must update the native session title strip from the server-owned active window"
 require "$MAIN" 'settleLiveBottomAfterPaste("upload-paste")' "upload Paste path must settle bottom quietly instead of showing a success Toast"
+require "$MAIN" 'settleLiveBottomAfterPaste("upload-result")' "upload completion must settle bottom quietly without a success dialog"
 require "$MAIN" 'settleLiveBottomAfterPaste("clipboard-paste")' "clipboard paste must settle bottom quietly instead of showing a success Toast"
 require "$MAIN" 'upload/clipboard paste success is visible as text in the terminal' "paste bottom-settle WHY comment must preserve why success Toasts stay disabled"
 require_absent "$MAIN" 'toast("Opened " + title)' "Active session selection must not show a normal success Toast over the typing area"
@@ -939,6 +944,8 @@ require_absent "$MAIN" 'toast("Uploaded path copied")' "upload Copy path success
 require_absent "$MAIN" 'toast("Uploading media")' "normal upload progress must not toast over the typing area"
 require_absent "$MAIN" 'toast("Uploading shared media")' "shared upload progress must not toast over the typing area"
 require_absent "$MAIN" 'toast("Uploading " + uris.size() + " files")' "multi-upload progress must not toast over the typing area"
+require_absent "$MAIN" '.setTitle("Uploaded media")' "upload success must not open a blocking foreground result dialog"
+require_absent "$MAIN" 'showUploadedMediaDialog' "upload success must not reintroduce the v2.57 foreground result dialog"
 require_absent "$MAIN" 'toast("Pasted")' "clipboard paste success must not toast over the typing area"
 require_absent "$MAIN" 'restoreLiveForTyping("Typing ready")' "tap-to-type success must not toast over the typing area"
 require_absent "$MAIN" 'toast("Refreshed current session")' "Refresh success must not toast over the typing area"
@@ -1147,6 +1154,15 @@ require "$MAIN" 'setChunkedStreamingMode(MEDIA_UPLOAD_STREAM_CHUNK_BYTES)' "unkn
 require "$MAIN" 'streamUriToOutput' "Android media upload must stream from ContentResolver to HTTP output"
 require_absent "$MAIN" 'readUriBytes' "Android media upload must not read whole videos into a byte array"
 require "$MAIN" '"/upload-media?filename="' "phone media upload must post to the control server upload endpoint"
+require "$MAIN" 'PREF_UPLOAD_PATH_PREFIX' "phone media upload must persist the returned path by stable window"
+require "$MAIN" 'rememberUploadedMediaResult' "phone media upload must remember the returned desktop path after the transient result resolves"
+require "$MAIN" 'showUploadedMediaInline' "phone media upload completion must use the non-modal title-strip path"
+require "$MAIN" 'v2.57 upload "success" dialog was still a foreground modal' "phone media upload WHY comment must preserve the popup-block root cause"
+require "$MAIN" 'Last upload for' "phone media upload association must remain visible in the native title strip after refresh/navigation"
+require "$MAIN" 'title.setOnClickListener(view -> showRememberedUploadForCurrentWindow())' "phone title strip tap must copy remembered upload details without a dialog"
+require "$MAIN" 'title.setOnLongClickListener(view -> pasteRememberedUploadForCurrentWindow())' "phone title strip long press must paste remembered upload details without a dialog"
+require "$MAIN" 'appendStableWindowQuery("/paste", upload.windowId)' "phone media upload paste must target the window that owns the upload"
+require "$MAIN" 'attachment/path look randomly detached from the session that owns it' "phone media upload persistence WHY comment must preserve the disappearing-upload root cause"
 require "$MAIN" 'postText(appendStableWindowQuery("/paste")' "paste must go through the stable-target control-server paste endpoint"
 require "$MAIN" 'clipboardTextFromClip(clip)' "paste must read the full Android ClipData, not just one truncated item"
 require "$MAIN" 'for (int index = 0; index < clip.getItemCount(); index++)' "paste must join all text clip items"

@@ -114,7 +114,11 @@ public class MainActivity extends Activity {
     private static final String PREFS = "wezterm";
     private static final String PREF_PIN_REQUESTED = "pin_requested";
     private static final String PREF_FONT_SIZE = "font_size";
-    private static final String APP_VERSION_NAME = "2.60";
+    private static final String PREF_UPLOAD_PATH_PREFIX = "upload_path_";
+    private static final String PREF_UPLOAD_FILENAME_PREFIX = "upload_filename_";
+    private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
+    private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
+    private static final String APP_VERSION_NAME = "2.61";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
             | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
@@ -268,6 +272,24 @@ public class MainActivity extends Activity {
     private String activeTerminalBaseUrl = TERMINAL_URL;
     private String activeControlBaseUrl = CONTROL_URL;
     private final ArrayDeque<OptionKeyDispatch> optionKeyDispatchQueue = new ArrayDeque<>();
+
+    private static final class UploadAssociation {
+        final String windowId;
+        final String path;
+        final String filename;
+        final long bytes;
+        final long updatedAtMs;
+
+        UploadAssociation(String windowId, String path, String filename, long bytes, long updatedAtMs) {
+            this.windowId = windowId == null ? "" : windowId;
+            this.path = path == null ? "" : path;
+            this.filename = filename == null || filename.trim().isEmpty()
+                    ? "uploaded media"
+                    : filename.trim();
+            this.bytes = bytes;
+            this.updatedAtMs = updatedAtMs;
+        }
+    }
     private boolean optionKeyDispatchInFlight = false;
     private VelocityTracker terminalVelocityTracker;
 
@@ -921,6 +943,8 @@ public class MainActivity extends Activity {
         title.setPadding(dp(8), 0, dp(8), 0);
         title.setText("WEzTerm");
         title.setContentDescription("Active session title");
+        title.setOnClickListener(view -> showRememberedUploadForCurrentWindow());
+        title.setOnLongClickListener(view -> pasteRememberedUploadForCurrentWindow());
         return title;
     }
 
@@ -1222,7 +1246,10 @@ public class MainActivity extends Activity {
         if (toolbarStatusDot == null || !activityResumed || generation != toolbarStatusGeneration) {
             return;
         }
-        getJson("/active", payload -> {
+        // WHY: this poll only feeds the compact title strip/status dot. Keep it
+        // on the read-only active endpoint so a stale APK cannot resize the
+        // shared tmux window while desktop/web clients are open.
+        getJson("/active?readOnly=1", payload -> {
             if (generation != toolbarStatusGeneration || !activityResumed) {
                 return;
             }
@@ -4166,6 +4193,7 @@ public class MainActivity extends Activity {
             return;
         }
         String finalContentType = contentType;
+        String uploadTargetWindowId = uploadAssociationWindowId();
         new Thread(() -> {
             HttpURLConnection connection = null;
             try {
@@ -4203,7 +4231,7 @@ public class MainActivity extends Activity {
                         : connection.getErrorStream();
                 String body = readAll(stream);
                 JSONObject payload = new JSONObject(body);
-                uiHandler.post(() -> showUploadedMediaResult(payload));
+                uiHandler.post(() -> showUploadedMediaResult(payload, uploadTargetWindowId));
             } catch (Exception exc) {
                 wakeLaptopForTerminal("upload-unreachable");
                 scheduleTerminalWakeRetry("upload-unreachable");
@@ -4280,7 +4308,7 @@ public class MainActivity extends Activity {
         return null;
     }
 
-    private void showUploadedMediaResult(JSONObject payload) {
+    private void showUploadedMediaResult(JSONObject payload, String targetWindowId) {
         if (!payload.optBoolean("ok", false)) {
             toast(payload.optString("error", "Media upload failed"));
             return;
@@ -4296,22 +4324,149 @@ public class MainActivity extends Activity {
             clipboardManager.setPrimaryClip(ClipData.newPlainText("WEzterm uploaded media path", path));
         }
         String filename = payload.optString("filename", "uploaded media");
-        String message = filename + "\n" + humanBytes(payload.optLong("bytes", 0)) + "\n\n" + path;
-        new AlertDialog.Builder(this)
-                .setTitle("Uploaded media")
-                .setMessage(message)
-                .setPositiveButton("Paste path", (dialog, which) -> postText(appendStableWindowQuery("/paste"), path, pastePayload -> {
-                    if (!pastePayload.optBoolean("ok", false)) {
-                        toast(pastePayload.optString("error", "Paste path failed"));
-                        return;
-                    }
-                    settleLiveBottomAfterPaste("upload-paste");
-                    hideDockedPromptComposer(false, true);
-                    focusTerminalInputSoon(false);
-                }, exc -> toast("WEzterm control is not reachable")))
-                .setNegativeButton("Copy path", null)
-                .setNeutralButton("OK", null)
-                .show();
+        long bytes = payload.optLong("bytes", 0);
+        UploadAssociation upload = rememberUploadedMediaResult(targetWindowId, path, filename, bytes);
+        if (upload == null) {
+            upload = new UploadAssociation("", path, filename, bytes, System.currentTimeMillis());
+        }
+        showUploadedMediaInline(upload);
+    }
+
+    private void showUploadedMediaInline(UploadAssociation upload) {
+        // WHY: the v2.57 upload "success" dialog was still a foreground modal over
+        // the exact post-upload typing area. Keep normal upload completion silent
+        // and reuse the protected title strip/clipboard instead; real upload errors
+        // still use Toasts so failures remain visible.
+        copyUploadPathToClipboard(upload);
+        updateSessionTitleStrip(currentSessionTitleDisplay());
+        hideDockedPromptComposer(false, true);
+        focusTerminalInputSoon(false);
+        settleLiveBottomAfterPaste("upload-result");
+    }
+
+    private UploadAssociation rememberUploadedMediaResult(String targetWindowId, String path, String filename, long bytes) {
+        String stableWindowId = targetWindowId;
+        if (!hasStableWindowId(stableWindowId)) {
+            stableWindowId = uploadAssociationWindowId();
+        }
+        if (!hasStableWindowId(stableWindowId) || prefs == null || path == null || path.trim().isEmpty()) {
+            return null;
+        }
+        UploadAssociation upload = new UploadAssociation(
+                stableWindowId.trim(),
+                path.trim(),
+                filename,
+                bytes,
+                System.currentTimeMillis()
+        );
+        // WHY: the server upload endpoint only returns a transient result payload.
+        // Persist the last upload by immutable tmux `@windowId` so refresh, Active
+        // navigation, app return, or an in-flight upload completion cannot make the
+        // attachment/path look randomly detached from the session that owns it.
+        prefs.edit()
+                .putString(uploadPrefsKey(PREF_UPLOAD_PATH_PREFIX, upload.windowId), upload.path)
+                .putString(uploadPrefsKey(PREF_UPLOAD_FILENAME_PREFIX, upload.windowId), upload.filename)
+                .putLong(uploadPrefsKey(PREF_UPLOAD_BYTES_PREFIX, upload.windowId), upload.bytes)
+                .putLong(uploadPrefsKey(PREF_UPLOAD_UPDATED_PREFIX, upload.windowId), upload.updatedAtMs)
+                .apply();
+        if (upload.windowId.equals(uploadAssociationWindowId())) {
+            updateSessionTitleStrip(currentSessionTitleDisplay());
+        }
+        return upload;
+    }
+
+    private UploadAssociation rememberedUploadForWindow(String windowId) {
+        if (!hasStableWindowId(windowId) || prefs == null) {
+            return null;
+        }
+        String stableWindowId = windowId.trim();
+        String path = prefs.getString(uploadPrefsKey(PREF_UPLOAD_PATH_PREFIX, stableWindowId), "");
+        if (path == null || path.trim().isEmpty()) {
+            return null;
+        }
+        String filename = prefs.getString(uploadPrefsKey(PREF_UPLOAD_FILENAME_PREFIX, stableWindowId), "uploaded media");
+        long bytes = prefs.getLong(uploadPrefsKey(PREF_UPLOAD_BYTES_PREFIX, stableWindowId), 0);
+        long updatedAtMs = prefs.getLong(uploadPrefsKey(PREF_UPLOAD_UPDATED_PREFIX, stableWindowId), 0);
+        return new UploadAssociation(stableWindowId, path.trim(), filename, bytes, updatedAtMs);
+    }
+
+    private UploadAssociation currentRememberedUpload() {
+        return rememberedUploadForWindow(uploadAssociationWindowId());
+    }
+
+    private String uploadPrefsKey(String prefix, String windowId) {
+        return prefix + (windowId == null ? "" : windowId.trim());
+    }
+
+    private String uploadAssociationWindowId() {
+        if (hasStableWindowId(currentPhoneWindowId)) {
+            return currentPhoneWindowId.trim();
+        }
+        if (hasStableWindowId(selectedPhoneWindowId)) {
+            return selectedPhoneWindowId.trim();
+        }
+        return "";
+    }
+
+    private void clearRememberedUploadForWindow(String windowId, String reason) {
+        if (!hasStableWindowId(windowId) || prefs == null) {
+            return;
+        }
+        String stableWindowId = windowId.trim();
+        prefs.edit()
+                .remove(uploadPrefsKey(PREF_UPLOAD_PATH_PREFIX, stableWindowId))
+                .remove(uploadPrefsKey(PREF_UPLOAD_FILENAME_PREFIX, stableWindowId))
+                .remove(uploadPrefsKey(PREF_UPLOAD_BYTES_PREFIX, stableWindowId))
+                .remove(uploadPrefsKey(PREF_UPLOAD_UPDATED_PREFIX, stableWindowId))
+                .apply();
+    }
+
+    private void showRememberedUploadForCurrentWindow() {
+        UploadAssociation upload = currentRememberedUpload();
+        if (upload == null) {
+            toast("No upload associated with this session");
+            return;
+        }
+        copyUploadPathToClipboard(upload);
+        updateSessionTitleStrip(currentSessionTitleDisplay());
+        focusTerminalInputSoon(false);
+    }
+
+    private boolean pasteRememberedUploadForCurrentWindow() {
+        UploadAssociation upload = currentRememberedUpload();
+        if (upload == null) {
+            toast("No upload associated with this session");
+            return true;
+        }
+        pasteUploadedMediaPath(upload);
+        return true;
+    }
+
+    private void copyUploadPathToClipboard(UploadAssociation upload) {
+        if (upload == null || upload.path == null || upload.path.trim().isEmpty()) {
+            return;
+        }
+        ClipboardManager clipboardManager =
+                (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboardManager != null) {
+            clipboardManager.setPrimaryClip(ClipData.newPlainText("WEzterm uploaded media path", upload.path));
+        }
+    }
+
+    private void pasteUploadedMediaPath(UploadAssociation upload) {
+        if (upload == null || upload.path == null || upload.path.trim().isEmpty()) {
+            toast("No upload path available");
+            return;
+        }
+        postText(appendStableWindowQuery("/paste", upload.windowId), upload.path, pastePayload -> {
+            if (!pastePayload.optBoolean("ok", false)) {
+                toast(pastePayload.optString("error", "Paste path failed"));
+                return;
+            }
+            settleLiveBottomAfterPaste("upload-paste");
+            hideDockedPromptComposer(false, true);
+            focusTerminalInputSoon(false);
+        }, exc -> toast("WEzterm control is not reachable"));
     }
 
     private String humanBytes(long bytes) {
@@ -5162,6 +5317,7 @@ public class MainActivity extends Activity {
                         path += "&index=" + index;
                     }
                     clearRememberedCloseTarget("close-dispatched");
+                    clearRememberedUploadForWindow(stableWindowId, "close-dispatched");
                     control(path, "Closed session");
                 })
                 .setNegativeButton("Cancel", null)
@@ -5201,8 +5357,28 @@ public class MainActivity extends Activity {
             return;
         }
         String display = title == null || title.trim().isEmpty() ? "WEzTerm" : title.trim();
-        sessionTitleStrip.setText(display);
-        sessionTitleStrip.setContentDescription("Active session: " + display);
+        UploadAssociation upload = currentRememberedUpload();
+        if (upload == null) {
+            sessionTitleStrip.setText(display);
+            sessionTitleStrip.setContentDescription("Active session: " + display);
+            return;
+        }
+        String uploadLabel = "Upload: " + upload.filename;
+        sessionTitleStrip.setText(uploadLabel + " · " + display);
+        sessionTitleStrip.setContentDescription(
+                "Active session: " + display + ". Last upload for " + upload.windowId + ": "
+                        + upload.path + ". Tap copies upload path. Long press pastes upload path."
+        );
+    }
+
+    private String currentSessionTitleDisplay() {
+        if (selectedPhoneWindowTitle != null && !selectedPhoneWindowTitle.trim().isEmpty()) {
+            return selectedPhoneWindowTitle.trim();
+        }
+        if (hasStableWindowId(currentPhoneWindowId)) {
+            return currentPhoneWindowId.trim();
+        }
+        return "WEzTerm";
     }
 
     private String promptComposerTargetKey() {

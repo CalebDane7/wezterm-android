@@ -92,7 +92,7 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=161`, `versionName=2.60`.
+- Built checkpoint: `versionCode=162`, `versionName=2.61`.
 - v1.29 fixes the black-screen resume case where Android focused WEzterm but
   the WebView never opened a fresh ttyd HTTP/WebSocket connection.
 - The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a
@@ -744,6 +744,12 @@ Android users use the native APK.
   saw the phone display as glitchy even though tmux/laptop moved smoothly; the
   accepted fix layer is renderer cadence, not changing the protected slow/fast
   flick constants.
+- v2.61 keeps the last phone upload associated with the stable tmux `@windowId`,
+  shows it in the native title strip after refresh/session navigation, and
+  removes the automatic upload-success dialog. WHY: v2.57 only proved a
+  foreground upload dialog; the user needs the attachment/path to remain visible
+  or inspectable after refresh, navigate, return, or next-view checks without
+  re-uploading, and the success/result UI must not cover immediate typing.
 - v2.11 fixes the Active Sessions dotted-field regression that returned after
   v2.10. The APK keeps passive tab switching and does not auto-open the
   composer/keyboard, but the xterm scrubber now hides lower-screen blank-backed

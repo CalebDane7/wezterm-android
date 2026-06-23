@@ -26,6 +26,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.MediaStore;
 import android.provider.OpenableColumns;
 import android.text.Editable;
 import android.text.InputType;
@@ -48,6 +49,7 @@ import android.view.inputmethod.InputMethodManager;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputConnectionWrapper;
+import android.util.Log;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
@@ -119,7 +121,8 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_FILENAME_PREFIX = "upload_filename_";
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
-    private static final String APP_VERSION_NAME = "2.65";
+    private static final String APP_VERSION_NAME = "2.66";
+    private static final String UPLOAD_LOG_TAG = "WEztermUpload";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
             | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
@@ -274,6 +277,7 @@ public class MainActivity extends Activity {
     private int terminalUrlIndex = 0;
     private String activeTerminalBaseUrl = TERMINAL_URL;
     private String activeControlBaseUrl = CONTROL_URL;
+    private String pendingUploadPickerKind = "";
     private final ArrayDeque<OptionKeyDispatch> optionKeyDispatchQueue = new ArrayDeque<>();
 
     private static final class UploadAssociation {
@@ -376,16 +380,26 @@ public class MainActivity extends Activity {
         if (requestCode == REQUEST_UPLOAD_MEDIA) {
             nativePickerQuietUntilMs = System.currentTimeMillis() + 8000;
         }
-        if (requestCode == REQUEST_UPLOAD_MEDIA && resultCode == RESULT_OK && data != null) {
-            Uri uri = data.getData();
-            if (uri == null && data.getClipData() != null && data.getClipData().getItemCount() > 0) {
-                uri = data.getClipData().getItemAt(0).getUri();
-            }
-            if (uri == null) {
-                toast("No media selected");
+        if (requestCode == REQUEST_UPLOAD_MEDIA) {
+            String pickerKind = pendingUploadPickerKind;
+            pendingUploadPickerKind = "";
+            Log.i(UPLOAD_LOG_TAG, "picker-result kind=" + pickerKind
+                    + " result=" + resultCode
+                    + " hasData=" + (data != null)
+                    + " hasClip=" + (data != null && data.getClipData() != null));
+            if (resultCode != RESULT_OK || data == null) {
                 return;
             }
-            uploadMediaUri(uri, false);
+            List<Uri> uris = uploadUrisFromResult(data);
+            if (uris.isEmpty()) {
+                toast("No media selected");
+                Log.w(UPLOAD_LOG_TAG, "picker-result-empty kind=" + pickerKind);
+                return;
+            }
+            for (Uri uri : uris) {
+                prepareReadAccessForUpload(data, uri);
+                uploadMediaUri(uri, false);
+            }
         }
     }
 
@@ -4183,18 +4197,50 @@ public class MainActivity extends Activity {
 
     private void pickMediaForUpload() {
         // WHY: screenshots/media should move from the phone to the desktop over
-        // the same Tailscale control channel as Copy/Paste. ACTION_OPEN_DOCUMENT
-        // gives WEzTerm one user-selected URI instead of broad storage access, so
-        // Android does not need READ_MEDIA_* permissions and future agents cannot
-        // turn this into a background gallery scraper.
+        // the same Tailscale control channel as Copy/Paste. Android's Photo
+        // Picker returns a user-selected image/video URI directly after selection
+        // without broad storage access or the old file-picker confirmation step;
+        // keep ACTION_OPEN_DOCUMENT as the fallback/files path when Photo Picker
+        // is unavailable.
         // WHY: launching Android's document picker pauses/resumes the Activity.
         // Treat the return as a native-dialog transition, not a terminal failure,
         // so the blank watchdog and passive page lifecycle probes cannot reload
         // or scroll the WebView while the user is trying to attach media.
         nativePickerQuietUntilMs = System.currentTimeMillis() + 8000;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Intent photoPicker = new Intent(MediaStore.ACTION_PICK_IMAGES);
+            photoPicker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            if (launchUploadPicker(photoPicker, "photo-picker")) {
+                return;
+            }
+        }
+        if (!launchUploadPicker(uploadDocumentPickerIntent(), "document-picker")) {
+            nativePickerQuietUntilMs = 0;
+            toast("No Android file picker available");
+        }
+    }
+
+    private boolean launchUploadPicker(Intent intent, String pickerKind) {
+        pendingUploadPickerKind = pickerKind == null ? "" : pickerKind;
+        try {
+            startActivityForResult(intent, REQUEST_UPLOAD_MEDIA);
+            Log.i(UPLOAD_LOG_TAG, "picker-launch kind=" + pendingUploadPickerKind
+                    + " action=" + intent.getAction());
+            return true;
+        } catch (Exception exc) {
+            Log.w(UPLOAD_LOG_TAG, "picker-launch-failed kind=" + pendingUploadPickerKind
+                    + " error=" + exc.getClass().getSimpleName());
+            pendingUploadPickerKind = "";
+            return false;
+        }
+    }
+
+    private Intent uploadDocumentPickerIntent() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("*/*");
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        intent.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
                 "image/*",
                 "video/*",
@@ -4202,12 +4248,7 @@ public class MainActivity extends Activity {
                 "text/*",
                 "application/octet-stream"
         });
-        try {
-            startActivityForResult(intent, REQUEST_UPLOAD_MEDIA);
-        } catch (Exception exc) {
-            nativePickerQuietUntilMs = 0;
-            toast("No Android file picker available");
-        }
+        return intent;
     }
 
     private void handleIncomingMediaShare(Intent intent) {
@@ -4216,20 +4257,97 @@ public class MainActivity extends Activity {
         }
         String action = intent.getAction();
         if (Intent.ACTION_SEND.equals(action)) {
-            Uri uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
-            if (uri != null) {
+            List<Uri> uris = uploadUrisFromShareIntent(intent);
+            for (Uri uri : uris) {
+                prepareReadAccessForUpload(intent, uri);
                 uploadMediaUri(uri, true);
             }
         } else if (Intent.ACTION_SEND_MULTIPLE.equals(action)) {
-            ArrayList<Uri> uris = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
-            if (uris == null || uris.isEmpty()) {
-                return;
-            }
+            List<Uri> uris = uploadUrisFromShareIntent(intent);
             for (Uri uri : uris) {
-                if (uri != null) {
-                    uploadMediaUri(uri, true);
+                prepareReadAccessForUpload(intent, uri);
+                uploadMediaUri(uri, true);
+            }
+        }
+    }
+
+    private List<Uri> uploadUrisFromResult(Intent data) {
+        List<Uri> uris = new ArrayList<>();
+        if (data == null) {
+            return uris;
+        }
+        addUploadUriIfMissing(uris, data.getData());
+        ClipData clipData = data.getClipData();
+        if (clipData != null) {
+            for (int index = 0; index < clipData.getItemCount(); index++) {
+                ClipData.Item item = clipData.getItemAt(index);
+                if (item != null) {
+                    addUploadUriIfMissing(uris, item.getUri());
                 }
             }
+        }
+        return uris;
+    }
+
+    private List<Uri> uploadUrisFromShareIntent(Intent intent) {
+        List<Uri> uris = new ArrayList<>();
+        if (intent == null) {
+            return uris;
+        }
+        Uri single = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+        addUploadUriIfMissing(uris, single);
+        ArrayList<Uri> extraUris = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+        if (extraUris != null) {
+            for (Uri uri : extraUris) {
+                addUploadUriIfMissing(uris, uri);
+            }
+        }
+        ClipData clipData = intent.getClipData();
+        if (clipData != null) {
+            for (int index = 0; index < clipData.getItemCount(); index++) {
+                ClipData.Item item = clipData.getItemAt(index);
+                if (item != null) {
+                    addUploadUriIfMissing(uris, item.getUri());
+                }
+            }
+        }
+        Log.i(UPLOAD_LOG_TAG, "share-uris count=" + uris.size()
+                + " action=" + intent.getAction());
+        return uris;
+    }
+
+    private void addUploadUriIfMissing(List<Uri> uris, Uri uri) {
+        if (uri == null) {
+            return;
+        }
+        String value = uri.toString();
+        for (Uri existing : uris) {
+            if (existing != null && existing.toString().equals(value)) {
+                return;
+            }
+        }
+        uris.add(uri);
+    }
+
+    private void prepareReadAccessForUpload(Intent data, Uri uri) {
+        if (data == null || uri == null) {
+            return;
+        }
+        int takeFlags = data.getFlags() & Intent.FLAG_GRANT_READ_URI_PERMISSION;
+        if (takeFlags == 0) {
+            return;
+        }
+        try {
+            getContentResolver().takePersistableUriPermission(uri, takeFlags);
+            Log.i(UPLOAD_LOG_TAG, "uri-read-persisted scheme=" + uri.getScheme()
+                    + " authority=" + uri.getAuthority());
+        } catch (Exception exc) {
+            // Photo Picker grants transient read access and does not always allow
+            // persistable permissions. The upload happens immediately, so this is
+            // diagnostic only; do not block a valid one-tap media selection.
+            Log.i(UPLOAD_LOG_TAG, "uri-read-transient scheme=" + uri.getScheme()
+                    + " authority=" + uri.getAuthority()
+                    + " reason=" + exc.getClass().getSimpleName());
         }
     }
 
@@ -4246,6 +4364,12 @@ public class MainActivity extends Activity {
         }
         String finalContentType = contentType;
         String uploadTargetWindowId = uploadAssociationWindowId();
+        Log.i(UPLOAD_LOG_TAG, "upload-start source=" + (fromShare ? "share" : "picker")
+                + " scheme=" + uri.getScheme()
+                + " authority=" + uri.getAuthority()
+                + " mime=" + finalContentType
+                + " declaredSize=" + declaredSize
+                + " targetWindow=" + uploadTargetWindowId);
         new Thread(() -> {
             HttpURLConnection connection = null;
             try {
@@ -4282,9 +4406,16 @@ public class MainActivity extends Activity {
                         ? connection.getInputStream()
                         : connection.getErrorStream();
                 String body = readAll(stream);
+                Log.i(UPLOAD_LOG_TAG, "upload-response code=" + code
+                        + " bytes=" + uploadedBytes
+                        + " bodyChars=" + (body == null ? 0 : body.length()));
                 JSONObject payload = new JSONObject(body);
                 uiHandler.post(() -> showUploadedMediaResult(payload, uploadTargetWindowId));
             } catch (Exception exc) {
+                Log.e(UPLOAD_LOG_TAG, "upload-failed source=" + (fromShare ? "share" : "picker")
+                        + " scheme=" + uri.getScheme()
+                        + " authority=" + uri.getAuthority()
+                        + " error=" + exc.getClass().getSimpleName(), exc);
                 wakeLaptopForTerminal("upload-unreachable");
                 scheduleTerminalWakeRetry("upload-unreachable");
                 uiHandler.post(() -> toast("Media upload failed: " + exc.getMessage()));
@@ -4362,11 +4493,13 @@ public class MainActivity extends Activity {
 
     private void showUploadedMediaResult(JSONObject payload, String targetWindowId) {
         if (!payload.optBoolean("ok", false)) {
+            Log.w(UPLOAD_LOG_TAG, "upload-result-error error=" + payload.optString("error", ""));
             toast(payload.optString("error", "Media upload failed"));
             return;
         }
         String path = payload.optString("path", "");
         if (path.isEmpty()) {
+            Log.w(UPLOAD_LOG_TAG, "upload-result-missing-path");
             toast("Media uploaded, but no path returned");
             return;
         }
@@ -4381,6 +4514,9 @@ public class MainActivity extends Activity {
         if (upload == null) {
             upload = new UploadAssociation("", path, filename, bytes, System.currentTimeMillis());
         }
+        Log.i(UPLOAD_LOG_TAG, "upload-result-ok bytes=" + bytes
+                + " filename=" + filename
+                + " targetWindow=" + targetWindowId);
         showUploadedMediaInline(upload);
     }
 

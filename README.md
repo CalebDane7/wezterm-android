@@ -92,7 +92,7 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=166`, `versionName=2.65`.
+- Built checkpoint: `versionCode=167`, `versionName=2.66`.
 - v1.29 fixes the black-screen resume case where Android focused WEzterm but
   the WebView never opened a fresh ttyd HTTP/WebSocket connection.
 - The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a
@@ -766,6 +766,12 @@ Android users use the native APK.
   transient immersive hide instead of a permanent dead strip under the toolbar.
   WHY: the user needs to see the terminal bottom where input lands, not only the
   messages after Send, and the earlier toolbar-colored strip still wasted space.
+- v2.66 routes the Upload button through Android Photo Picker on Android 13+
+  before falling back to the document picker, handles picker/share `ClipData`
+  as well as `data.getData()`, and logs privacy-safe upload stages under
+  `WEztermUpload`. WHY: choosing a screenshot/photo must start the upload
+  immediately after the user picks it, with no second APK confirmation step and
+  with enough stage evidence to diagnose picker-versus-server failures.
 - v2.11 fixes the Active Sessions dotted-field regression that returned after
   v2.10. The APK keeps passive tab switching and does not auto-open the
   composer/keyboard, but the xterm scrubber now hides lower-screen blank-backed

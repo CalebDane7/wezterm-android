@@ -2679,6 +2679,7 @@ public class MainActivity extends Activity {
         reassertDockedPromptComposerFocus(reason, composerGeneration, 120);
         reassertDockedPromptComposerFocus(reason, composerGeneration, 360);
         fitTerminalToCurrentViewSoon("composer-" + reason);
+        refreshCaptureRendererForLayoutChange("composer-" + reason);
         alignViewerForComposerReason(reason);
         // WHY: do not arm a WebView bitmap reload when opening the native
         // composer. v1.85 proved that low-paint sampling during this resize can
@@ -2855,6 +2856,7 @@ public class MainActivity extends Activity {
             hideTerminalKeyboardQuietly("composer-hide");
         }
         fitTerminalToCurrentViewSoon("composer-hide");
+        refreshCaptureRendererForLayoutChange("composer-hide");
     }
 
     private void updateStartButtonLabel() {
@@ -3223,6 +3225,7 @@ public class MainActivity extends Activity {
                 toast(message);
             }
             pinTerminalViewportLocal();
+            refreshCaptureRendererForLayoutChange(reason + "-live-bottom");
             if (showComposer) {
                 showDockedPromptComposer("live-bottom");
             } else {
@@ -6788,6 +6791,18 @@ public class MainActivity extends Activity {
 
     private void refreshCaptureRendererNow(String reason) {
         refreshCaptureRenderer(reason, false);
+    }
+
+    private void refreshCaptureRendererForLayoutChange(String reason) {
+        refreshCaptureRendererSoon(reason);
+        // WHY: the read-only capture renderer computes rows inside the WebView.
+        // Android can deliver composer/IME layout and WebView resize in separate
+        // frames, so one immediate refresh may still use the pre-keyboard height.
+        // Bounded follow-ups make the real terminal prompt/cursor row repaint
+        // above the native composer without reloading WebView, focusing xterm, or
+        // resizing the shared tmux window.
+        uiHandler.postDelayed(() -> refreshCaptureRendererNow(reason + "-layout-settle-1"), 260);
+        uiHandler.postDelayed(() -> refreshCaptureRendererNow(reason + "-layout-settle-2"), 620);
     }
 
     private void refreshCaptureRenderer(String reason, boolean includeFollowUp) {

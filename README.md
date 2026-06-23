@@ -92,7 +92,7 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=163`, `versionName=2.62`.
+- Built checkpoint: `versionCode=164`, `versionName=2.63`.
 - v1.29 fixes the black-screen resume case where Android focused WEzterm but
   the WebView never opened a fresh ttyd HTTP/WebSocket connection.
 - The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a
@@ -755,6 +755,10 @@ Android users use the native APK.
   Workspace, Load a saved snapshot, and confirmed Close out of all. WHY:
   workspace recovery is not proven if the backend works but the selector, APK,
   or web surface does not expose the same restore action.
+- v2.63 docks the native prompt composer below the toolbar so the typed line sits
+  directly above the Samsung keyboard during Bottom/typing proof. WHY: v2.62
+  left the composer above the full toolbar, so the real APK still felt like the
+  bottom text line was missing even though the native input existed.
 - v2.11 fixes the Active Sessions dotted-field regression that returned after
   v2.10. The APK keeps passive tab switching and does not auto-open the
   composer/keyboard, but the xterm scrubber now hides lower-screen blank-backed

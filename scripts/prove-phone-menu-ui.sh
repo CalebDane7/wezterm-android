@@ -979,6 +979,7 @@ nav_top = None
 screen_bottom = 0
 toolbar_labels = {"Active", "Old", "Workspace", "New", "Refresh", "Bottom", "Scroll", "Copy/Paste", "Upload", "Close", "Start", "Stop"}
 composer_top = None
+composer_bottom = None
 
 def parse_bounds(value):
     match = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", value or "")
@@ -1009,6 +1010,7 @@ for node in root.iter("node"):
         or node.attrib.get("hint", "") == "Type prompt"
     ):
         composer_top = top if composer_top is None else min(composer_top, top)
+        composer_bottom = bottom if composer_bottom is None else max(composer_bottom, bottom)
     if resource_id == "android:id/navigationBarBackground":
         nav_top = top if nav_top is None else min(nav_top, top)
 
@@ -1030,6 +1032,17 @@ blank_below_buttons = content_bottom - button_bottom
 
 if t_bottom > button_top:
     raise SystemExit(f"terminal overlaps toolbar buttons: terminal_bottom={t_bottom} button_top={button_top}")
+if composer_top is not None and composer_bottom is not None:
+    if composer_bottom <= button_top:
+        raise SystemExit(
+            "native composer is above toolbar buttons; "
+            f"composer_y={composer_top}..{composer_bottom} buttons_y={button_top}..{button_bottom}"
+        )
+    if composer_top < button_bottom:
+        raise SystemExit(
+            "native composer overlaps toolbar buttons; "
+            f"composer_y={composer_top}..{composer_bottom} buttons_y={button_top}..{button_bottom}"
+        )
 if gap_above_buttons > 96:
     raise SystemExit(f"large gap between terminal and toolbar buttons: gap={gap_above_buttons}")
 if ime_state == "hidden" and composer_top is None and blank_below_buttons > max(180, button_band):
@@ -1041,6 +1054,7 @@ print(
     "Terminal and toolbar bounds do not overlap: "
     f"terminal=[{t_left},{t_top}][{t_right},{t_bottom}] "
     f"buttons_y={button_top}..{button_bottom} "
+    f"composer_y={composer_top}..{composer_bottom} "
     f"blank_below_buttons={blank_below_buttons} ime={ime_state}"
 )
 PY

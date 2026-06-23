@@ -58,13 +58,13 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="163"' "current APK version must be bumped for the v2.62 workspace control contract"
-require "$MANIFEST" 'android:versionName="2.62"' "current APK version must be bumped for the v2.62 workspace control contract"
+require "$MANIFEST" 'android:versionCode="164"' "current APK version must be bumped for the v2.63 bottom-composer visibility contract"
+require "$MANIFEST" 'android:versionName="2.63"' "current APK version must be bumped for the v2.63 bottom-composer visibility contract"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.62";' "client /config proof must report the same v2.62 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.63";' "client /config proof must report the same v2.63 APK contract as the manifest"
 require "$MAIN" 'http://100.113.254.7:8089/terminal-renderer' "APK visual URL must use the non-resizing control-server capture renderer"
 require "$MAIN" 'APK_CAPTURE_RENDERER_COLS = 132' "APK capture renderer must preserve the readable 132-column logical grid"
 require "$MAIN" 'refreshCaptureRendererSoon' "APK scroll controls must repaint the capture renderer without reloading or resizing tmux"
@@ -130,7 +130,7 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=163`, `versionName=2.62`.' "README checkpoint must match the installed v2.62 APK"
+    require "$README" 'Built checkpoint: `versionCode=164`, `versionName=2.63`.' "README checkpoint must match the installed v2.63 APK"
     require "$README" 'removes the automatic upload-success dialog' "README must document the current upload popup-block fix"
     require "$README" 'v2.60 tightens that capture-renderer pulse' "README must document the current 16 ms touch-scroll renderer cadence fix"
     require "$README" 'v2.59 smooths APK one-finger history scrolling' "README must document the current historical-sample/frame-paced touch-scroll fix"
@@ -677,6 +677,8 @@ if [ -f "$MENU_UI_PROOF" ]; then
     require "$MENU_UI_PROOF" 'user-visible terminal height' "menu UI proof must measure composer refit even when UIAutomator hides the WebView node"
     require "$MENU_UI_PROOF" 'assert_composer_terminal_refit' "menu UI proof must prove keyboard/composer layout changes refit ttyd/xterm rows"
     require "$MENU_UI_PROOF" 'Zoomed/native composer terminal refit kept the true bottom viewport usable' "menu UI proof must prove the zoomed true-bottom/full-area fix"
+    require "$MENU_UI_PROOF" 'native composer is above toolbar buttons' "menu UI proof must fail if the composer is stranded above the toolbar again"
+    require "$MENU_UI_PROOF" 'native composer overlaps toolbar buttons' "menu UI proof must fail if the composer covers toolbar controls"
     require "$MENU_UI_PROOF" 'Native composer stayed local until Send and delivered one visible token' "menu UI proof must prove native composer submit without duplicate input"
     require "$MENU_UI_PROOF" 'Native composer Backspace edited local text before Send' "menu UI proof must prove native composer Backspace can edit text before submission"
     require "$MENU_UI_PROOF" 'Backspace, Delete, Home, End, and Escape key controls reached tmux while composer stayed phone-owned' "menu UI proof must prove CLI edit/navigation controls through the visible APK"
@@ -767,6 +769,7 @@ require_absent "$MAIN" 'AlphaAnimation pulse' "legacy per-row AlphaAnimation pul
 require "$MAIN" 'toolbarNavigationButton("Scroll", v -> showViewControls())' "Scroll recovery menu must remain visible"
 require "$MAIN" 'toolbarNavigationButton("Copy/Paste", v -> showCopyPasteControls())' "Copy/Paste must remain visible"
 require "$MAIN" 'toolbarNavigationButton("Upload", v -> pickMediaForUpload())' "direct media Upload must remain visible on the main toolbar"
+require "$MAIN" 'dock it below the toolbar so the typed area sits directly' "APK layout must keep the native composer below the toolbar and above the keyboard"
 require "$MAIN" 'Clear unsent draft' "APK must expose the clear-draft action"
 require "$MAIN" 'private void clearUnsentDraft()' "APK must implement clearing visible native drafts"
 require "$MAIN" 'normal phone typing is local-only now' "clear-draft WHY comment must preserve that Android typing no longer mirrors into tmux"

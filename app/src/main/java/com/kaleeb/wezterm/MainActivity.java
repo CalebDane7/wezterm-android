@@ -118,7 +118,7 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_FILENAME_PREFIX = "upload_filename_";
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
-    private static final String APP_VERSION_NAME = "2.62";
+    private static final String APP_VERSION_NAME = "2.63";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
             | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
@@ -498,10 +498,6 @@ public class MainActivity extends Activity {
                 0,
                 1
         ));
-        root.addView(promptComposerBar, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-        ));
         root.addView(sessionTitleStrip, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 dp(22)
@@ -509,6 +505,15 @@ public class MainActivity extends Activity {
         root.addView(toolbar, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 dp(TOOLBAR_HEIGHT_DP)
+        ));
+        // WHY: the 2026-06-23 real APK proof showed the native text line stranded
+        // above the full toolbar while Samsung IME was open, so the user could not
+        // see the actual bottom typing line. Keep the native composer as the single
+        // typing owner, but dock it below the toolbar so the typed area sits directly
+        // above the keyboard without adding spacers, masks, tmux resize, or raw ttyd.
+        root.addView(promptComposerBar, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
         ));
         return root;
     }

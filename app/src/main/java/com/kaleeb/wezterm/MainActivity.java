@@ -121,7 +121,7 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_FILENAME_PREFIX = "upload_filename_";
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
-    private static final String APP_VERSION_NAME = "2.66";
+    private static final String APP_VERSION_NAME = "2.68";
     private static final String UPLOAD_LOG_TAG = "WEztermUpload";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
@@ -4523,13 +4523,51 @@ public class MainActivity extends Activity {
     private void showUploadedMediaInline(UploadAssociation upload) {
         // WHY: the v2.57 upload "success" dialog was still a foreground modal over
         // the exact post-upload typing area. Keep normal upload completion silent
-        // and reuse the protected title strip/clipboard instead; real upload errors
-        // still use Toasts so failures remain visible.
+        // and reuse the protected title strip/clipboard/composer path instead;
+        // real upload errors still use Toasts so failures remain visible.
         copyUploadPathToClipboard(upload);
         updateSessionTitleStrip(currentSessionTitleDisplay());
-        hideDockedPromptComposer(false, true);
-        focusTerminalInputSoon(false);
+        stageUploadedMediaPathForSend(upload);
         settleLiveBottomAfterPaste("upload-result");
+    }
+
+    private void stageUploadedMediaPathForSend(UploadAssociation upload) {
+        if (upload == null || upload.path == null || upload.path.trim().isEmpty()) {
+            return;
+        }
+        if (promptComposerBar == null || promptComposerInput == null) {
+            focusTerminalInputSoon(false);
+            return;
+        }
+        String uploadPath = upload.path.trim();
+        showDockedPromptComposer("upload-result");
+        String existingText = promptComposerInput.getText().toString();
+        String nextText;
+        if (existingText.trim().isEmpty()) {
+            nextText = uploadPath;
+        } else if (existingText.contains(uploadPath)) {
+            nextText = existingText;
+        } else {
+            nextText = existingText + (existingText.endsWith("\n") ? "" : "\n") + uploadPath;
+        }
+        // WHY: choosing a phone image is the user's attach step. The returned
+        // desktop path must be visible in the same native composer that Send
+        // submits, not only hidden in the title strip or clipboard.
+        promptComposerProgrammaticTextChange = true;
+        try {
+            promptComposerInput.setText(nextText);
+            promptComposerInput.setSelection(promptComposerInput.getText().length());
+        } finally {
+            promptComposerProgrammaticTextChange = false;
+        }
+        promptComposerDraftTargetKey = hasStableWindowId(upload.windowId)
+                ? upload.windowId.trim()
+                : promptComposerTargetKey();
+        promptComposerDraftLocalGeneration++;
+        updateStartButtonLabel();
+        restoreDockedPromptComposerFocus("upload-result");
+        Log.i(UPLOAD_LOG_TAG, "upload-staged-for-send pathChars=" + uploadPath.length()
+                + " targetWindow=" + promptComposerDraftTargetKey);
     }
 
     private UploadAssociation rememberUploadedMediaResult(String targetWindowId, String path, String filename, long bytes) {
@@ -5776,8 +5814,12 @@ public class MainActivity extends Activity {
             sessionTitleStrip.setContentDescription("Active session: " + display);
             return;
         }
-        String uploadLabel = "Upload: " + upload.filename;
-        sessionTitleStrip.setText(uploadLabel + " · " + display);
+        // WHY: v2.67 proved that upload state belongs in the composer when the
+        // user is about to Send. Prefixing the title strip with `Upload: ...`
+        // made the active-session label look like a filename/title regression.
+        // Keep the visible strip as the session title while preserving tap and
+        // long-press upload recovery through the accessibility description.
+        sessionTitleStrip.setText(display);
         sessionTitleStrip.setContentDescription(
                 "Active session: " + display + ". Last upload for " + upload.windowId + ": "
                         + upload.path + ". Tap copies upload path. Long press pastes upload path."

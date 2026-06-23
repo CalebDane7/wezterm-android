@@ -92,7 +92,7 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=167`, `versionName=2.66`.
+- Built checkpoint: `versionCode=169`, `versionName=2.68`.
 - v1.29 fixes the black-screen resume case where Android focused WEzterm but
   the WebView never opened a fresh ttyd HTTP/WebSocket connection.
 - The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a
@@ -104,6 +104,12 @@ Android users use the native APK.
   terminal-text `reconnect` reload heuristic, prevents blank-watchdog reloads
   while touching/reading, coalesces one-finger history scroll requests, and
   adds newest-first tab order plus running/done status dots.
+- v2.67 stages the uploaded desktop media path in the native composer after the
+  Android Photo Picker returns, so the existing Send button submits the visible
+  path without a second upload/paste approval step.
+- v2.68 keeps the title strip as the active session title after uploads; the
+  uploaded path stays in the native Send composer and in title-strip tap/long-
+  press recovery, not as a visible filename prefix above the buttons.
 - v1.34 restores a visible `Scroll` toolbar entry after v1.33 stranded the
   proven live-bottom, history-top, page, zoom, and full-session-reader controls
   behind an uncalled internal method.

@@ -287,9 +287,10 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.62' "install page must advertise the current v2.62 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>163</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.63' "install page must advertise the current v2.63 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>164</code>' "install page versionCode must match the manifest"
     require "$INSTALL_PAGE" 'Workspace Save/Load/Close' "install page must mention the v2.62 workspace control fix"
+    require "$INSTALL_PAGE" 'bottom-docked native composer input above the keyboard' "install page must mention the v2.63 bottom-composer visibility fix"
     require "$INSTALL_PAGE" 'per-window upload persistence' "install page must mention the v2.61 upload persistence fix"
     require "$INSTALL_PAGE" 'modal-free upload completion' "install page must mention the v2.61 upload popup-block fix"
     require "$INSTALL_PAGE" 'historical MOVE sample handling' "install page must mention the v2.59 historical MOVE sample fix"
@@ -392,7 +393,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.62 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.63 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"

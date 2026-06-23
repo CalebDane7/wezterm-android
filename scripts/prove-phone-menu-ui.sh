@@ -1033,12 +1033,12 @@ blank_below_buttons = content_bottom - button_bottom
 if t_bottom > button_top:
     raise SystemExit(f"terminal overlaps toolbar buttons: terminal_bottom={t_bottom} button_top={button_top}")
 if composer_top is not None and composer_bottom is not None:
-    if composer_bottom <= button_top:
+    if composer_top >= button_top:
         raise SystemExit(
-            "native composer is above toolbar buttons; "
+            "native composer is missing above toolbar buttons; "
             f"composer_y={composer_top}..{composer_bottom} buttons_y={button_top}..{button_bottom}"
         )
-    if composer_top < button_bottom:
+    if composer_bottom > button_top:
         raise SystemExit(
             "native composer overlaps toolbar buttons; "
             f"composer_y={composer_top}..{composer_bottom} buttons_y={button_top}..{button_bottom}"

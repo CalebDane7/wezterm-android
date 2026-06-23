@@ -118,7 +118,7 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_FILENAME_PREFIX = "upload_filename_";
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
-    private static final String APP_VERSION_NAME = "2.63";
+    private static final String APP_VERSION_NAME = "2.64";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
             | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
@@ -127,7 +127,8 @@ public class MainActivity extends Activity {
     private static final int DEFAULT_FONT_SIZE = 12;
     private static final int MIN_FONT_SIZE = 8;
     private static final int MAX_FONT_SIZE = 18;
-    private static final int TOOLBAR_HEIGHT_DP = 108;
+    private static final int TOOLBAR_HEIGHT_DP = 92;
+    private static final int TITLE_STRIP_HEIGHT_DP = 18;
     private static final int PROMPT_COMPOSER_INPUT_HEIGHT_DP = 44;
     private static final int PROMPT_COMPOSER_VERTICAL_PADDING_DP = 4;
     private static final long HISTORY_DRAG_THROTTLE_MS = 16;
@@ -498,22 +499,22 @@ public class MainActivity extends Activity {
                 0,
                 1
         ));
-        root.addView(sessionTitleStrip, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(22)
-        ));
-        root.addView(toolbar, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(TOOLBAR_HEIGHT_DP)
-        ));
-        // WHY: the 2026-06-23 real APK proof showed the native text line stranded
-        // above the full toolbar while Samsung IME was open, so the user could not
-        // see the actual bottom typing line. Keep the native composer as the single
-        // typing owner, but dock it below the toolbar so the typed area sits directly
-        // above the keyboard without adding spacers, masks, tmux resize, or raw ttyd.
         root.addView(promptComposerBar, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+        root.addView(sessionTitleStrip, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(TITLE_STRIP_HEIGHT_DP)
+        ));
+        // WHY: the native composer must remain above the APK controls. A rejected
+        // v2.63 attempt moved it below the toolbar, which made the expected phone
+        // text board disappear from above the buttons. Keep the text line in the
+        // established place, and reclaim space by tightening chrome instead of
+        // moving typing below the controls.
+        root.addView(toolbar, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(TOOLBAR_HEIGHT_DP)
         ));
         return root;
     }
@@ -956,7 +957,7 @@ public class MainActivity extends Activity {
     private LinearLayout bottomBar() {
         LinearLayout toolbar = new LinearLayout(this);
         toolbar.setOrientation(LinearLayout.VERTICAL);
-        toolbar.setPadding(dp(6), dp(5), dp(6), dp(5));
+        toolbar.setPadding(dp(5), dp(3), dp(5), dp(3));
         toolbar.setMinimumHeight(dp(TOOLBAR_HEIGHT_DP));
         toolbar.setBackgroundColor(Color.rgb(24, 24, 37));
         LinearLayout topRow = toolbarRow();
@@ -1070,7 +1071,7 @@ public class MainActivity extends Activity {
     private LinearLayout toolbarRow() {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(0, dp(2), 0, dp(2));
+        row.setPadding(0, dp(1), 0, dp(1));
         return row;
     }
 
@@ -1088,13 +1089,11 @@ public class MainActivity extends Activity {
         button.setIncludeFontPadding(false);
         button.setMinWidth(0);
         button.setMinimumWidth(0);
-        // WHY: 44dp met Apple/WCAG but missed Android Material's 48dp floor; raised
-        // the declared min-height floor to dp(48). The toolbar height is fixed (root
-        // adds it at dp(TOOLBAR_HEIGHT_DP)) and rows are weight-split with MATCH_PARENT
-        // buttons, so this floor cannot grow the bar or cover live-bottom content
-        // (v1.65). Rendered height still tracks the fixed two-row bar; enlarging it
-        // further would require growing TOOLBAR_HEIGHT_DP, left to Codex per v1.65.
-        button.setMinHeight(dp(48));
+        // WHY: the 2026-06-23 bottom proof showed the fixed two-row toolbar had
+        // become oversized phone chrome. Keep two thumb rows and the same buttons,
+        // but cap each row to a compact 42dp target so the terminal can use the
+        // viewport instead of losing it to button real estate.
+        button.setMinHeight(dp(42));
         button.setGravity(android.view.Gravity.CENTER);
         button.setPadding(dp(3), 0, dp(3), 0);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
@@ -1358,7 +1357,11 @@ public class MainActivity extends Activity {
         keepScreenAwakeForActiveTerminal();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             window.setStatusBarColor(Color.rgb(16, 16, 20));
-            window.setNavigationBarColor(Color.rgb(16, 16, 20));
+            // WHY: Samsung's three-button navigation area is outside the app's
+            // clickable toolbar, but painting it black made it read as a giant dead
+            // gap under WEzTerm's buttons. Match the toolbar plate so the system
+            // nav strip is visually attached instead of a separate black spacer.
+            window.setNavigationBarColor(Color.rgb(24, 24, 37));
         }
     }
 
@@ -7899,7 +7902,7 @@ public class MainActivity extends Activity {
             // resized, reserve that keyboard space on the root below the toolbar;
             // never add it to the toolbar height itself.
             view.setPadding(0, top, 0, keyboardReserve);
-            toolbar.setPadding(dp(6), dp(5), dp(6), dp(5) + bottom);
+            toolbar.setPadding(dp(5), dp(3), dp(5), dp(3) + bottom);
             ViewGroup.LayoutParams params = toolbar.getLayoutParams();
             if (params != null) {
                 params.height = dp(TOOLBAR_HEIGHT_DP) + bottom;

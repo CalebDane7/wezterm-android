@@ -1075,11 +1075,10 @@ public class MainActivity extends Activity {
             installPlainToolbarTapHandler(button);
         }
         // WHY: 10-11sp toolbar labels were a logged "font too small" complaint on
-        // QHD. Raised to 12-13sp for faster glance-and-tap. The >=9 step-down is
-        // kept so `Workspace` and `Copy/Paste` stay readable inside narrow columns;
-        // setSingleLine means any overflow ellipsizes, and prove-phone-menu-ui.sh
-        // greps the exact labels so a clip fails proof rather than shipping silently.
-        button.setTextSize(label.length() >= 9 ? 12 : 13);
+        // QHD, but real v2.62 proof showed `Workspace` clipping at 12sp inside
+        // the six-column toolbar. Keep short commands large and step long labels
+        // down so the visible APK button still says Workspace, not Workspac.
+        button.setTextSize(label.length() >= 9 ? 10 : 13);
         button.setSingleLine(true);
         button.setIncludeFontPadding(false);
         button.setMinWidth(0);

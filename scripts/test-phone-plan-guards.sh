@@ -751,7 +751,7 @@ require "$MAIN" 'applyToolbarActionRole(stopButton, Color.rgb(243, 139, 168)' "S
 require "$MAIN" 'applyToolbarActionRole(closeButton, Color.rgb(243, 139, 168)' "Close must keep the red destructive role"
 require "$MAIN" 'button.setTextColor(Color.rgb(30, 30, 46))' "role-colored toolbar buttons must keep dark readable label text"
 require "$MAIN" 'button.setMinHeight(dp(48))' "toolbar buttons must keep the 48dp touch target floor from the visual audit"
-require "$MAIN" 'button.setTextSize(label.length() >= 9 ? 12 : 13)' "toolbar labels must keep the readable mobile text size with long-label step-down"
+require "$MAIN" 'button.setTextSize(label.length() >= 9 ? 10 : 13)' "toolbar labels must fit long mobile toolbar labels such as Workspace"
 require "$MAIN" 'dot.setTextSize(14)' "toolbar status dot must keep the larger legible visual-audit size"
 require_absent "$MAIN" 'button.setMinHeight(dp(44))' "toolbar touch targets must not regress to the old 44dp floor"
 require_absent "$MAIN" 'dot.setTextSize(10)' "toolbar status dot must not regress to the old tiny 10sp glyph"

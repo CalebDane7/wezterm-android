@@ -92,7 +92,11 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=175`, `versionName=2.74`.
+- Built checkpoint: `versionCode=176`, `versionName=2.75`.
+- v2.75 preserves the key-created WebView zoom state in the same zoom/pan
+  gates used by pinch zoom. This prevents cleanup paths from treating a
+  visibly zoomed viewer as unzoomed before the next one-finger horizontal
+  line-reading pan.
 - v2.74 makes hardware/automation zoom keys call WebView zoom directly so
   one-finger horizontal pan can be proven and used while the viewer is actually
   zoomed. This does not change tmux font size, tmux history, or the native

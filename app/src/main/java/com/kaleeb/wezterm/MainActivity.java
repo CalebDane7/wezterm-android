@@ -121,7 +121,7 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_FILENAME_PREFIX = "upload_filename_";
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
-    private static final String APP_VERSION_NAME = "2.74";
+    private static final String APP_VERSION_NAME = "2.75";
     private static final String UPLOAD_LOG_TAG = "WEztermUpload";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
@@ -276,6 +276,7 @@ public class MainActivity extends Activity {
     private long lastHistoryDragAtMs = 0;
     private long terminalLastHistoryDragEventAtMs = 0;
     private float webViewScale = 1.0f;
+    private boolean keyZoomViewerStateActive = false;
     private long viewerPanUnlockedUntilMs = 0;
     private int lastImeInsetBottom = 0;
     private boolean sessionSwitchInFlight = false;
@@ -7319,7 +7320,7 @@ public class MainActivity extends Activity {
     }
 
     private boolean isViewerZoomed() {
-        return webViewScale > WEBVIEW_ZOOMED_SCALE_THRESHOLD;
+        return keyZoomViewerStateActive || webViewScale > WEBVIEW_ZOOMED_SCALE_THRESHOLD;
     }
 
     private boolean handleViewerZoomKey(int keyCode, KeyEvent event) {
@@ -7339,6 +7340,14 @@ public class MainActivity extends Activity {
                 ? webView.zoomIn()
                 : webView.zoomOut();
         if (changed) {
+            if (keyCode == KeyEvent.KEYCODE_ZOOM_IN) {
+                // WHY: some WebView builds visually zoom from zoomIn() without
+                // promptly calling onScaleChanged. Keep that key-created zoom state
+                // visible to isViewerPanAllowed() so cleanup/pinning code cannot
+                // treat the next one-finger line-reading pan as an unzoomed page.
+                keyZoomViewerStateActive = true;
+                webViewScale = Math.max(webViewScale, WEBVIEW_ZOOMED_SCALE_THRESHOLD + 0.03f);
+            }
             allowViewerPanBriefly();
             cancelViewerTypingPositionRetries("key-zoom");
         }
@@ -8524,6 +8533,7 @@ public class MainActivity extends Activity {
         public void onScaleChanged(WebView view, float oldScale, float newScale) {
             super.onScaleChanged(view, oldScale, newScale);
             webViewScale = newScale;
+            keyZoomViewerStateActive = newScale > WEBVIEW_ZOOMED_SCALE_THRESHOLD;
             allowViewerPanBriefly();
             // WHY: WebView scale is the Android viewer zoom. Do not translate this
             // into ttyd/tmux font changes or tmux resize commands; one-finger

@@ -159,8 +159,8 @@ public class MainActivity extends Activity {
     private static final long TOUCH_SCROLL_RENDER_PULSE_WINDOW_MS = 850;
     private static final float HISTORY_DRAG_RELEASE_MIN_LINES = 2f;
     private static final int TOUCH_SCROLL_LIVE_BOTTOM_SNAP_LINES = 3;
-    private static final float HISTORY_DRAG_FAST_VELOCITY_PX_PER_SEC = 760f;
-    private static final float HISTORY_DRAG_FLING_VELOCITY_PX_PER_SEC = 1500f;
+    private static final float HISTORY_DRAG_FAST_VELOCITY_PX_PER_SEC = 1200f;
+    private static final float HISTORY_DRAG_FLING_VELOCITY_PX_PER_SEC = 2400f;
     private static final float HISTORY_DRAG_FAST_DISTANCE_LINES = 3f;
     private static final float HISTORY_DRAG_FLING_DISTANCE_LINES = 7f;
     private static final float WEBVIEW_ZOOMED_SCALE_THRESHOLD = 1.02f;

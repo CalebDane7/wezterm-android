@@ -121,7 +121,7 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_FILENAME_PREFIX = "upload_filename_";
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
-    private static final String APP_VERSION_NAME = "2.71";
+    private static final String APP_VERSION_NAME = "2.72";
     private static final String UPLOAD_LOG_TAG = "WEztermUpload";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
@@ -164,6 +164,7 @@ public class MainActivity extends Activity {
     private static final float HISTORY_DRAG_FAST_DISTANCE_LINES = 3f;
     private static final float HISTORY_DRAG_FLING_DISTANCE_LINES = 7f;
     private static final float WEBVIEW_ZOOMED_SCALE_THRESHOLD = 1.02f;
+    private static final float ZOOMED_HORIZONTAL_PAN_DRIFT_RATIO = 0.70f;
     private static final long VIEWER_PAN_UNLOCK_MS = 2500;
     private static final long TERMINAL_FOCUS_BURST_MIN_INTERVAL_MS = 700;
     private static final long LIVE_INPUT_VISIBILITY_BURST_MIN_INTERVAL_MS = 220;
@@ -1668,9 +1669,7 @@ public class MainActivity extends Activity {
             if (absDx > terminalTouchSlop || absDy > terminalTouchSlop) {
                 terminalTouchExceededTapSlop = true;
             }
-            if (!terminalHistoryDragActive
-                    && absDx >= terminalTouchSlop * 1.25f
-                    && absDx > absDy * 1.05f) {
+            if (!terminalHistoryDragActive && shouldHandOffToViewerHorizontalPan(absDx, absDy)) {
                 // WHY: one-finger horizontal movement is the user's line-reading
                 // pan inside ttyd/WebView. The app must not treat it as a live
                 // tap or a server history gesture, or xterm focus will recenter
@@ -1802,6 +1801,21 @@ public class MainActivity extends Activity {
         }
 
         return false;
+    }
+
+    private boolean shouldHandOffToViewerHorizontalPan(float absDx, float absDy) {
+        if (isViewerZoomed()) {
+            // WHY: zoomed horizontal point-of-view pan has natural thumb drift.
+            // The old normal-scale dominance check let a mostly-right drag become
+            // ambiguous and then tmux-owned vertical history, which is exactly the
+            // user-reported "cannot move my point of view to the right" failure.
+            // Keep clear vertical drags tmux-owned, but hand off zoomed side-pan
+            // before the WebView loses the native gesture stream.
+            return absDx >= terminalTouchSlop
+                    && absDx >= absDy * ZOOMED_HORIZONTAL_PAN_DRIFT_RATIO;
+        }
+        return absDx >= terminalTouchSlop * 1.25f
+                && absDx > absDy * 1.05f;
     }
 
     private void resetTerminalVelocityTracker(MotionEvent event) {

@@ -92,7 +92,7 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=170`, `versionName=2.69`.
+- Built checkpoint: `versionCode=171`, `versionName=2.70`.
 - v1.29 fixes the black-screen resume case where Android focused WEzterm but
   the WebView never opened a fresh ttyd HTTP/WebSocket connection.
 - The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a
@@ -116,6 +116,10 @@ Android users use the native APK.
   jump straight to live bottom from raw gesture distance. Quiet bottom restore
   still happens through stable `/touch-scroll`, but only after tmux reports a
   real lineDown live/near-bottom edge.
+- v2.70 pins one-finger touch-scroll and Scroll-menu commands to the visible
+  selected terminal window, not a later `/active` poll from another shared tmux
+  lane. Fast flicks keep a bounded second burst, but pending batches carry the
+  same target so momentum cannot scroll or select a different phone window.
 - v1.34 restores a visible `Scroll` toolbar entry after v1.33 stranded the
   proven live-bottom, history-top, page, zoom, and full-session-reader controls
   behind an uncalled internal method.

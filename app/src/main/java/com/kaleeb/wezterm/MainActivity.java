@@ -121,7 +121,7 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_FILENAME_PREFIX = "upload_filename_";
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
-    private static final String APP_VERSION_NAME = "2.69";
+    private static final String APP_VERSION_NAME = "2.70";
     private static final String UPLOAD_LOG_TAG = "WEztermUpload";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
@@ -141,7 +141,7 @@ public class MainActivity extends Activity {
     private static final int HISTORY_DRAG_MAX_PAGES_PER_STEP = 20;
     private static final int HISTORY_DRAG_DOWN_MAX_REPEATS = 8;
     private static final int HISTORY_DRAG_DOWN_RELEASE_MAX_REPEATS = 8;
-    private static final int HISTORY_DRAG_RELEASE_FLING_BURSTS = 4;
+    private static final int HISTORY_DRAG_RELEASE_FLING_BURSTS = 2;
     private static final long HISTORY_DRAG_RELEASE_FLING_DELAY_MS = 90;
     private static final float HISTORY_DRAG_RELEASE_FLING_DECAY = 0.62f;
     private static final long HISTORY_DRAG_REPEATED_FLING_WINDOW_MS = 700;
@@ -252,12 +252,14 @@ public class MainActivity extends Activity {
     private String pendingHistoryScrollWhere = "";
     private int pendingHistoryScrollRepeats = 0;
     private long pendingHistoryScrollGeneration = 0;
+    private String pendingHistoryScrollTargetKey = "";
     private boolean terminalHistoryMomentumActive = false;
     private String lastHistoryFlingWhere = "";
     private long lastHistoryFlingAtMs = 0;
     private boolean touchScrollRenderPulseScheduled = false;
     private long touchScrollRenderPulseUntilMs = 0;
     private long terminalTouchGestureGeneration = 0;
+    private String terminalTouchStableWindowId = "";
     private long lastHistoryDragAtMs = 0;
     private long terminalLastHistoryDragEventAtMs = 0;
     private float webViewScale = 1.0f;
@@ -1610,6 +1612,7 @@ public class MainActivity extends Activity {
             terminalViewerDownEvent = MotionEvent.obtain(event);
             terminalTouchReachedLiveBottom = false;
             terminalTouchStartedInHistoryViewport = terminalHistoryViewportActive || readModeSuppressesKeyboard;
+            terminalTouchStableWindowId = visibleTerminalTargetKey();
             // WHY: touch-scroll HTTP responses can arrive after the finger has
             // already changed direction, released, or started a new gesture. Tagging
             // every request with this generation keeps stale server replies from
@@ -1798,6 +1801,15 @@ public class MainActivity extends Activity {
         if (terminalVelocityTracker != null) {
             terminalVelocityTracker.addMovement(event);
         }
+    }
+
+    private void cancelHistoryMomentum() {
+        // WHY: delayed release bursts and repeated flick bookkeeping must die when
+        // a new touch or pinch takes over. Leaving stale momentum state alive can
+        // replay scroll movement after the visible APK target has changed.
+        terminalHistoryMomentumActive = false;
+        lastHistoryFlingWhere = "";
+        lastHistoryFlingAtMs = 0;
     }
 
     private void recycleTerminalVelocityTracker() {
@@ -2067,7 +2079,8 @@ public class MainActivity extends Activity {
         }
         if (historyScrollRequestInFlight) {
             if (where.equals(pendingHistoryScrollWhere)
-                    && pendingHistoryScrollGeneration == gestureGeneration) {
+                    && pendingHistoryScrollGeneration == gestureGeneration
+                    && pendingHistoryScrollTargetKey.equals(terminalTouchStableWindowId)) {
                 if ("lineDown".equals(where)) {
                     pendingHistoryScrollRepeats = Math.min(
                             maxRepeats,
@@ -2097,19 +2110,20 @@ public class MainActivity extends Activity {
                 pendingHistoryScrollWhere = where;
                 pendingHistoryScrollRepeats = boundedRepeats;
                 pendingHistoryScrollGeneration = gestureGeneration;
+                pendingHistoryScrollTargetKey = terminalTouchStableWindowId;
             }
             return;
         }
-        sendHistoryScrollFromTouch(where, boundedRepeats, gestureGeneration);
+        sendHistoryScrollFromTouch(where, boundedRepeats, gestureGeneration, terminalTouchStableWindowId);
     }
 
-    private void sendHistoryScrollFromTouch(String where, int repeats, long gestureGeneration) {
+    private void sendHistoryScrollFromTouch(String where, int repeats, long gestureGeneration, String targetKey) {
         long readModeGeneration = terminalHistoryViewportActive
                 ? terminalModeGeneration
                 : enterReadMode();
         historyScrollRequestInFlight = true;
         String path = appendStableWindowQuery("/touch-scroll?where=" + urlEncode(where)
-                + "&repeat=" + Math.max(1, repeats));
+                + "&repeat=" + Math.max(1, repeats), targetKey);
         getJson(path, payload -> {
             historyScrollRequestInFlight = false;
             if (gestureGeneration != terminalTouchGestureGeneration) {
@@ -2189,11 +2203,12 @@ public class MainActivity extends Activity {
         String nextWhere = pendingHistoryScrollWhere;
         int nextRepeats = pendingHistoryScrollRepeats;
         long nextGeneration = pendingHistoryScrollGeneration;
+        String nextTargetKey = pendingHistoryScrollTargetKey;
         clearPendingHistoryScroll();
         if (nextGeneration != terminalTouchGestureGeneration) {
             return;
         }
-        sendHistoryScrollFromTouch(nextWhere, Math.max(1, nextRepeats), nextGeneration);
+        sendHistoryScrollFromTouch(nextWhere, Math.max(1, nextRepeats), nextGeneration, nextTargetKey);
     }
 
     private void keepCaptureRendererPulsingDuringTouch(String reason) {
@@ -2255,6 +2270,7 @@ public class MainActivity extends Activity {
         pendingHistoryScrollWhere = "";
         pendingHistoryScrollRepeats = 0;
         pendingHistoryScrollGeneration = 0;
+        pendingHistoryScrollTargetKey = "";
     }
 
     private void loadTerminal() {
@@ -2422,7 +2438,7 @@ public class MainActivity extends Activity {
         // window as touch-scroll. A bare `/scroll` follows whichever pane
         // `main_phone` currently selected and reintroduces the cross-lane
         // scroll drift that made Page up/Page down look broken on the APK.
-        String path = appendStableWindowQuery("/scroll?where=" + urlEncode(where));
+        String path = appendStableWindowQuery("/scroll?where=" + urlEncode(where), visibleTerminalTargetKey());
         control(path, message, refocusTerminal);
     }
 
@@ -5851,6 +5867,21 @@ public class MainActivity extends Activity {
         }
         if (hasStableWindowId(selectedPhoneWindowId)) {
             return selectedPhoneWindowId.trim();
+        }
+        return "unknown:" + terminalModeGeneration;
+    }
+
+    private String visibleTerminalTargetKey() {
+        // WHY: touch scrolling and Scroll-menu actions operate on the terminal the
+        // APK is visibly showing. `/active` polling can change `currentPhoneWindowId`
+        // when another tmux lane selects `main_phone`, while the read-only capture
+        // still shows the previous window. Prefer the selected/visible window for
+        // scroll gestures so fast fling batches cannot land in a different lane.
+        if (hasStableWindowId(selectedPhoneWindowId)) {
+            return selectedPhoneWindowId.trim();
+        }
+        if (hasStableWindowId(currentPhoneWindowId)) {
+            return currentPhoneWindowId.trim();
         }
         return "unknown:" + terminalModeGeneration;
     }

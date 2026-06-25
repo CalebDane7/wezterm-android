@@ -58,13 +58,13 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="170"' "current APK version must be bumped for the v2.69 APK scroll feel contract"
-require "$MANIFEST" 'android:versionName="2.69"' "current APK version must be bumped for the v2.69 APK scroll feel contract"
+require "$MANIFEST" 'android:versionCode="171"' "current APK version must be bumped for the v2.70 APK scroll feel contract"
+require "$MANIFEST" 'android:versionName="2.70"' "current APK version must be bumped for the v2.70 APK scroll feel contract"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.69";' "client /config proof must report the same v2.69 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.70";' "client /config proof must report the same v2.70 APK contract as the manifest"
 require "$MAIN" 'MediaStore.ACTION_PICK_IMAGES' "Upload must use Android Photo Picker for one-selection screenshots/media on Android 13+"
 require "$MAIN" 'uploadDocumentPickerIntent' "Upload must keep ACTION_OPEN_DOCUMENT fallback for non-photo-picker/files path"
 require "$MAIN" 'uploadUrisFromResult' "Upload result must handle both data URI and ClipData instead of dropping picker returns"
@@ -138,8 +138,9 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=170`, `versionName=2.69`.' "README checkpoint must match the installed v2.69 APK"
-    require "$README" 'v2.69 fixes the APK one-finger scroll regression' "README must document the current APK horizontal-pan/downward-snap scroll fix"
+    require "$README" 'Built checkpoint: `versionCode=171`, `versionName=2.70`.' "README checkpoint must match the installed v2.70 APK"
+    require "$README" 'v2.70 pins one-finger touch-scroll and Scroll-menu commands to the visible' "README must document the current APK visible-window touch-scroll target fix"
+    require "$README" 'v2.69 fixes the APK one-finger scroll regression' "README must document the APK horizontal-pan/downward-snap scroll fix"
     require "$README" 'removes the automatic upload-success dialog' "README must document the current upload popup-block fix"
     require "$README" 'v2.60 tightens that capture-renderer pulse' "README must document the current 16 ms touch-scroll renderer cadence fix"
     require "$README" 'v2.59 smooths APK one-finger history scrolling' "README must document the current historical-sample/frame-paced touch-scroll fix"
@@ -296,13 +297,14 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.69' "install page must advertise the current v2.69 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>170</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.70' "install page must advertise the current v2.70 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>171</code>' "install page versionCode must match the manifest"
     require "$INSTALL_PAGE" 'Workspace Save/Load/Close' "install page must mention the v2.62 workspace control fix"
     require "$INSTALL_PAGE" 'composer-above-buttons layout' "install page must mention the restored composer-above-buttons layout"
     require "$INSTALL_PAGE" 'compact v2.65 toolbar chrome' "install page must mention the compact bottom toolbar fix"
     require "$INSTALL_PAGE" 'uploaded path staged in the native Send composer' "install page must mention the v2.67 upload composer-staging fix"
     require "$INSTALL_PAGE" 'clean session-only title strip after uploads' "install page must mention the v2.68 upload title-strip cleanup"
+    require "$INSTALL_PAGE" 'visible-window touch-scroll target pin' "install page must mention the v2.70 visible target pin fix"
     require "$INSTALL_PAGE" 'early horizontal pan handoff' "install page must mention the v2.69 horizontal pan handoff fix"
     require "$INSTALL_PAGE" 'no raw-distance bottom snap' "install page must mention the v2.69 downward snap fix"
     require "$INSTALL_PAGE" 'Android Photo Picker immediate uploads' "install page must mention the v2.66 immediate upload picker fix"
@@ -410,7 +412,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.69 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.70 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"
@@ -935,7 +937,7 @@ require "$MAIN" '"Read current session"' "Scroll menu must keep current-session 
 require_absent "$MAIN" '"Open full session reader"' "old reader label must not return"
 require "$MAIN" '"Page up"' "Scroll menu must keep page up"
 require "$MAIN" '"Page down"' "Scroll menu must keep page down"
-require "$MAIN" 'String path = appendStableWindowQuery("/scroll?where=" + urlEncode(where))' "Scroll menu Page up/Page down must target the stable phone windowId instead of whichever tmux window is selected"
+require "$MAIN" 'String path = appendStableWindowQuery("/scroll?where=" + urlEncode(where), visibleTerminalTargetKey())' "Scroll menu Page up/Page down must target the visible stable phone windowId instead of whichever tmux window is selected"
 require "$MAIN" '"Stop current task"' "Scroll menu must keep stop fallback"
 require "$MAIN" '"Type prompt safely"' "menus must expose the native safe prompt composer"
 require "$MAIN" '"Start / send Enter"' "menus must expose the explicit Start/send route"
@@ -1225,7 +1227,7 @@ require "$MAIN" 'TOUCH_SCROLL_LIVE_BOTTOM_SNAP_LINES = 16' "near-bottom lineDown
 require "$MAIN" 'HISTORY_DRAG_FLING_VELOCITY_PX_PER_SEC' "fast flick threshold must remain explicit"
 require "$MAIN" 'terminalTouchGestureGeneration' "touch scrolling must generation-cancel stale delayed responses"
 require "$MAIN" 'pendingHistoryScrollGeneration' "pending touch scrolls must belong to the current gesture"
-require "$MAIN" 'sendHistoryScrollFromTouch(where, boundedRepeats, gestureGeneration)' "touch scrolling must batch through bounded generation-tagged server repeats"
+require "$MAIN" 'sendHistoryScrollFromTouch(where, boundedRepeats, gestureGeneration, terminalTouchStableWindowId)' "touch scrolling must batch through bounded generation-tagged server repeats and a stable visible target"
 require "$MAIN" 'String path = appendStableWindowQuery("/touch-scroll?where=" + urlEncode(where)' "touch scrolling must target the stable phone windowId instead of whichever tmux window is selected"
 require "$MAIN" 'getJson(appendStableWindowQuery("/touch-scroll?where=bottom&repeat=1")' "quiet touch-bottom restore must target the stable phone windowId"
 require "$MAIN" 'String where = step > 0 ? "lineUp" : "lineDown"' "touch scroll must use line-sized server movement, not page jumps"
@@ -1241,11 +1243,20 @@ require "$MAIN" 'HISTORY_DRAG_RELEASE_FLING_BURSTS = 2' "full fling must keep th
 require "$MAIN" 'A second short-delay burst gives real fling velocity' "delayed fling-burst WHY comment must remain"
 require "$MAIN" 'flingGeneration == terminalTouchGestureGeneration' "delayed fling burst must be cancelled by a newer pinch/gesture"
 require "$MAIN" '!terminalMultiTouchGesture' "delayed fling burst must not run during/after pinch zoom"
+require "$MAIN" 'private void cancelHistoryMomentum()' "new touch and pinch paths must have a cleanup helper for delayed/repeated fling state"
+require "$MAIN" 'Leaving stale momentum state alive' "momentum cleanup WHY comment must preserve the target-drift failure mode"
 require "$MAIN" 'single-burst' "downward flings must stay single-burst and not queue the delayed second burst"
 require "$MAIN" 'stall in copy-mode many' "downward return WHY comment must preserve the physical proof failure"
 require "$MAIN" 'full server-supported touch batch' "downward return WHY comment must preserve the former control-server cap failure"
 require "$MAIN" 'feel frozen and then jump to the bottom' "downward return WHY comment must preserve the newest user-reported failure"
 require "$MAIN" 'raw finger distance cannot prove tmux is near live bottom' "downward release WHY comment must preserve the v2.69 early-snap root cause"
+require "$MAIN" 'private String terminalTouchStableWindowId = "";' "touch-scroll gestures must capture a stable visible target at ACTION_DOWN"
+require "$MAIN" 'terminalTouchStableWindowId = visibleTerminalTargetKey();' "touch-scroll gestures must use the visible target rather than a later active poll"
+require "$MAIN" 'pendingHistoryScrollTargetKey' "pending touch-scroll batches must preserve the same stable target"
+require "$MAIN" 'sendHistoryScrollFromTouch(where, boundedRepeats, gestureGeneration, terminalTouchStableWindowId);' "MOVE touch-scroll sends must use the gesture-captured target"
+require "$MAIN" 'appendStableWindowQuery("/touch-scroll?where="' "touch-scroll endpoint must remain stable-window routed"
+require "$MAIN" 'visibleTerminalTargetKey()' "visible terminal scroll target helper must exist"
+require "$MAIN" 'Prefer the selected/visible window for' "visible target WHY comment must preserve the target-drift root cause"
 require "$MAIN" 'dispatchHistoryReleaseFling(event);' "release fling must still add a bounded ACTION_UP burst so fast flicks move farther than slow drag"
 require_absent "$MAIN" 'shouldRestoreLiveBottomFromRelease' "release fling must not signal live-bottom restore before the server reports tmux near-bottom"
 require "$MAIN" 'Math.max(pendingHistoryScrollRepeats, boundedRepeats)' "downward pending movement must replace instead of accumulate into a catch-up burst"

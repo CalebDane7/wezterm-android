@@ -121,7 +121,7 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_FILENAME_PREFIX = "upload_filename_";
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
-    private static final String APP_VERSION_NAME = "2.75";
+    private static final String APP_VERSION_NAME = "2.76";
     private static final String UPLOAD_LOG_TAG = "WEztermUpload";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
@@ -245,6 +245,7 @@ public class MainActivity extends Activity {
     private float terminalTouchStartX = 0;
     private float terminalTouchStartY = 0;
     private float terminalLastHistoryDragY = 0;
+    private float terminalLastViewerPanX = 0;
     private boolean terminalHistoryDragActive = false;
     private boolean terminalMultiTouchGesture = false;
     private boolean terminalTouchExceededTapSlop = false;
@@ -1604,6 +1605,7 @@ public class MainActivity extends Activity {
             terminalTouchStartX = event.getX();
             terminalTouchStartY = event.getY();
             terminalLastHistoryDragY = terminalTouchStartY;
+            terminalLastViewerPanX = terminalTouchStartX;
             terminalLastHistoryDragEventAtMs = event.getEventTime();
             terminalTouchDownWallClockMs = System.currentTimeMillis();
             terminalHistoryDragActive = false;
@@ -1664,6 +1666,7 @@ public class MainActivity extends Activity {
                 return forwardTouchToViewer(event);
             }
             if (terminalHorizontalPanActive) {
+                panZoomedViewerHorizontally(event);
                 return forwardTouchToViewer(event);
             }
             float dx = event.getX() - terminalTouchStartX;
@@ -1681,8 +1684,10 @@ public class MainActivity extends Activity {
                 // as soon as horizontal intent is clear; waiting for a large dx
                 // swallows the first part of the native pan and kills momentum.
                 terminalHorizontalPanActive = true;
+                terminalLastViewerPanX = terminalTouchStartX;
                 allowViewerPanBriefly();
                 cancelViewerTypingPositionRetries("horizontal-pan");
+                panZoomedViewerHorizontally(event);
                 return forwardTouchToViewer(event);
             }
             if (!terminalHistoryDragActive) {
@@ -1820,6 +1825,25 @@ public class MainActivity extends Activity {
         }
         return absDx >= terminalTouchSlop * 1.25f
                 && absDx > absDy * 1.05f;
+    }
+
+    private void panZoomedViewerHorizontally(MotionEvent event) {
+        if (webView == null || event == null || event.getPointerCount() != 1 || !isViewerZoomed()) {
+            return;
+        }
+        float x = event.getX();
+        int deltaX = Math.round(terminalLastViewerPanX - x);
+        terminalLastViewerPanX = x;
+        if (deltaX == 0) {
+            return;
+        }
+        // WHY: v2.75 proved that replaying the original DOWN into WebView was
+        // necessary but not sufficient once WEzTerm had already consumed the
+        // gesture start. Keep zoomed one-finger horizontal reading viewer-owned by
+        // directly scrolling the WebView's horizontal viewport; do not reroute this
+        // through tmux history, `/touch-scroll`, font resize, or zoom reset.
+        allowViewerPanBriefly();
+        webView.scrollBy(deltaX, 0);
     }
 
     private void resetTerminalVelocityTracker(MotionEvent event) {

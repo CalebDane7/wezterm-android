@@ -92,7 +92,12 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=176`, `versionName=2.75`.
+- Built checkpoint: `versionCode=177`, `versionName=2.76`.
+- v2.76 explicitly scrolls the zoomed WebView viewport during one-finger
+  horizontal pan because v2.75 proved original-DOWN replay alone still left the
+  visible point of view stuck. This remains viewer-owned and does not reroute
+  horizontal reading through `/touch-scroll`, tmux history, font resize, or zoom
+  reset.
 - v2.75 preserves the key-created WebView zoom state in the same zoom/pan
   gates used by pinch zoom. This prevents cleanup paths from treating a
   visibly zoomed viewer as unzoomed before the next one-finger horizontal

@@ -121,7 +121,7 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_FILENAME_PREFIX = "upload_filename_";
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
-    private static final String APP_VERSION_NAME = "2.72";
+    private static final String APP_VERSION_NAME = "2.73";
     private static final String UPLOAD_LOG_TAG = "WEztermUpload";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
@@ -1890,6 +1890,14 @@ public class MainActivity extends Activity {
                 || currentEvent.getActionMasked() == MotionEvent.ACTION_UP
                 || currentEvent.getPointerCount() < 1
                 || (!terminalTouchExceededTapSlop && !terminalMultiTouchGesture && !terminalHorizontalPanActive)) {
+            return MotionEvent.obtain(terminalViewerDownEvent);
+        }
+        if (terminalHorizontalPanActive && !terminalMultiTouchGesture) {
+            // WHY: one-finger zoomed horizontal pan must replay the original DOWN.
+            // v2.72 synthesized DOWN at the first MOVE point, which erased the
+            // horizontal delta WebView needs to visually move the zoomed viewport.
+            // Keep the synthetic-current handoff for pinch, but let one-finger
+            // line-reading pan deliver the real down->move displacement.
             return MotionEvent.obtain(terminalViewerDownEvent);
         }
         // WHY: WEzterm holds ACTION_DOWN until it knows whether the gesture is

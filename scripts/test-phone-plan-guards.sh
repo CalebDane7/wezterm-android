@@ -58,13 +58,13 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="173"' "current APK version must be bumped for the v2.72 APK zoomed horizontal pan contract"
-require "$MANIFEST" 'android:versionName="2.72"' "current APK version must be bumped for the v2.72 APK zoomed horizontal pan contract"
+require "$MANIFEST" 'android:versionCode="174"' "current APK version must be bumped for the v2.73 APK zoomed horizontal pan contract"
+require "$MANIFEST" 'android:versionName="2.73"' "current APK version must be bumped for the v2.73 APK zoomed horizontal pan contract"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.72";' "client /config proof must report the same v2.72 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.73";' "client /config proof must report the same v2.73 APK contract as the manifest"
 require "$MAIN" 'MediaStore.ACTION_PICK_IMAGES' "Upload must use Android Photo Picker for one-selection screenshots/media on Android 13+"
 require "$MAIN" 'uploadDocumentPickerIntent' "Upload must keep ACTION_OPEN_DOCUMENT fallback for non-photo-picker/files path"
 require "$MAIN" 'uploadUrisFromResult' "Upload result must handle both data URI and ClipData instead of dropping picker returns"
@@ -138,10 +138,11 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=173`, `versionName=2.72`.' "README checkpoint must match the installed v2.72 APK"
+    require "$README" 'Built checkpoint: `versionCode=174`, `versionName=2.73`.' "README checkpoint must match the installed v2.73 APK"
     require "$README" 'v2.70 pins one-finger touch-scroll and Scroll-menu commands to the visible' "README must document the current APK visible-window touch-scroll target fix"
     require "$README" 'v2.71 replaces the v2.70 two-burst fake momentum with cancellable inertial' "README must document the current APK inertial momentum fix"
     require "$README" 'v2.72 keeps zoomed horizontal point-of-view pan WebView-owned' "README must document the current APK zoomed horizontal pan fix"
+    require "$README" 'v2.73 fixes the false-proof zoomed pan regression' "README must document the current APK original-down zoomed pan fix"
     require "$README" 'v2.69 fixes the APK one-finger scroll regression' "README must document the APK horizontal-pan/downward-snap scroll fix"
     require "$README" 'removes the automatic upload-success dialog' "README must document the current upload popup-block fix"
     require "$README" 'v2.60 tightens that capture-renderer pulse' "README must document the current 16 ms touch-scroll renderer cadence fix"
@@ -299,8 +300,8 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.72' "install page must advertise the current v2.72 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>173</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.73' "install page must advertise the current v2.73 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>174</code>' "install page versionCode must match the manifest"
     require "$INSTALL_PAGE" 'Workspace Save/Load/Close' "install page must mention the v2.62 workspace control fix"
     require "$INSTALL_PAGE" 'composer-above-buttons layout' "install page must mention the restored composer-above-buttons layout"
     require "$INSTALL_PAGE" 'compact v2.65 toolbar chrome' "install page must mention the compact bottom toolbar fix"
@@ -417,7 +418,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.72 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.73 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"
@@ -1333,6 +1334,9 @@ require "$MAIN" 'downEventForViewerHandoff' "WebView-owned pan/pinch handoff mus
 require "$MAIN" 'shouldHandOffToViewerHorizontalPan' "horizontal pan classification must stay centralized so zoomed and normal-scale rules cannot drift"
 require "$MAIN" 'ZOOMED_HORIZONTAL_PAN_DRIFT_RATIO = 0.70f' "zoomed side-pan must tolerate real thumb drift without stealing clear vertical scroll"
 require "$MAIN" 'zoomed horizontal point-of-view pan has natural thumb drift' "zoomed pan WHY comment must preserve the current user-reported right-pan failure"
+require "$MAIN" 'one-finger zoomed horizontal pan must replay the original DOWN' "zoomed one-finger pan must not synthesize away the first left/right delta"
+require "$MAIN" 'v2.72 synthesized DOWN at the first MOVE point' "zoomed pan WHY comment must preserve the false-proof root cause"
+require "$MAIN" 'terminalHorizontalPanActive && !terminalMultiTouchGesture' "one-finger horizontal pan handoff must stay separate from pinch handoff"
 require "$MAIN" 'absDx >= terminalTouchSlop * 1.25f' "horizontal pan must hand off before a large swallowed dx kills native pan momentum"
 require "$MAIN" 'waiting for a large dx' "horizontal pan WHY comment must preserve the v2.69 swallowed-pan root cause"
 require "$MAIN" 'cancelViewerTypingPositionRetries("multi-touch")' "two-finger pan must cancel stale zoomed true-bottom retries"

@@ -92,7 +92,7 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=173`, `versionName=2.72`.
+- Built checkpoint: `versionCode=174`, `versionName=2.73`.
 - v1.29 fixes the black-screen resume case where Android focused WEzterm but
   the WebView never opened a fresh ttyd HTTP/WebSocket connection.
 - The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a
@@ -128,6 +128,10 @@ Android users use the native APK.
   user's thumb drifts vertically during the side drag. Normal-scale one-finger
   vertical history scroll, inertial flick, stop-touch cancellation, and the
   v2.71 conservative bottom-edge behavior remain tmux-owned and protected.
+- v2.73 fixes the false-proof zoomed pan regression: one-finger horizontal
+  viewer handoff now replays the original ACTION_DOWN instead of synthesizing a
+  DOWN at the first MOVE point, so WebView receives real left/right displacement
+  while pinch still keeps the synthetic-current handoff.
 - v1.34 restores a visible `Scroll` toolbar entry after v1.33 stranded the
   proven live-bottom, history-top, page, zoom, and full-session-reader controls
   behind an uncalled internal method.

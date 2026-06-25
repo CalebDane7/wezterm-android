@@ -92,7 +92,7 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=169`, `versionName=2.68`.
+- Built checkpoint: `versionCode=170`, `versionName=2.69`.
 - v1.29 fixes the black-screen resume case where Android focused WEzterm but
   the WebView never opened a fresh ttyd HTTP/WebSocket connection.
 - The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a
@@ -110,6 +110,12 @@ Android users use the native APK.
 - v2.68 keeps the title strip as the active session title after uploads; the
   uploaded path stays in the native Send composer and in title-strip tap/long-
   press recovery, not as a visible filename prefix above the buttons.
+- v2.69 fixes the APK one-finger scroll regression without weakening the
+  protected fast flick path. Horizontal intent now hands off to WebView sooner
+  so long-line pan keeps native momentum, and downward return flicks no longer
+  jump straight to live bottom from raw gesture distance. Quiet bottom restore
+  still happens through stable `/touch-scroll`, but only after tmux reports a
+  real lineDown live/near-bottom edge.
 - v1.34 restores a visible `Scroll` toolbar entry after v1.33 stranded the
   proven live-bottom, history-top, page, zoom, and full-session-reader controls
   behind an uncalled internal method.

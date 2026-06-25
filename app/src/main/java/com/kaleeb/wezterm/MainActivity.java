@@ -121,7 +121,7 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_FILENAME_PREFIX = "upload_filename_";
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
-    private static final String APP_VERSION_NAME = "2.68";
+    private static final String APP_VERSION_NAME = "2.69";
     private static final String UPLOAD_LOG_TAG = "WEztermUpload";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
@@ -141,8 +141,11 @@ public class MainActivity extends Activity {
     private static final int HISTORY_DRAG_MAX_PAGES_PER_STEP = 20;
     private static final int HISTORY_DRAG_DOWN_MAX_REPEATS = 8;
     private static final int HISTORY_DRAG_DOWN_RELEASE_MAX_REPEATS = 8;
-    private static final int HISTORY_DRAG_DOWN_DIRECT_BOTTOM_MIN_LINES = 12;
-    private static final int HISTORY_DRAG_RELEASE_FLING_BURSTS = 2;
+    private static final int HISTORY_DRAG_RELEASE_FLING_BURSTS = 4;
+    private static final long HISTORY_DRAG_RELEASE_FLING_DELAY_MS = 90;
+    private static final float HISTORY_DRAG_RELEASE_FLING_DECAY = 0.62f;
+    private static final long HISTORY_DRAG_REPEATED_FLING_WINDOW_MS = 700;
+    private static final int HISTORY_DRAG_REPEATED_FLING_BOOST_REPEATS = 6;
     private static final int HISTORY_DRAG_SLOW_MOVE_MAX_REPEATS = 2;
     private static final int HISTORY_DRAG_SLOW_PENDING_MAX_REPEATS = 2;
     private static final int HISTORY_DRAG_FAST_MOVE_REPEATS = 6;
@@ -249,6 +252,9 @@ public class MainActivity extends Activity {
     private String pendingHistoryScrollWhere = "";
     private int pendingHistoryScrollRepeats = 0;
     private long pendingHistoryScrollGeneration = 0;
+    private boolean terminalHistoryMomentumActive = false;
+    private String lastHistoryFlingWhere = "";
+    private long lastHistoryFlingAtMs = 0;
     private boolean touchScrollRenderPulseScheduled = false;
     private long touchScrollRenderPulseUntilMs = 0;
     private long terminalTouchGestureGeneration = 0;
@@ -1558,6 +1564,7 @@ public class MainActivity extends Activity {
                 // or replay queued movement after the user started zooming/panning.
                 terminalTouchGestureGeneration++;
                 terminalTouchReachedLiveBottom = false;
+                cancelHistoryMomentum();
                 clearPendingHistoryScroll();
                 cancelViewerTypingPositionRetries("multi-touch");
             }
@@ -1566,7 +1573,9 @@ public class MainActivity extends Activity {
             allowViewerPanBriefly();
             return forwardTouchToViewer(event);
         }
-        pinTerminalViewportLocal();
+        if (action != MotionEvent.ACTION_DOWN && action != MotionEvent.ACTION_MOVE) {
+            pinTerminalViewportLocal();
+        }
 
         if (action == MotionEvent.ACTION_DOWN) {
             if (!passiveNavigationTapSuppressed) {
@@ -1606,6 +1615,7 @@ public class MainActivity extends Activity {
             // every request with this generation keeps stale server replies from
             // triggering the bottom restore/refresh jump on a later gesture.
             terminalTouchGestureGeneration++;
+            cancelHistoryMomentum();
             clearPendingHistoryScroll();
             lastHistoryDragAtMs = 0;
             // WHY: v1.30 fixed tap-to-type by refocusing xterm on live taps,
@@ -1643,12 +1653,14 @@ public class MainActivity extends Activity {
                 terminalTouchExceededTapSlop = true;
             }
             if (!terminalHistoryDragActive
-                    && absDx >= terminalTouchSlop * 2
-                    && absDx > absDy * 1.25f) {
+                    && absDx >= terminalTouchSlop * 1.25f
+                    && absDx > absDy * 1.05f) {
                 // WHY: one-finger horizontal movement is the user's line-reading
                 // pan inside ttyd/WebView. The app must not treat it as a live
                 // tap or a server history gesture, or xterm focus will recenter
-                // the viewport and recreate the "snaps back left" bug.
+                // the viewport and recreate the "snaps back left" bug. Hand off
+                // as soon as horizontal intent is clear; waiting for a large dx
+                // swallows the first part of the native pan and kills momentum.
                 terminalHorizontalPanActive = true;
                 allowViewerPanBriefly();
                 cancelViewerTypingPositionRetries("horizontal-pan");
@@ -1682,9 +1694,8 @@ public class MainActivity extends Activity {
             boolean reachedLiveBottom = terminalTouchReachedLiveBottom;
             boolean wasForwardingTouchToViewer = terminalForwardingTouchToViewer;
             boolean startedDuringPassiveSuppression = terminalTouchStartedDuringPassiveSuppression;
-            boolean shouldRestoreLiveBottomFromRelease = false;
             if (action == MotionEvent.ACTION_UP && terminalHistoryDragActive) {
-                shouldRestoreLiveBottomFromRelease = dispatchHistoryReleaseFling(event);
+                dispatchHistoryReleaseFling(event);
                 keepCaptureRendererPulsingDuringTouch("touch-scroll-release");
             }
             boolean shouldRestoreTyping = action == MotionEvent.ACTION_UP
@@ -1732,7 +1743,7 @@ public class MainActivity extends Activity {
                 return true;
             }
             if (action == MotionEvent.ACTION_UP
-                    && (reachedLiveBottom || shouldRestoreLiveBottomFromRelease)) {
+                    && reachedLiveBottom) {
                 // WHY: the finger has reached tmux scroll position 0, but tmux is
                 // still in copy-mode unless Android explicitly exits it. v1.56
                 // avoided the old refresh loop by doing nothing here, but that left
@@ -1951,7 +1962,7 @@ public class MainActivity extends Activity {
         return Math.max(1, Math.min(HISTORY_DRAG_MAX_PAGES_PER_STEP, repeats));
     }
 
-    private boolean dispatchHistoryReleaseFling(MotionEvent event) {
+    private void dispatchHistoryReleaseFling(MotionEvent event) {
         float totalDy = event.getY() - terminalTouchStartY;
         float absDy = Math.abs(totalDy);
         long durationMs = Math.max(1, event.getEventTime() - event.getDownTime());
@@ -1963,14 +1974,14 @@ public class MainActivity extends Activity {
         int lineThreshold = Math.max(terminalTouchSlop, dp(HISTORY_DRAG_LINE_THRESHOLD_DP));
         if (absDy < lineThreshold * HISTORY_DRAG_RELEASE_MIN_LINES
                 || releaseVelocity < HISTORY_DRAG_FAST_VELOCITY_PX_PER_SEC) {
-            return false;
+            return;
         }
         if (terminalTouchReachedLiveBottom && totalDy < 0) {
             // WHY: a release fling in the same downward direction after tmux has
             // already reported live bottom would queue extra lineDown requests at
             // the edge. That is the exact "refresh/bounce before I get to the
             // bottom" symptom; wait for finger-up restore instead.
-            return false;
+            return;
         }
         boolean fullFling = releaseVelocity >= HISTORY_DRAG_FLING_VELOCITY_PX_PER_SEC;
         int repeats = fullFling
@@ -1978,16 +1989,6 @@ public class MainActivity extends Activity {
                 : Math.max(8, HISTORY_DRAG_MAX_PAGES_PER_STEP / 2);
         String where = totalDy > 0 ? "lineUp" : "lineDown";
         if ("lineDown".equals(where)) {
-            if (absDy >= lineThreshold * HISTORY_DRAG_DOWN_DIRECT_BOTTOM_MIN_LINES) {
-                // WHY: a long, fast upward finger swipe is the user's explicit
-                // "go to live bottom" gesture. Replaying more lineDown chunks after
-                // release either stalls above bottom with small caps or freezes and
-                // then jumps with large caps. Use the same quiet tmux bottom exit as
-                // the proven bottom-edge path: no WebView reload, no xterm scroll
-                // burst, and no keyboard focus side effect.
-                clearPendingHistoryScroll();
-                return true;
-            }
             // WHY: upward flicks are for racing through old output, so a large burst
             // is useful there. Downward flicks are the return-to-live path. v1.58's
             // tiny downward cap made real phone swipes stall in copy-mode many
@@ -1996,6 +1997,11 @@ public class MainActivity extends Activity {
             // once queued work caught up. Keep downward movement single-burst and
             // smaller than upward history movement so ttyd can repaint intermediate
             // positions while the near-bottom guard still exits copy-mode cleanly.
+            // WHY: raw finger distance cannot prove tmux is near live bottom. v2.69
+            // removes the old direct-bottom shortcut because a long return flick
+            // could jump straight to the prompt before `/touch-scroll` reported a
+            // tmux lineDown at or near scroll position 0. Quiet bottom restore is
+            // still protected, but only from the server-owned near-bottom signal.
             repeats = Math.min(repeats, HISTORY_DRAG_DOWN_RELEASE_MAX_REPEATS);
             fullFling = false;
         }
@@ -2029,7 +2035,6 @@ public class MainActivity extends Activity {
                 }, burstDelayMs);
             }
         }
-        return false;
     }
 
     private void scrollTerminalFromTouch(String where, int repeats) {

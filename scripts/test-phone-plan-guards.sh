@@ -58,13 +58,13 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="169"' "current APK version must be bumped for the v2.68 immediate upload/composer-title contract"
-require "$MANIFEST" 'android:versionName="2.68"' "current APK version must be bumped for the v2.68 immediate upload/composer-title contract"
+require "$MANIFEST" 'android:versionCode="170"' "current APK version must be bumped for the v2.69 APK scroll feel contract"
+require "$MANIFEST" 'android:versionName="2.69"' "current APK version must be bumped for the v2.69 APK scroll feel contract"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.68";' "client /config proof must report the same v2.68 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.69";' "client /config proof must report the same v2.69 APK contract as the manifest"
 require "$MAIN" 'MediaStore.ACTION_PICK_IMAGES' "Upload must use Android Photo Picker for one-selection screenshots/media on Android 13+"
 require "$MAIN" 'uploadDocumentPickerIntent' "Upload must keep ACTION_OPEN_DOCUMENT fallback for non-photo-picker/files path"
 require "$MAIN" 'uploadUrisFromResult' "Upload result must handle both data URI and ClipData instead of dropping picker returns"
@@ -138,7 +138,8 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=169`, `versionName=2.68`.' "README checkpoint must match the installed v2.68 APK"
+    require "$README" 'Built checkpoint: `versionCode=170`, `versionName=2.69`.' "README checkpoint must match the installed v2.69 APK"
+    require "$README" 'v2.69 fixes the APK one-finger scroll regression' "README must document the current APK horizontal-pan/downward-snap scroll fix"
     require "$README" 'removes the automatic upload-success dialog' "README must document the current upload popup-block fix"
     require "$README" 'v2.60 tightens that capture-renderer pulse' "README must document the current 16 ms touch-scroll renderer cadence fix"
     require "$README" 'v2.59 smooths APK one-finger history scrolling' "README must document the current historical-sample/frame-paced touch-scroll fix"
@@ -295,13 +296,15 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.68' "install page must advertise the current v2.68 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>169</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.69' "install page must advertise the current v2.69 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>170</code>' "install page versionCode must match the manifest"
     require "$INSTALL_PAGE" 'Workspace Save/Load/Close' "install page must mention the v2.62 workspace control fix"
     require "$INSTALL_PAGE" 'composer-above-buttons layout' "install page must mention the restored composer-above-buttons layout"
     require "$INSTALL_PAGE" 'compact v2.65 toolbar chrome' "install page must mention the compact bottom toolbar fix"
     require "$INSTALL_PAGE" 'uploaded path staged in the native Send composer' "install page must mention the v2.67 upload composer-staging fix"
     require "$INSTALL_PAGE" 'clean session-only title strip after uploads' "install page must mention the v2.68 upload title-strip cleanup"
+    require "$INSTALL_PAGE" 'early horizontal pan handoff' "install page must mention the v2.69 horizontal pan handoff fix"
+    require "$INSTALL_PAGE" 'no raw-distance bottom snap' "install page must mention the v2.69 downward snap fix"
     require "$INSTALL_PAGE" 'Android Photo Picker immediate uploads' "install page must mention the v2.66 immediate upload picker fix"
     require "$INSTALL_PAGE" 'capture-renderer cursor-row refresh' "install page must mention the visible bottom cursor fix"
     require "$INSTALL_PAGE" 'immersive Android navigation strip' "install page must mention the no-dead-strip nav fix"
@@ -407,7 +410,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.68 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.69 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"
@@ -1210,7 +1213,7 @@ require "$MAIN" 'HISTORY_DRAG_PAGES_PER_STEP = 1' "slow scroll must stay control
 require "$MAIN" 'HISTORY_DRAG_MAX_PAGES_PER_STEP = 20' "fast flick must stay capped at the server-supported touch burst"
 require "$MAIN" 'HISTORY_DRAG_DOWN_MAX_REPEATS = 8' "downward scroll batches must stay small enough to paint smoothly near live bottom"
 require "$MAIN" 'HISTORY_DRAG_DOWN_RELEASE_MAX_REPEATS = 8' "downward release flings must not queue a frozen catch-up burst at live bottom"
-require "$MAIN" 'HISTORY_DRAG_DOWN_DIRECT_BOTTOM_MIN_LINES = 12' "long fast downward return flicks must use the quiet bottom restore path"
+require_absent "$MAIN" 'HISTORY_DRAG_DOWN_DIRECT_BOTTOM_MIN_LINES' "downward return flicks must not jump to live bottom from raw gesture distance"
 require "$MAIN" 'HISTORY_DRAG_SLOW_MOVE_MAX_REPEATS = 2' "slow MOVE batches must remain line-sized so reading does not jump"
 require "$MAIN" 'HISTORY_DRAG_SLOW_PENDING_MAX_REPEATS = 2' "slow upward pending movement must stay tiny so backend cadence does not jump"
 require "$MAIN" 'HISTORY_DRAG_FAST_MOVE_REPEATS = 6' "fast move scroll repeats must stay explicit"
@@ -1242,8 +1245,9 @@ require "$MAIN" 'single-burst' "downward flings must stay single-burst and not q
 require "$MAIN" 'stall in copy-mode many' "downward return WHY comment must preserve the physical proof failure"
 require "$MAIN" 'full server-supported touch batch' "downward return WHY comment must preserve the former control-server cap failure"
 require "$MAIN" 'feel frozen and then jump to the bottom' "downward return WHY comment must preserve the newest user-reported failure"
-require "$MAIN" 'go to live bottom' "long downward release WHY comment must preserve the explicit bottom-return intent"
-require "$MAIN" 'shouldRestoreLiveBottomFromRelease = dispatchHistoryReleaseFling(event)' "long downward release must signal the caller to run quiet bottom restore"
+require "$MAIN" 'raw finger distance cannot prove tmux is near live bottom' "downward release WHY comment must preserve the v2.69 early-snap root cause"
+require "$MAIN" 'dispatchHistoryReleaseFling(event);' "release fling must still add a bounded ACTION_UP burst so fast flicks move farther than slow drag"
+require_absent "$MAIN" 'shouldRestoreLiveBottomFromRelease' "release fling must not signal live-bottom restore before the server reports tmux near-bottom"
 require "$MAIN" 'Math.max(pendingHistoryScrollRepeats, boundedRepeats)' "downward pending movement must replace instead of accumulate into a catch-up burst"
 require "$MAIN" 'boundedRepeats <= HISTORY_DRAG_SLOW_MOVE_MAX_REPEATS' "slow upward touch-scroll must use the explicit slow-repeat ceiling"
 require "$MAIN" 'Replace queued tiny pending steps' "slow upward touch-scroll must replace queued tiny steps instead of accumulating a delayed catch-up burst"
@@ -1293,6 +1297,8 @@ require "$MAIN" 'private boolean isViewerPanAllowed()' "zoomed WebView panning m
 require "$MAIN" 'allowViewerPanBriefly()' "two-finger and horizontal viewer pan must unlock the WebView viewport"
 require "$MAIN" 'terminalViewerDownEvent = MotionEvent.obtain(event)' "consumed ACTION_DOWN must be replayable when gesture becomes WebView-owned"
 require "$MAIN" 'downEventForViewerHandoff' "WebView-owned pan/pinch handoff must not replay a stale first-finger DOWN"
+require "$MAIN" 'absDx >= terminalTouchSlop * 1.25f' "horizontal pan must hand off before a large swallowed dx kills native pan momentum"
+require "$MAIN" 'waiting for a large dx' "horizontal pan WHY comment must preserve the v2.69 swallowed-pan root cause"
 require "$MAIN" 'cancelViewerTypingPositionRetries("multi-touch")' "two-finger pan must cancel stale zoomed true-bottom retries"
 require "$MAIN" 'cancelViewerTypingPositionRetries("horizontal-pan")' "horizontal viewer pan must cancel stale zoomed true-bottom retries"
 require "$MAIN" 'viewerTypingPositionGeneration' "zoomed true-bottom retries must be generation-cancelled"

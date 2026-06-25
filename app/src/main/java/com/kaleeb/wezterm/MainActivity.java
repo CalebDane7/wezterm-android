@@ -121,7 +121,7 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_FILENAME_PREFIX = "upload_filename_";
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
-    private static final String APP_VERSION_NAME = "2.73";
+    private static final String APP_VERSION_NAME = "2.74";
     private static final String UPLOAD_LOG_TAG = "WEztermUpload";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
@@ -481,6 +481,9 @@ public class MainActivity extends Activity {
         }
         if (keyCode == KeyEvent.KEYCODE_BACK && webView != null && webView.canGoBack()) {
             webView.goBack();
+            return true;
+        }
+        if (handleViewerZoomKey(keyCode, event)) {
             return true;
         }
         return super.onKeyDown(keyCode, event);
@@ -7317,6 +7320,29 @@ public class MainActivity extends Activity {
 
     private boolean isViewerZoomed() {
         return webViewScale > WEBVIEW_ZOOMED_SCALE_THRESHOLD;
+    }
+
+    private boolean handleViewerZoomKey(int keyCode, KeyEvent event) {
+        if (webView == null
+                || (keyCode != KeyEvent.KEYCODE_ZOOM_IN && keyCode != KeyEvent.KEYCODE_ZOOM_OUT)) {
+            return false;
+        }
+        if (event != null && event.getAction() != KeyEvent.ACTION_DOWN) {
+            return true;
+        }
+        // WHY: real closure for zoomed one-finger pan requires proof while the
+        // Android/WebView viewer is actually zoomed.
+        // Samsung/ADB key zoom did not change WebView scale by default, so keep hardware/automation zoom keys
+        // wired directly to WebView zoom as an accessibility and proof setup path.
+        // Do not translate this into tmux/font resize or touch-scroll behavior.
+        boolean changed = keyCode == KeyEvent.KEYCODE_ZOOM_IN
+                ? webView.zoomIn()
+                : webView.zoomOut();
+        if (changed) {
+            allowViewerPanBriefly();
+            cancelViewerTypingPositionRetries("key-zoom");
+        }
+        return true;
     }
 
     private boolean isViewerPanAllowed() {

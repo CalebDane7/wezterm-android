@@ -92,7 +92,15 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=174`, `versionName=2.73`.
+- Built checkpoint: `versionCode=175`, `versionName=2.74`.
+- v2.74 makes hardware/automation zoom keys call WebView zoom directly so
+  one-finger horizontal pan can be proven and used while the viewer is actually
+  zoomed. This does not change tmux font size, tmux history, or the native
+  pinch/zoom ownership.
+- v2.73 fixes the false-proof zoomed pan regression where v2.72 synthesized
+  ACTION_DOWN at the first MOVE and erased the one-finger horizontal delta.
+  One-finger horizontal handoff now replays the original ACTION_DOWN while
+  pinch keeps the synthetic-current handoff.
 - v1.29 fixes the black-screen resume case where Android focused WEzterm but
   the WebView never opened a fresh ttyd HTTP/WebSocket connection.
 - The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a

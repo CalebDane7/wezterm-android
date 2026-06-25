@@ -58,13 +58,13 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="174"' "current APK version must be bumped for the v2.73 APK zoomed horizontal pan contract"
-require "$MANIFEST" 'android:versionName="2.73"' "current APK version must be bumped for the v2.73 APK zoomed horizontal pan contract"
+require "$MANIFEST" 'android:versionCode="175"' "current APK version must be bumped for the v2.74 APK zoomed horizontal pan contract"
+require "$MANIFEST" 'android:versionName="2.74"' "current APK version must be bumped for the v2.74 APK zoomed horizontal pan contract"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.73";' "client /config proof must report the same v2.73 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.74";' "client /config proof must report the same v2.74 APK contract as the manifest"
 require "$MAIN" 'MediaStore.ACTION_PICK_IMAGES' "Upload must use Android Photo Picker for one-selection screenshots/media on Android 13+"
 require "$MAIN" 'uploadDocumentPickerIntent' "Upload must keep ACTION_OPEN_DOCUMENT fallback for non-photo-picker/files path"
 require "$MAIN" 'uploadUrisFromResult' "Upload result must handle both data URI and ClipData instead of dropping picker returns"
@@ -138,7 +138,7 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=174`, `versionName=2.73`.' "README checkpoint must match the installed v2.73 APK"
+    require "$README" 'Built checkpoint: `versionCode=175`, `versionName=2.74`.' "README checkpoint must match the installed v2.74 APK"
     require "$README" 'v2.70 pins one-finger touch-scroll and Scroll-menu commands to the visible' "README must document the current APK visible-window touch-scroll target fix"
     require "$README" 'v2.71 replaces the v2.70 two-burst fake momentum with cancellable inertial' "README must document the current APK inertial momentum fix"
     require "$README" 'v2.72 keeps zoomed horizontal point-of-view pan WebView-owned' "README must document the current APK zoomed horizontal pan fix"
@@ -300,8 +300,8 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.73' "install page must advertise the current v2.73 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>174</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.74' "install page must advertise the current v2.74 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>175</code>' "install page versionCode must match the manifest"
     require "$INSTALL_PAGE" 'Workspace Save/Load/Close' "install page must mention the v2.62 workspace control fix"
     require "$INSTALL_PAGE" 'composer-above-buttons layout' "install page must mention the restored composer-above-buttons layout"
     require "$INSTALL_PAGE" 'compact v2.65 toolbar chrome' "install page must mention the compact bottom toolbar fix"
@@ -418,7 +418,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.73 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.74 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"
@@ -1349,6 +1349,11 @@ require "$MAIN" 'return event.getY() <= dp(24);' "top tmux/status strip forwardi
 require "$MAIN" 'terminal body taps open the native composer' "terminal body tap WHY comment must preserve native composer ownership"
 require "$MAIN" 'public void onScaleChanged(WebView view, float oldScale, float newScale)' "Android/WebView zoom changes must be tracked"
 require "$MAIN" 'Do not translate this' "WebView zoom must not be converted into tmux/font resize behavior"
+require "$MAIN" 'handleViewerZoomKey' "hardware/automation zoom keys must create a real WebView zoomed proof state"
+require "$MAIN" 'KEYCODE_ZOOM_IN' "zoom-in key must be wired to WebView zoom for real zoomed pan proof"
+require "$MAIN" 'webView.zoomIn()' "zoom-in key must call native WebView zoom instead of resizing tmux/font"
+require "$MAIN" 'Samsung/ADB key zoom did not change WebView scale by default' "key-zoom WHY comment must preserve the false-proof root cause"
+require "$MAIN" 'cancelViewerTypingPositionRetries("key-zoom")' "key zoom must cancel stale bottom retries before zoomed pan proof"
 require "$MAIN" 'fitTerminalToCurrentViewSoon("webview-layout")' "Android layout changes must refit ttyd/xterm without a WebView reload"
 require "$MAIN" 'window.dispatchEvent(new Event('"'"'resize'"'"'))' "xterm/ttyd must be told about Android WebView layout changes"
 require "$MAIN" 't.refresh(0,Math.max(0,t.rows-1))' "xterm canvas redraw must stay guarded for dotted/full-area repaint"

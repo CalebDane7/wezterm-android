@@ -271,6 +271,7 @@ public class MainActivity extends Activity {
     private long touchScrollRenderPulseUntilMs = 0;
     private long terminalTouchGestureGeneration = 0;
     private String terminalTouchStableWindowId = "";
+    private long terminalTouchDownWallClockMs = 0;
     private long lastHistoryDragAtMs = 0;
     private long terminalLastHistoryDragEventAtMs = 0;
     private float webViewScale = 1.0f;
@@ -1599,6 +1600,7 @@ public class MainActivity extends Activity {
             terminalTouchStartY = event.getY();
             terminalLastHistoryDragY = terminalTouchStartY;
             terminalLastHistoryDragEventAtMs = event.getEventTime();
+            terminalTouchDownWallClockMs = System.currentTimeMillis();
             terminalHistoryDragActive = false;
             terminalMultiTouchGesture = false;
             terminalTouchExceededTapSlop = false;
@@ -1995,6 +1997,9 @@ public class MainActivity extends Activity {
         float totalDy = event.getY() - terminalTouchStartY;
         float absDy = Math.abs(totalDy);
         long durationMs = Math.max(1, event.getEventTime() - event.getDownTime());
+        long wallDurationMs = terminalTouchDownWallClockMs > 0
+                ? Math.max(1, System.currentTimeMillis() - terminalTouchDownWallClockMs)
+                : durationMs;
         float signedReleaseVelocity = totalDy * 1000f / durationMs;
         if (terminalVelocityTracker != null) {
             terminalVelocityTracker.computeCurrentVelocity(1000);
@@ -2009,11 +2014,12 @@ public class MainActivity extends Activity {
                 || releaseVelocity < HISTORY_DRAG_FAST_VELOCITY_PX_PER_SEC) {
             return;
         }
-        if (durationMs > HISTORY_DRAG_RELEASE_LONG_GESTURE_MS
-                && releaseVelocity < HISTORY_DRAG_FLING_VELOCITY_PX_PER_SEC) {
+        if (wallDurationMs > HISTORY_DRAG_RELEASE_LONG_GESTURE_MS) {
             // WHY: a long deliberate read-drag can cover enough distance to look
             // fast by average velocity, but it must stop when the finger stops. Only
-            // quick flicks, or truly high release velocity, should start inertia.
+            // quick flicks should start inertia; synthetic/WebView-routed UP events
+            // can reset MotionEvent downTime or report a bogus high tracker velocity
+            // at the end of slow movement, so use the app-observed ACTION_DOWN clock.
             return;
         }
         String where = signedReleaseVelocity > 0 ? "lineUp" : "lineDown";

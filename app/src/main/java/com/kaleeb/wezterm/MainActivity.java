@@ -121,7 +121,7 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_FILENAME_PREFIX = "upload_filename_";
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
-    private static final String APP_VERSION_NAME = "2.70";
+    private static final String APP_VERSION_NAME = "2.71";
     private static final String UPLOAD_LOG_TAG = "WEztermUpload";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
@@ -141,9 +141,14 @@ public class MainActivity extends Activity {
     private static final int HISTORY_DRAG_MAX_PAGES_PER_STEP = 20;
     private static final int HISTORY_DRAG_DOWN_MAX_REPEATS = 8;
     private static final int HISTORY_DRAG_DOWN_RELEASE_MAX_REPEATS = 8;
-    private static final int HISTORY_DRAG_RELEASE_FLING_BURSTS = 2;
-    private static final long HISTORY_DRAG_RELEASE_FLING_DELAY_MS = 90;
-    private static final float HISTORY_DRAG_RELEASE_FLING_DECAY = 0.62f;
+    private static final int HISTORY_DRAG_MOMENTUM_MAX_FRAMES = 18;
+    private static final long HISTORY_DRAG_MOMENTUM_FRAME_MS = 45;
+    private static final float HISTORY_DRAG_MOMENTUM_DECAY = 0.84f;
+    private static final float HISTORY_DRAG_MOMENTUM_STOP_VELOCITY_PX_PER_SEC = 180f;
+    private static final float HISTORY_DRAG_MOMENTUM_REPEAT_VELOCITY_DIVISOR = 540f;
+    private static final int HISTORY_DRAG_MOMENTUM_UP_MAX_REPEATS = 12;
+    private static final int HISTORY_DRAG_MOMENTUM_DOWN_MAX_REPEATS = 3;
+    private static final long HISTORY_DRAG_RELEASE_LONG_GESTURE_MS = 650;
     private static final long HISTORY_DRAG_REPEATED_FLING_WINDOW_MS = 700;
     private static final int HISTORY_DRAG_REPEATED_FLING_BOOST_REPEATS = 6;
     private static final int HISTORY_DRAG_SLOW_MOVE_MAX_REPEATS = 2;
@@ -153,7 +158,7 @@ public class MainActivity extends Activity {
     private static final long TOUCH_SCROLL_RENDER_PULSE_MS = 16;
     private static final long TOUCH_SCROLL_RENDER_PULSE_WINDOW_MS = 850;
     private static final float HISTORY_DRAG_RELEASE_MIN_LINES = 2f;
-    private static final int TOUCH_SCROLL_LIVE_BOTTOM_SNAP_LINES = 16;
+    private static final int TOUCH_SCROLL_LIVE_BOTTOM_SNAP_LINES = 3;
     private static final float HISTORY_DRAG_FAST_VELOCITY_PX_PER_SEC = 760f;
     private static final float HISTORY_DRAG_FLING_VELOCITY_PX_PER_SEC = 1500f;
     private static final float HISTORY_DRAG_FAST_DISTANCE_LINES = 3f;
@@ -254,6 +259,12 @@ public class MainActivity extends Activity {
     private long pendingHistoryScrollGeneration = 0;
     private String pendingHistoryScrollTargetKey = "";
     private boolean terminalHistoryMomentumActive = false;
+    private boolean terminalHistoryMomentumFrameScheduled = false;
+    private float terminalHistoryMomentumVelocityPxPerSec = 0f;
+    private int terminalHistoryMomentumFramesRemaining = 0;
+    private long terminalHistoryMomentumGeneration = 0;
+    private String terminalHistoryMomentumWhere = "";
+    private String terminalHistoryMomentumTargetKey = "";
     private String lastHistoryFlingWhere = "";
     private long lastHistoryFlingAtMs = 0;
     private boolean touchScrollRenderPulseScheduled = false;
@@ -1804,12 +1815,18 @@ public class MainActivity extends Activity {
     }
 
     private void cancelHistoryMomentum() {
-        // WHY: delayed release bursts and repeated flick bookkeeping must die when
-        // a new touch or pinch takes over. Leaving stale momentum state alive can
-        // replay scroll movement after the visible APK target has changed.
+        // WHY: active post-release inertia must die when a new touch or pinch takes
+        // over. Leaving stale momentum state alive can replay scroll movement after
+        // the visible APK target has changed, and the user's stop touch must halt
+        // the fling immediately like a native scroller. Keep the last-fling
+        // direction/time separately so a deliberate second flick can accelerate.
         terminalHistoryMomentumActive = false;
-        lastHistoryFlingWhere = "";
-        lastHistoryFlingAtMs = 0;
+        terminalHistoryMomentumFrameScheduled = false;
+        terminalHistoryMomentumVelocityPxPerSec = 0f;
+        terminalHistoryMomentumFramesRemaining = 0;
+        terminalHistoryMomentumGeneration = 0;
+        terminalHistoryMomentumWhere = "";
+        terminalHistoryMomentumTargetKey = "";
     }
 
     private void recycleTerminalVelocityTracker() {
@@ -1978,36 +1995,54 @@ public class MainActivity extends Activity {
         float totalDy = event.getY() - terminalTouchStartY;
         float absDy = Math.abs(totalDy);
         long durationMs = Math.max(1, event.getEventTime() - event.getDownTime());
-        float releaseVelocity = absDy * 1000f / durationMs;
+        float signedReleaseVelocity = totalDy * 1000f / durationMs;
         if (terminalVelocityTracker != null) {
             terminalVelocityTracker.computeCurrentVelocity(1000);
-            releaseVelocity = Math.max(releaseVelocity, Math.abs(terminalVelocityTracker.getYVelocity()));
+            float trackerVelocity = terminalVelocityTracker.getYVelocity();
+            if (Math.abs(trackerVelocity) > Math.abs(signedReleaseVelocity)) {
+                signedReleaseVelocity = trackerVelocity;
+            }
         }
+        float releaseVelocity = Math.abs(signedReleaseVelocity);
         int lineThreshold = Math.max(terminalTouchSlop, dp(HISTORY_DRAG_LINE_THRESHOLD_DP));
         if (absDy < lineThreshold * HISTORY_DRAG_RELEASE_MIN_LINES
                 || releaseVelocity < HISTORY_DRAG_FAST_VELOCITY_PX_PER_SEC) {
             return;
         }
-        if (terminalTouchReachedLiveBottom && totalDy < 0) {
+        if (durationMs > HISTORY_DRAG_RELEASE_LONG_GESTURE_MS
+                && releaseVelocity < HISTORY_DRAG_FLING_VELOCITY_PX_PER_SEC) {
+            // WHY: a long deliberate read-drag can cover enough distance to look
+            // fast by average velocity, but it must stop when the finger stops. Only
+            // quick flicks, or truly high release velocity, should start inertia.
+            return;
+        }
+        String where = signedReleaseVelocity > 0 ? "lineUp" : "lineDown";
+        if (terminalTouchReachedLiveBottom && "lineDown".equals(where)) {
             // WHY: a release fling in the same downward direction after tmux has
             // already reported live bottom would queue extra lineDown requests at
             // the edge. That is the exact "refresh/bounce before I get to the
             // bottom" symptom; wait for finger-up restore instead.
             return;
         }
-        boolean fullFling = releaseVelocity >= HISTORY_DRAG_FLING_VELOCITY_PX_PER_SEC;
-        int repeats = fullFling
-                ? HISTORY_DRAG_MAX_PAGES_PER_STEP
-                : Math.max(8, HISTORY_DRAG_MAX_PAGES_PER_STEP / 2);
-        String where = totalDy > 0 ? "lineUp" : "lineDown";
+        if (where.equals(lastHistoryFlingWhere)
+                && System.currentTimeMillis() - lastHistoryFlingAtMs <= HISTORY_DRAG_REPEATED_FLING_WINDOW_MS) {
+            // WHY: native-feeling scroll accelerates when the user flicks again in
+            // the same direction. Add a bounded velocity boost instead of stacking
+            // delayed HTTP bursts that would replay after the user stops the fling.
+            releaseVelocity += HISTORY_DRAG_REPEATED_FLING_BOOST_REPEATS
+                    * HISTORY_DRAG_MOMENTUM_REPEAT_VELOCITY_DIVISOR;
+        }
+        lastHistoryFlingWhere = where;
+        lastHistoryFlingAtMs = System.currentTimeMillis();
+        int repeats = historyMomentumRepeats(where, releaseVelocity);
         if ("lineDown".equals(where)) {
             // WHY: upward flicks are for racing through old output, so a large burst
             // is useful there. Downward flicks are the return-to-live path. v1.58's
             // tiny downward cap made real phone swipes stall in copy-mode many
             // lines above the prompt, but v1.60's full server-supported touch batch
             // made real downward gestures feel frozen and then jump to the bottom
-            // once queued work caught up. Keep downward movement single-burst and
-            // smaller than upward history movement so ttyd can repaint intermediate
+            // once queued work caught up. Keep downward movement low-repeat and
+            // heavily decayed compared with upward history movement so ttyd can repaint intermediate
             // positions while the near-bottom guard still exits copy-mode cleanly.
             // WHY: raw finger distance cannot prove tmux is near live bottom. v2.69
             // removes the old direct-bottom shortcut because a long return flick
@@ -2015,41 +2050,85 @@ public class MainActivity extends Activity {
             // tmux lineDown at or near scroll position 0. Quiet bottom restore is
             // still protected, but only from the server-owned near-bottom signal.
             repeats = Math.min(repeats, HISTORY_DRAG_DOWN_RELEASE_MAX_REPEATS);
-            fullFling = false;
         }
         // WHY: real fast flicks produce fewer ACTION_MOVE samples than slow drags,
         // especially through WebView and ADB input. v1.44 therefore moved fewer
-        // lines for a fast flick than for a slow drag of the same distance. Add
-        // one bounded release burst based on total gesture velocity so fast flicks
-        // jump farther while slow finger movement remains line-by-line.
-        final String flingWhere = where;
-        final int flingRepeats = repeats;
+        // lines for a fast flick than for a slow drag of the same distance. v2.70's
+        // two bounded bursts protected target drift but did not feel like real
+        // inertial scrolling. Start with one bounded release step, then run a
+        // cancellable decaying momentum loop that a new touch immediately stops.
         final long flingGeneration = terminalTouchGestureGeneration;
-        scrollTerminalFromTouch(flingWhere, flingRepeats);
-        if (fullFling) {
-            // WHY: if a fast flick releases while a MOVE request is still in
-            // flight, the first release burst is intentionally coalesced into one
-            // pending batch. A second short-delay burst gives real fling velocity
-            // the extra distance users expect without affecting slow drags. Keep
-            // this as a bounded loop so the explicit burst count remains guarded.
-            // Tie each burst to the same touch generation and suppress it after a
-            // pinch so a user can zoom the stopped history section without a
-            // delayed line scroll moving the text underneath their fingers.
-            for (int burst = 1; burst < HISTORY_DRAG_RELEASE_FLING_BURSTS; burst++) {
-                final long burstDelayMs = 140L * burst;
-                uiHandler.postDelayed(() -> {
-                    if (flingGeneration == terminalTouchGestureGeneration
-                            && !terminalMultiTouchGesture
-                            && terminalHistoryViewportActive
-                            && readModeSuppressesKeyboard) {
-                        scrollTerminalFromTouch(flingWhere, flingRepeats);
-                    }
-                }, burstDelayMs);
-            }
+        String targetKey = terminalTouchStableWindowId;
+        scrollTerminalFromTouch(where, repeats, true, targetKey);
+        startHistoryMomentum(where, releaseVelocity * HISTORY_DRAG_MOMENTUM_DECAY, flingGeneration, targetKey);
+    }
+
+    private void startHistoryMomentum(String where, float velocityPxPerSec, long gestureGeneration, String targetKey) {
+        if (velocityPxPerSec < HISTORY_DRAG_MOMENTUM_STOP_VELOCITY_PX_PER_SEC) {
+            return;
         }
+        terminalHistoryMomentumActive = true;
+        terminalHistoryMomentumFrameScheduled = false;
+        terminalHistoryMomentumVelocityPxPerSec = velocityPxPerSec;
+        terminalHistoryMomentumFramesRemaining = HISTORY_DRAG_MOMENTUM_MAX_FRAMES;
+        terminalHistoryMomentumGeneration = gestureGeneration;
+        terminalHistoryMomentumWhere = where;
+        terminalHistoryMomentumTargetKey = targetKey == null ? "" : targetKey;
+        keepCaptureRendererPulsingDuringTouch("touch-scroll-momentum");
+        scheduleHistoryMomentumFrame();
+    }
+
+    private void scheduleHistoryMomentumFrame() {
+        if (!terminalHistoryMomentumActive || terminalHistoryMomentumFrameScheduled) {
+            return;
+        }
+        terminalHistoryMomentumFrameScheduled = true;
+        uiHandler.postDelayed(this::runHistoryMomentumFrame, HISTORY_DRAG_MOMENTUM_FRAME_MS);
+    }
+
+    private void runHistoryMomentumFrame() {
+        terminalHistoryMomentumFrameScheduled = false;
+        if (!terminalHistoryMomentumActive) {
+            return;
+        }
+        if (terminalHistoryMomentumGeneration != terminalTouchGestureGeneration
+                || terminalMultiTouchGesture
+                || !terminalHistoryViewportActive
+                || !readModeSuppressesKeyboard
+                || terminalHistoryMomentumFramesRemaining <= 0
+                || terminalHistoryMomentumVelocityPxPerSec < HISTORY_DRAG_MOMENTUM_STOP_VELOCITY_PX_PER_SEC) {
+            cancelHistoryMomentum();
+            return;
+        }
+        if ("lineDown".equals(terminalHistoryMomentumWhere) && terminalTouchReachedLiveBottom) {
+            cancelHistoryMomentum();
+            return;
+        }
+        int repeats = historyMomentumRepeats(terminalHistoryMomentumWhere, terminalHistoryMomentumVelocityPxPerSec);
+        scrollTerminalFromTouch(
+                terminalHistoryMomentumWhere,
+                repeats,
+                true,
+                terminalHistoryMomentumTargetKey
+        );
+        terminalHistoryMomentumVelocityPxPerSec *= HISTORY_DRAG_MOMENTUM_DECAY;
+        terminalHistoryMomentumFramesRemaining--;
+        scheduleHistoryMomentumFrame();
+    }
+
+    private int historyMomentumRepeats(String where, float velocityPxPerSec) {
+        int maxRepeats = "lineDown".equals(where)
+                ? HISTORY_DRAG_MOMENTUM_DOWN_MAX_REPEATS
+                : HISTORY_DRAG_MOMENTUM_UP_MAX_REPEATS;
+        int repeats = Math.round(velocityPxPerSec / HISTORY_DRAG_MOMENTUM_REPEAT_VELOCITY_DIVISOR);
+        return Math.max(1, Math.min(maxRepeats, repeats));
     }
 
     private void scrollTerminalFromTouch(String where, int repeats) {
+        scrollTerminalFromTouch(where, repeats, false, terminalTouchStableWindowId);
+    }
+
+    private void scrollTerminalFromTouch(String where, int repeats, boolean fromMomentum, String targetKey) {
         // WHY: normal WebView scrolling moves ttyd/xterm's browser scrollback,
         // which records tmux redraw artifacts instead of the real pane history
         // visible to Codex. Deliberate one-finger vertical drags use the server
@@ -2071,6 +2150,9 @@ public class MainActivity extends Activity {
                 : HISTORY_DRAG_MAX_PAGES_PER_STEP;
         int boundedRepeats = Math.max(1, Math.min(maxRepeats, repeats));
         long gestureGeneration = terminalTouchGestureGeneration;
+        String stableTargetKey = targetKey == null || targetKey.trim().isEmpty()
+                ? terminalTouchStableWindowId
+                : targetKey.trim();
         if (terminalTouchReachedLiveBottom && "lineDown".equals(where)) {
             return;
         }
@@ -2080,8 +2162,12 @@ public class MainActivity extends Activity {
         if (historyScrollRequestInFlight) {
             if (where.equals(pendingHistoryScrollWhere)
                     && pendingHistoryScrollGeneration == gestureGeneration
-                    && pendingHistoryScrollTargetKey.equals(terminalTouchStableWindowId)) {
-                if ("lineDown".equals(where)) {
+                    && pendingHistoryScrollTargetKey.equals(stableTargetKey)) {
+                if ("lineDown".equals(where) || fromMomentum) {
+                    // WHY: post-release inertia should feel continuous, not like a
+                    // delayed catch-up jump. While an HTTP request is in flight,
+                    // momentum frames replace the pending step with the newest
+                    // bounded repeat instead of accumulating a huge replay burst.
                     pendingHistoryScrollRepeats = Math.min(
                             maxRepeats,
                             Math.max(pendingHistoryScrollRepeats, boundedRepeats)
@@ -2110,11 +2196,11 @@ public class MainActivity extends Activity {
                 pendingHistoryScrollWhere = where;
                 pendingHistoryScrollRepeats = boundedRepeats;
                 pendingHistoryScrollGeneration = gestureGeneration;
-                pendingHistoryScrollTargetKey = terminalTouchStableWindowId;
+                pendingHistoryScrollTargetKey = stableTargetKey;
             }
             return;
         }
-        sendHistoryScrollFromTouch(where, boundedRepeats, gestureGeneration, terminalTouchStableWindowId);
+        sendHistoryScrollFromTouch(where, boundedRepeats, gestureGeneration, stableTargetKey);
     }
 
     private void sendHistoryScrollFromTouch(String where, int repeats, long gestureGeneration, String targetKey) {
@@ -2146,6 +2232,7 @@ public class MainActivity extends Activity {
                 // remainder as the bottom edge and restores quietly if the finger
                 // has already lifted.
                 terminalTouchReachedLiveBottom = true;
+                cancelHistoryMomentum();
                 clearPendingHistoryScroll();
                 if (!terminalHistoryDragActive) {
                     restoreTouchLiveBottomQuietly();
@@ -2253,6 +2340,7 @@ public class MainActivity extends Activity {
         }
         refreshCaptureRendererNow(reason);
         boolean stillTouchScrolling = terminalHistoryDragActive
+                || terminalHistoryMomentumActive
                 || historyScrollRequestInFlight
                 || !pendingHistoryScrollWhere.isEmpty()
                 || terminalBottomRestoreInFlight;
@@ -3372,7 +3460,7 @@ public class MainActivity extends Activity {
         // must not run the heavier `/scroll?where=bottom` recovery or reload/focus
         // helpers. Those helpers are still available through explicit Scroll ->
         // live bottom and Refresh, where a visible recovery jump is intentional.
-        getJson(appendStableWindowQuery("/touch-scroll?where=bottom&repeat=1"), payload -> {
+        getJson(appendStableWindowQuery("/touch-scroll?where=bottom&repeat=1", terminalTouchStableWindowId), payload -> {
             terminalBottomRestoreInFlight = false;
             if (gestureGeneration != terminalTouchGestureGeneration) {
                 return;

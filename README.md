@@ -92,7 +92,7 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=171`, `versionName=2.70`.
+- Built checkpoint: `versionCode=172`, `versionName=2.71`.
 - v1.29 fixes the black-screen resume case where Android focused WEzterm but
   the WebView never opened a fresh ttyd HTTP/WebSocket connection.
 - The fix is a delayed xterm/DOM watchdog. It avoids blind reloads because a
@@ -120,6 +120,10 @@ Android users use the native APK.
   selected terminal window, not a later `/active` poll from another shared tmux
   lane. Fast flicks keep a bounded second burst, but pending batches carry the
   same target so momentum cannot scroll or select a different phone window.
+- v2.71 replaces the v2.70 two-burst fake momentum with cancellable inertial
+  one-finger flick frames on the same stable target. A new touch or pinch stops
+  the momentum immediately, and downward return uses a smaller tmux-owned
+  bottom-edge band so the view cannot disappear and snap to live bottom early.
 - v1.34 restores a visible `Scroll` toolbar entry after v1.33 stranded the
   proven live-bottom, history-top, page, zoom, and full-session-reader controls
   behind an uncalled internal method.

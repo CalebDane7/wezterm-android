@@ -313,8 +313,8 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.79' "install page must advertise the current v2.79 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>180</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.80' "install page must advertise the current v2.80 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>181</code>' "install page versionCode must match the manifest"
     require "$INSTALL_PAGE" 'Workspace Save/Load/Close' "install page must mention the v2.62 workspace control fix"
     require "$INSTALL_PAGE" 'composer-above-buttons layout' "install page must mention the restored composer-above-buttons layout"
     require "$INSTALL_PAGE" 'compact v2.65 toolbar chrome' "install page must mention the compact bottom toolbar fix"
@@ -431,7 +431,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.79 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.80 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"
@@ -1504,7 +1504,8 @@ require "$MAIN" 'settings.setBuiltInZoomControls(true)' "built-in WebView zoom m
 require "$MAIN" 'settings.setDisplayZoomControls(false)' "old visible zoom controls must stay hidden"
 require "$MAIN" 'WindowInsets.Type.ime()' "IME inset must be considered"
 require "$MAIN" 'bottom = bars.bottom' "toolbar height must not include keyboard IME height"
-require "$MAIN" 'keyboardReserve = Math.max(0, ime.bottom - bars.bottom)' "root layout must reserve keyboard space outside the toolbar"
+require "$MAIN" 'rawKeyboardReserve = imeVisible ? Math.max(0, ime.bottom - bars.bottom) : 0' "root layout must compute keyboard reserve outside the toolbar"
+require "$MAIN" 'keyboardReserve = shouldReserveKeyboardOutsideResizedRoot(view, rawKeyboardReserve)' "root layout must not double-reserve keyboard space after adjustResize"
 require "$MAIN" 'never add it to the toolbar height itself' "toolbar inset WHY comment must preserve the no-giant-toolbar rule"
 require "$MAIN" 'IME is not part of the toolbar' "toolbar inset WHY comment must prevent giant bottom bar regressions"
 require "$MAIN" 'keepLiveInputVisibleSoon' "live typing must keep the xterm input visible above the keyboard"

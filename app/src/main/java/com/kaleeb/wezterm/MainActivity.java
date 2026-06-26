@@ -8399,7 +8399,8 @@ public class MainActivity extends Activity {
             // `adjustResize` as the primary keyboard owner: if Android already
             // resized the activity, do not also pad the root by the IME height. That
             // double-reserve is the black bottom gap failure. Only keep a fallback
-            // root reserve when the content root is demonstrably not resized.
+            // root reserve when the content root is demonstrably not resized, and
+            // never add it to the toolbar height itself.
             view.setPadding(0, top, 0, keyboardReserve);
             lastKeyboardReserveBottom = keyboardReserve;
             lastNavigationBarInsetBottom = bottom;

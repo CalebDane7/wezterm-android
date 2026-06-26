@@ -676,12 +676,18 @@ lower = band_stats(0.62, 0.82)
 upper_has_text = upper[4] >= 0.018
 middle_is_black_mask = middle[1] >= 0.985 and middle[4] <= 0.003
 lower_is_black_mask = lower[1] >= 0.90 and lower[4] <= 0.006
+blank_terminal_body = middle[1] >= 0.985 and lower[1] >= 0.985 and upper[4] <= 0.006 and lower[4] <= 0.006
 
 # WHY: the 2026-06-17 user screenshot was not a dotted grid anymore; it was
 # readable text at the top with a huge lower terminal region painted black. That
 # is still a failed Active/Bottom render because covering a dotted tail with a black lower rectangle is not a live-bottom render.
 # Require the proof to reject that false-green shape separately from all-dot detection.
-if upper_has_text and middle_is_black_mask and lower_is_black_mask:
+# WHY: v2.81 briefly passed this proof with an almost entirely black terminal
+# body plus a tiny side scrollbar/cursor signal. That screenshot still matched
+# the user's complaint: the selected tab strip was alive, but the terminal
+# content was not bottom-left readable. Reject both the old readable-top/black-
+# bottom mask and the newer blank-terminal-body false positive.
+if (upper_has_text and middle_is_black_mask and lower_is_black_mask) or blank_terminal_body:
     raise SystemExit(
         "large black terminal mask detected after selecting "
         f"{target}: upperSignal={upper[4]:.4f} middleBlack={middle[1]:.4f} "

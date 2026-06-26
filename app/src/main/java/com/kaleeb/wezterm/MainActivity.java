@@ -122,7 +122,7 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
     private static final String PREF_PROMPT_DRAFT_PREFIX = "prompt_draft_";
-    private static final String APP_VERSION_NAME = "2.81";
+    private static final String APP_VERSION_NAME = "2.82";
     private static final String UPLOAD_LOG_TAG = "WEztermUpload";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
@@ -2419,6 +2419,10 @@ public class MainActivity extends Activity {
     }
 
     private String terminalUrlWithOptions(String baseUrl, int fontSize) {
+        String targetKey = visibleTerminalTargetKey();
+        String targetQuery = hasStableWindowId(targetKey)
+                ? "&windowId=" + urlEncode(targetKey.trim())
+                : "";
         return baseUrl
                 + "?fontSize=" + fontSize
                 // WHY: the capture renderer is read-only, so it must emulate the
@@ -2427,6 +2431,7 @@ public class MainActivity extends Activity {
                 // wrap regression; resizing tmux would revive the Windows/web
                 // black-box regression.
                 + "&cols=" + APK_CAPTURE_RENDERER_COLS
+                + targetQuery
                 + "&disableLeaveAlert=true"
                 + "&rendererType=dom"
                 + "&customGlyphs=false"
@@ -5980,6 +5985,9 @@ public class MainActivity extends Activity {
         String windowId = window.optString("windowId", "");
         if (hasStableWindowId(windowId)) {
             currentPhoneWindowId = windowId.trim();
+            if (!hasStableWindowId(selectedPhoneWindowId)) {
+                setCaptureRendererWindowTarget(currentPhoneWindowId, reason);
+            }
         }
     }
 
@@ -6105,6 +6113,7 @@ public class MainActivity extends Activity {
                 : title.trim();
         selectedPhoneWindowUpdatedAtMs = System.currentTimeMillis();
         updateSessionTitleStrip(selectedPhoneWindowTitle);
+        setCaptureRendererWindowTarget(selectedPhoneWindowId, reason);
     }
 
     private void clearRememberedCloseTarget(String reason) {
@@ -7253,6 +7262,31 @@ public class MainActivity extends Activity {
                 + "})()",
                 null
         );
+    }
+
+    private void setCaptureRendererWindowTarget(String targetKey, String reason) {
+        if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT || !hasStableWindowId(targetKey)) {
+            return;
+        }
+        // WHY: the title strip and toolbar already remember the selected stable
+        // tmux `@windowId`, but the read-only renderer used to keep fetching the
+        // process-global active window when its URL had no windowId. If another
+        // lane or `/active` poll moved `main_phone`, the APK showed the selected
+        // title over a blank/wrong terminal body. Update the capture target in
+        // place instead of reloading WebView so Active/New/Old switches stay fast
+        // and the protected zoom/pan gesture layer is not reset.
+        String quotedTarget = JSONObject.quote(targetKey.trim());
+        webView.evaluateJavascript(
+                "(function(target){"
+                        + "try{"
+                        + "var r=window.__mantisCaptureRenderer;"
+                        + "if(r&&typeof r.setWindowId==='function'){r.setWindowId(target);return 'capture-target:'+target;}"
+                        + "return 'capture-target-missing';"
+                        + "}catch(e){return 'capture-target-error';}"
+                + "})(" + quotedTarget + ")",
+                null
+        );
+        refreshCaptureRendererSoon("target-" + reason);
     }
 
     private void focusTerminalInputSoon() {

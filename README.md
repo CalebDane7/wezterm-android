@@ -92,7 +92,11 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=182`, `versionName=2.81`.
+- Built checkpoint: `versionCode=183`, `versionName=2.82`.
+- v2.82 pins the read-only capture renderer to the selected stable tmux
+  `@windowId` without a WebView reload, so Active/New/Old tab movement cannot
+  leave the selected title strip over a blank/wrong terminal body when another
+  lane or `/active` polling moves `main_phone`.
 - v2.81 preserves unsent native-composer drafts per stable tmux `@windowId`
   while tab switches hide the keyboard/composer. This fixes proof/user tab
   movement destroying typed messages without bringing back hidden `/draft-delta`

@@ -59,13 +59,13 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="182"' "current APK version must be bumped for the v2.81 draft-preserving bottom-gap contract"
-require "$MANIFEST" 'android:versionName="2.81"' "current APK version must be bumped for the v2.81 draft-preserving bottom-gap contract"
+require "$MANIFEST" 'android:versionCode="183"' "current APK version must be bumped for the v2.82 selected-renderer bottom-gap contract"
+require "$MANIFEST" 'android:versionName="2.82"' "current APK version must be bumped for the v2.82 selected-renderer bottom-gap contract"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.81";' "client /config proof must report the same v2.81 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.82";' "client /config proof must report the same v2.82 APK contract as the manifest"
 require "$MAIN" 'MediaStore.ACTION_PICK_IMAGES' "Upload must use Android Photo Picker for one-selection screenshots/media on Android 13+"
 require "$MAIN" 'uploadDocumentPickerIntent' "Upload must keep ACTION_OPEN_DOCUMENT fallback for non-photo-picker/files path"
 require "$MAIN" 'uploadUrisFromResult' "Upload result must handle both data URI and ClipData instead of dropping picker returns"
@@ -78,6 +78,12 @@ require "$MAIN" 'shouldReserveKeyboardOutsideResizedRoot' "v2.80 bottom anchor m
 require "$MAIN" 'rootAlreadyResizedForKeyboard' "v2.80 bottom anchor must detect when Android already resized the root for the keyboard"
 require "$MAIN" 'visibleWebViewHeightForBottomAnchor' "zoomed bottom alignment must use the visible phone/composer-safe viewport height"
 require "$MAIN" 'bottom-anchor-' "bottom anchor geometry changes must repaint the capture renderer without tab-switch scroll loops"
+require "$MAIN" 'setCaptureRendererWindowTarget' "APK must pin the read-only renderer to the selected stable windowId without a WebView reload"
+require "$MAIN" 'r.setWindowId(target)' "APK must update the capture renderer target in-place after Active/New/Old selection"
+require "$MAIN" 'terminalUrlWithOptions' "APK terminal URL builder must carry renderer target options"
+require "$MAIN" '&windowId=' "APK initial capture renderer URL must include the stable visible window target when known"
+require "$MAIN" 'process-global active window when its URL had no windowId' "renderer target WHY comment must preserve the active-window drift root cause"
+require "$MAIN" 'title over a blank/wrong terminal body' "renderer target WHY comment must preserve the v2.81 black-body false proof root cause"
 require "$MAIN" 'lastImeInsetBottom > 0 || isDockedPromptComposerVisible()' "navigation hiding must not run while keyboard/composer anchoring is active"
 require "$MAIN" 'http://100.113.254.7:8089/terminal-renderer' "APK visual URL must use the non-resizing control-server capture renderer"
 require "$MAIN" 'APK_CAPTURE_RENDERER_COLS = 132' "APK capture renderer must preserve the readable 132-column logical grid"
@@ -144,7 +150,7 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=182`, `versionName=2.81`.' "README checkpoint must match the installed v2.81 APK"
+    require "$README" 'Built checkpoint: `versionCode=183`, `versionName=2.82`.' "README checkpoint must match the installed v2.82 APK"
     require "$README" 'zoom/pan wrong-layer regression' "README must document the current v2.79 zoom/pan layer fix"
     require "$README" 'Tap-to-type suppression is scoped to stale picker releases' "README must document the current v2.79 tap latency fix"
     require "$README" "WebView's actual" "README must document the current v2.78 real pinch scale-state fix"
@@ -313,8 +319,8 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.81' "install page must advertise the current v2.81 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>182</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.82' "install page must advertise the current v2.82 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>183</code>' "install page versionCode must match the manifest"
     require "$INSTALL_PAGE" 'Workspace Save/Load/Close' "install page must mention the v2.62 workspace control fix"
     require "$INSTALL_PAGE" 'composer-above-buttons layout' "install page must mention the restored composer-above-buttons layout"
     require "$INSTALL_PAGE" 'compact v2.65 toolbar chrome' "install page must mention the compact bottom toolbar fix"
@@ -431,7 +437,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.81 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.82 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"
@@ -922,6 +928,8 @@ if [ -f "$MANTIS_CONTROL_SERVER" ]; then
     require "$MANTIS_CONTROL_SERVER" 'function syncViewportHeight()' "Mantis capture renderer must pin terminal height to the visible viewport"
     require "$MANTIS_CONTROL_SERVER" 'terminal.style.height=visibleHeight+"px"' "Mantis capture renderer must not rely on stale CSS 100dvh height"
     require "$MANTIS_CONTROL_SERVER" 'window.visualViewport.addEventListener("resize",scheduleSoon)' "Mantis capture renderer must repaint on Android visualViewport resize"
+    require "$MANTIS_CONTROL_SERVER" 'selectedWindowId=(params.get("windowId")||"").trim()' "Mantis capture renderer must keep a mutable selected windowId target"
+    require "$MANTIS_CONTROL_SERVER" 'setWindowId:(value)=>' "Mantis capture renderer must expose a no-reload target setter for the APK"
     require "$MANTIS_CONTROL_SERVER" 'the visible black bottom gutter from the v2.80 screenshot' "Mantis capture renderer WHY comment must preserve the v2.80 black bottom gap root cause"
     require_absent "$MANTIS_CONTROL_SERVER" 'visible_rows = ([""] * leading_pad_rows) + visible_rows + ([""] * (len(pad) - leading_pad_rows))' "Mantis live renderer must not append trailing synthetic blanks after live content"
 fi
@@ -2073,6 +2081,9 @@ else
     echo "File: $SELECTION_LOCK_HELPER" >&2
     exit 1
 fi
+
+require "$ACTIVE_DOT_GRID_PROOF" 'blank_terminal_body' "active-switch proof must reject mostly black terminal-body false positives"
+require "$ACTIVE_DOT_GRID_PROOF" 'v2.81 briefly passed this proof' "active-switch proof WHY comment must preserve the black-body false positive"
 
 # WHY: Bash `-n` cannot parse embedded heredoc Python. The toolbar geometry
 # proof is the guard that catches hidden composer rows and giant keyboard blanks;

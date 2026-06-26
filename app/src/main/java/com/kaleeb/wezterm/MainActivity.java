@@ -4978,16 +4978,12 @@ public class MainActivity extends Activity {
         // stable `@windowId` Open/Close; Old Sessions has its own old-only
         // saved-session endpoint so it cannot inherit live-window rows or broad
         // `/sessions` latency.
-        AlertDialog loadingDialog = showLoadingDialog("Active Sessions", "Loading active sessions...");
         getJsonWithRetry("/tabs?light=1", payload -> {
-            dismissDialogQuietly(loadingDialog);
             showActiveSessionsDialog(payload, "Active Sessions", true);
         }, exc ->
                 getJsonWithRetry("/tabs", payload -> {
-                    dismissDialogQuietly(loadingDialog);
                     showActiveSessionsDialog(payload, "Active Sessions", true);
                 }, fallbackExc -> {
-                    dismissDialogQuietly(loadingDialog);
                     toast("WEzterm control is not reachable");
                 })
         );
@@ -4999,12 +4995,9 @@ public class MainActivity extends Activity {
         // Keep APK Old on the same `/sessions?oldOnly=1` contract as the web
         // remote so Android cannot drift into showing live rows or stale
         // process-name titles when the broad `/sessions` payload changes.
-        AlertDialog loadingDialog = showLoadingDialog("Old Sessions", "Loading saved sessions...");
         getJsonWithRetry("/sessions?oldOnly=1", payload -> {
-            dismissDialogQuietly(loadingDialog);
             showOldSessionsDialog(payload);
         }, exc -> {
-            dismissDialogQuietly(loadingDialog);
             toast("WEzterm control is not reachable");
         }
         );
@@ -5031,37 +5024,6 @@ public class MainActivity extends Activity {
     private void showNeedsAttention() {
         hideDockedPromptComposerForNavigation("needs-attention-dialog");
         getJsonWithRetry("/needs-attention", payload -> showActiveSessionsDialog(payload, "Needs Attention", false));
-    }
-
-    private AlertDialog showLoadingDialog(String title, String message) {
-        TextView text = new TextView(this);
-        text.setText(message);
-        text.setTextSize(16);
-        text.setTextColor(Color.rgb(205, 214, 244));
-        int pad = dp(16);
-        text.setPadding(pad, pad, pad, pad);
-        // WHY: Active/Old endpoint timings are fast, but while the native
-        // composer/IME hides the phone used to show no immediate feedback. A
-        // lightweight loading dialog makes the toolbar tap visibly acknowledge
-        // instantly without switching sessions, clearing drafts, or touching the
-        // one-finger scroll/zoom gesture paths.
-        return new AlertDialog.Builder(this)
-                .setTitle(title)
-                .setView(text)
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
-
-    private void dismissDialogQuietly(AlertDialog dialog) {
-        if (dialog == null) {
-            return;
-        }
-        try {
-            if (dialog.isShowing()) {
-                dialog.dismiss();
-            }
-        } catch (Exception ignored) {
-        }
     }
 
     private void showActiveSessionsDialog(JSONObject payload, String title, boolean preferGroups) throws Exception {

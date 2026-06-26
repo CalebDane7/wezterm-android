@@ -57,12 +57,17 @@ import xml.etree.ElementTree as ET
 
 path, context = sys.argv[1:]
 root = ET.parse(path).getroot()
+empty_hint_texts = {
+    "Type prompt - tap Send",
+}
 for node in root.iter("node"):
     if node.attrib.get("package") != "com.kaleeb.wezterm":
         continue
     if node.attrib.get("class") != "android.widget.EditText":
         continue
     text = (node.attrib.get("text") or "").strip()
+    if text in empty_hint_texts:
+        continue
     if text:
         print(
             "phone proof selection lock failed: "

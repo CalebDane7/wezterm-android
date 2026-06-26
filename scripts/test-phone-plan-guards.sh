@@ -1260,6 +1260,8 @@ require "$MAIN" 'Hide locally as soon as the idempotent POST is queued' "Send la
 require "$MAIN" 'clearPromptComposerAfterSuccessfulSubmit' "Send must clear drafts only after /submit-text succeeds"
 require "$MAIN" 'restorePromptComposerAfterFailedSubmit' "Send must restore the visible draft after a failed optimistic submit"
 require "$MAIN" 'WEztermSend' "Send path must leave privacy-safe stage timing logs"
+require "$SELECTION_LOCK_HELPER" 'empty_hint_texts = {' "phone proof draft preflight must distinguish real drafts from empty composer hints"
+require "$SELECTION_LOCK_HELPER" 'Type prompt - tap Send' "phone proof draft preflight must ignore the native composer placeholder text"
 require "$MAIN" 'Stop is the phone equivalent of the desktop Escape key' "Stop WHY comment must preserve the direct Stop-equals-Escape mapping"
 require "$MAIN" 'Stop owns one Escape' "Stop must not submit drafts or queue a phone-only state machine"
 require_absent "$MAIN" 'STOP_SECOND_PRESS_INTERRUPT_MS' "Stop must not use a phone-only second-press state window"

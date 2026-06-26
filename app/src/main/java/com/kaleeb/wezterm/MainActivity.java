@@ -2365,7 +2365,7 @@ public class MainActivity extends Activity {
         if (now > touchScrollRenderPulseUntilMs) {
             return;
         }
-        refreshCaptureRendererNow(reason);
+        refreshCaptureRendererPulse(reason);
         boolean stillTouchScrolling = terminalHistoryDragActive
                 || terminalHistoryMomentumActive
                 || historyScrollRequestInFlight
@@ -2386,6 +2386,28 @@ public class MainActivity extends Activity {
         pendingHistoryScrollRepeats = 0;
         pendingHistoryScrollGeneration = 0;
         pendingHistoryScrollTargetKey = "";
+    }
+
+    private void refreshCaptureRendererPulse(String reason) {
+        if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            return;
+        }
+        // WHY: one-finger touch-scroll can pulse once per display frame while
+        // `/terminal-frame` is still network/tmux-bound. Use the renderer's
+        // idle-only refresh so pulse frames cannot stack async WebView JS and
+        // flicker black, while explicit Bottom/send/tab-switch/Refresh still
+        // use the full refresh path.
+        webView.evaluateJavascript(
+                "(function(){"
+                        + "try{"
+                        + "var r=window.__mantisCaptureRenderer;"
+                        + "if(r&&typeof r.refreshIfIdle==='function'){return r.refreshIfIdle()?'capture-refresh-idle':'capture-refresh-busy';}"
+                        + "if(r&&typeof r.refresh==='function'){r.refresh();return 'capture-refresh-fallback';}"
+                        + "return 'not-capture';"
+                        + "}catch(e){return 'err';}"
+                + "})()",
+                null
+        );
     }
 
     private void loadTerminal() {
@@ -3678,6 +3700,7 @@ public class MainActivity extends Activity {
         webView.evaluateJavascript(
                 "(function(){"
                         + "try{"
+                        + captureRendererGeometryOnlyReturnScript("pin-" + reason)
                         + "var html=document.documentElement;"
                         + "var body=document.body;"
                         + "if(html){html.style.overflow='hidden';html.style.height='100%';html.style.overscrollBehavior='none';html.scrollTop=0;html.scrollLeft=0;}"
@@ -3695,6 +3718,22 @@ public class MainActivity extends Activity {
                 pinTerminalViewportLocal();
             }
         }, 120);
+    }
+
+    private String captureRendererGeometryOnlyReturnScript(String reason) {
+        String safeReason = sanitizeJavascriptReason(reason);
+        // WHY: the visible terminal is now the control-server capture renderer,
+        // not ttyd/xterm, when this marker exists. Old xterm settle scripts
+        // must not reset document scroll, rewrite html/body height, dispatch
+        // resize, or scrub canvas layers on capture pages; that is what made
+        // tap/send/down-scroll repaint black while the accepted visualViewport
+        // anchor was already correct.
+        return "var capture=document.querySelector('[data-mantis-capture-renderer=\"1\"]');"
+                + "if(capture){"
+                + "var r=window.__mantisCaptureRenderer;"
+                + "if(r&&typeof r.measure==='function'){r.measure();}"
+                + "return 'capture-renderer:" + safeReason + "';"
+                + "}";
     }
 
     private void hideKeyboardForReadMode() {
@@ -6603,6 +6642,7 @@ public class MainActivity extends Activity {
                 : "";
         return "(function(){"
                 + "try{"
+                + captureRendererGeometryOnlyReturnScript("xterm-settle-" + safeReason)
                 + "var scrolling=document.scrollingElement;"
                 + "if(scrolling){scrolling.scrollTop=0;scrolling.scrollLeft=0;}"
                 + "var html=document.documentElement,body=document.body;"
@@ -7587,6 +7627,7 @@ public class MainActivity extends Activity {
                         + "if(screen&&typeof screen.scrollIntoView==='function'){screen.scrollIntoView({block:'end',inline:'nearest'});}";
         return "(function(){"
                 + "try{"
+                + captureRendererGeometryOnlyReturnScript("live-input")
                 + terminalBottomScroll
                 + "var el=document.querySelector('.xterm-helper-textarea, .xterm textarea, textarea');"
                 + "if(el){"
@@ -7700,6 +7741,7 @@ public class MainActivity extends Activity {
         webView.evaluateJavascript(
                 "(function(){"
                         + "try{"
+                        + captureRendererGeometryOnlyReturnScript("fit-" + reason)
                         + "var html=document.documentElement,body=document.body;"
                         + "if(html){html.style.height='100%';html.style.minHeight='0';html.style.overflow='hidden';}"
                         + "if(body){body.style.height='100%';body.style.minHeight='0';body.style.margin='0';body.style.overflow='hidden';}"

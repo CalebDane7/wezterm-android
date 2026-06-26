@@ -92,7 +92,13 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=178`, `versionName=2.77`.
+- Built checkpoint: `versionCode=179`, `versionName=2.78`.
+- v2.78 fixes the installed-APK pinch-anchor regression that v2.77 still failed
+  in real two-pointer proof: the zoom/pan gates now check the WebView's actual
+  scale when `onScaleChanged` state is stale, so delayed document pins and xterm
+  settle scripts cannot treat a visibly zoomed viewer as unzoomed and pull it
+  toward the top corner. This stays WebView-owned; it does not use tmux resize,
+  raw ttyd, black masks, font changes, zoom reset, or `/touch-scroll`.
 - v2.77 fixes the 2026-06-26 touch regression: slow one-finger drags now
   preserve bounded in-flight distance instead of replacing movement with one
   tiny pending step, fast flicks carry more cancellable inertia in both

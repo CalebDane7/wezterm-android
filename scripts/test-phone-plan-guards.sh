@@ -58,13 +58,13 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="178"' "current APK version must be bumped for the v2.77 APK touch regression contract"
-require "$MANIFEST" 'android:versionName="2.77"' "current APK version must be bumped for the v2.77 APK touch regression contract"
+require "$MANIFEST" 'android:versionCode="179"' "current APK version must be bumped for the v2.78 APK pinch-anchor contract"
+require "$MANIFEST" 'android:versionName="2.78"' "current APK version must be bumped for the v2.78 APK pinch-anchor contract"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.77";' "client /config proof must report the same v2.77 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.78";' "client /config proof must report the same v2.78 APK contract as the manifest"
 require "$MAIN" 'MediaStore.ACTION_PICK_IMAGES' "Upload must use Android Photo Picker for one-selection screenshots/media on Android 13+"
 require "$MAIN" 'uploadDocumentPickerIntent' "Upload must keep ACTION_OPEN_DOCUMENT fallback for non-photo-picker/files path"
 require "$MAIN" 'uploadUrisFromResult' "Upload result must handle both data URI and ClipData instead of dropping picker returns"
@@ -138,7 +138,9 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=178`, `versionName=2.77`.' "README checkpoint must match the installed v2.77 APK"
+    require "$README" 'Built checkpoint: `versionCode=179`, `versionName=2.78`.' "README checkpoint must match the installed v2.78 APK"
+    require "$README" "WebView's actual" "README must document the current v2.78 real pinch scale-state fix"
+    require "$README" 'cannot treat a visibly zoomed viewer as unzoomed' "README must preserve the v2.78 pinch-anchor root cause"
     require "$README" 'slow one-finger drags now' "README must document the current v2.77 low-speed touch-scroll fix"
     require "$README" 'pinch/zoomed pan cancels stale live-bottom alignment callbacks' "README must document the current v2.77 pinch-anchor fix"
     require "$README" 'skips transient blank frames' "README must document the current v2.77 renderer flicker fix"
@@ -303,8 +305,8 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.77' "install page must advertise the current v2.77 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>178</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.78' "install page must advertise the current v2.78 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>179</code>' "install page versionCode must match the manifest"
     require "$INSTALL_PAGE" 'Workspace Save/Load/Close' "install page must mention the v2.62 workspace control fix"
     require "$INSTALL_PAGE" 'composer-above-buttons layout' "install page must mention the restored composer-above-buttons layout"
     require "$INSTALL_PAGE" 'compact v2.65 toolbar chrome' "install page must mention the compact bottom toolbar fix"
@@ -421,7 +423,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.77 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.78 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"
@@ -1371,6 +1373,9 @@ require "$MAIN" 'Samsung/ADB key zoom did not change WebView scale by default' "
 require "$MAIN" 'keyZoomViewerStateActive || webViewScale > WEBVIEW_ZOOMED_SCALE_THRESHOLD' "key-created zoom state must keep viewer-pan gates open"
 require "$MAIN" 'key-created zoom state' "key zoom WHY comment must preserve the v2.74 snap-back proof failure"
 require "$MAIN" 'WEBVIEW_ZOOMED_SCALE_THRESHOLD + 0.03f' "key-created zoom state must update the explicit scale fallback"
+require "$MAIN" 'float actualScale = webView.getScale();' "v2.78 real pinch proof must guard stale onScaleChanged state with actual WebView scale"
+require "$MAIN" 'cannot treat a visibly zoomed viewer as unzoomed' "v2.78 pinch-anchor WHY comment must preserve the stale-scale root cause"
+require "$MAIN" 'scrollTo(0,0) can drag the viewport to the top' "v2.78 pinch-anchor WHY comment must preserve the top-corner black-gap failure"
 require "$MAIN" 'private void panZoomedViewerHorizontally(MotionEvent event)' "v2.76 must explicitly scroll the zoomed WebView viewport during one-finger horizontal pan"
 require "$MAIN" 'webView.scrollBy(deltaX, 0);' "v2.76 zoomed one-finger pan must remain WebView/viewer-owned"
 require "$MAIN" 'necessary but not sufficient once WEzTerm had already consumed the' "v2.76 WHY comment must preserve why original DOWN replay alone failed"

@@ -121,7 +121,7 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_FILENAME_PREFIX = "upload_filename_";
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
-    private static final String APP_VERSION_NAME = "2.77";
+    private static final String APP_VERSION_NAME = "2.78";
     private static final String UPLOAD_LOG_TAG = "WEztermUpload";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
@@ -7330,7 +7330,26 @@ public class MainActivity extends Activity {
     }
 
     private boolean isViewerZoomed() {
-        return keyZoomViewerStateActive || webViewScale > WEBVIEW_ZOOMED_SCALE_THRESHOLD;
+        if (keyZoomViewerStateActive || webViewScale > WEBVIEW_ZOOMED_SCALE_THRESHOLD) {
+            return true;
+        }
+        if (webView == null) {
+            return false;
+        }
+        // WHY: real Samsung/WebView pinch proof showed a visual zoom can outlive
+        // the cached onScaleChanged value. If this gate goes false while the
+        // cleanup path cannot treat a visibly zoomed viewer as unzoomed: while
+        // the viewer is still actually zoomed, delayed document pins and xterm settle
+        // scripts that contain scrollTo(0,0) can drag the viewport to the top
+        // corner and strand a huge lower black field. Read the WebView's actual
+        // scale as a guard only; do not convert pinch zoom into tmux resize,
+        // terminal font changes, zoom reset, raw ttyd, or /touch-scroll routing.
+        float actualScale = webView.getScale();
+        if (actualScale > WEBVIEW_ZOOMED_SCALE_THRESHOLD) {
+            webViewScale = Math.max(webViewScale, actualScale);
+            return true;
+        }
+        return false;
     }
 
     private boolean handleViewerZoomKey(int keyCode, KeyEvent event) {

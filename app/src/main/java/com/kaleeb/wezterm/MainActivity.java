@@ -4954,14 +4954,6 @@ public class MainActivity extends Activity {
         final AlertDialog[] dialogRef = new AlertDialog[1];
         addActiveDialogActions(list, dialogRef);
         JSONObject activeWindow = activeWindowFromPayload(payload);
-        if (activeWindow != null) {
-            // WHY: Active Sessions must immediately show where the phone is now.
-            // The grouped sections below are still useful for scanning, but the
-            // current tmux window is the user's orientation anchor and must never
-            // be pushed below the fold or duplicated inside another bucket.
-            addSectionHeader(list, "Current", 1);
-            addTabRow(list, activeWindow, session, dialogRef);
-        }
         JSONArray groups = payload.optJSONArray("groups");
         if (preferGroups && groups != null && groups.length() > 0) {
             for (int i = 0; i < groups.length(); i++) {
@@ -4972,10 +4964,9 @@ public class MainActivity extends Activity {
                 }
                 // WHY: `/tabs` now groups Active Sessions by action state/color
                 // for phone scanning: needs-input first, completed middle,
-                // working bottom. Keep those grouped buckets, but filter out the
-                // active row because the protected top Current section already
-                // owns that orientation anchor.
-                List<JSONObject> groupRows = sortedWindows(windows, activeWindow);
+                // working bottom. Do not pull Current above those groups again;
+                // active row keeps its "Current:" marker inside its bucket.
+                List<JSONObject> groupRows = sortedWindows(windows);
                 if (groupRows.isEmpty()) {
                     continue;
                 }

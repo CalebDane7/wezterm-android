@@ -144,7 +144,7 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-require "$README" 'Built checkpoint: `versionCode=181`, `versionName=2.80`.' "README checkpoint must match the installed v2.80 APK"
+    require "$README" 'Built checkpoint: `versionCode=182`, `versionName=2.81`.' "README checkpoint must match the installed v2.81 APK"
     require "$README" 'zoom/pan wrong-layer regression' "README must document the current v2.79 zoom/pan layer fix"
     require "$README" 'Tap-to-type suppression is scoped to stale picker releases' "README must document the current v2.79 tap latency fix"
     require "$README" "WebView's actual" "README must document the current v2.78 real pinch scale-state fix"
@@ -313,8 +313,8 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.80' "install page must advertise the current v2.80 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>181</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.81' "install page must advertise the current v2.81 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>182</code>' "install page versionCode must match the manifest"
     require "$INSTALL_PAGE" 'Workspace Save/Load/Close' "install page must mention the v2.62 workspace control fix"
     require "$INSTALL_PAGE" 'composer-above-buttons layout' "install page must mention the restored composer-above-buttons layout"
     require "$INSTALL_PAGE" 'compact v2.65 toolbar chrome' "install page must mention the compact bottom toolbar fix"
@@ -431,7 +431,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.80 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.81 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"

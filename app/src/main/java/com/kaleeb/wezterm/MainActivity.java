@@ -4965,7 +4965,7 @@ public class MainActivity extends Activity {
                 // WHY: `/tabs` now groups Active Sessions by action state/color
                 // for phone scanning: needs-input first, completed middle,
                 // working bottom. Do not pull Current above those groups again;
-                // active row keeps its "Current:" marker inside its bucket.
+                // active row stays in its state bucket without prefixing the visible title.
                 List<JSONObject> groupRows = sortedWindows(windows);
                 if (groupRows.isEmpty()) {
                     continue;
@@ -5365,10 +5365,7 @@ public class MainActivity extends Activity {
         applySessionStatusDot(statusDot, status, window.optBoolean("needsAttention", false), statusLabel);
 
         TextView titleText = new TextView(this);
-        titleText.setText(
-                (window.optBoolean("active", false) ? "Current: " : "")
-                        + title
-        );
+        titleText.setText(title);
         titleText.setTextSize(15);
         titleText.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         titleText.setTextColor(Color.rgb(255, 96, 112));
@@ -6135,15 +6132,9 @@ public class MainActivity extends Activity {
         String activity = window.optString("activityGroup", "");
         String detail = window.optString("detail", window.optString("command", ""));
         String path = window.optString("shortPath", "");
-        String childSummary = window.optString("childSummary", "");
-        String role = window.optBoolean("isChild", false)
-                ? window.optString("roleLabel", "Child") + " of " + window.optString("parentWindowId", "parent")
-                : "";
         return status
                 + (attention.isEmpty() ? "" : " - " + attention)
                 + " - " + state
-                + (role.isEmpty() ? "" : " - " + role)
-                + (childSummary.isEmpty() ? "" : " - " + childSummary)
                 + (activity.isEmpty() ? "" : " - " + activity)
                 + " - " + detail
                 + (path.isEmpty() ? "" : " - " + path);

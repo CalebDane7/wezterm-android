@@ -121,7 +121,8 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_FILENAME_PREFIX = "upload_filename_";
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
-    private static final String APP_VERSION_NAME = "2.80";
+    private static final String PREF_PROMPT_DRAFT_PREFIX = "prompt_draft_";
+    private static final String APP_VERSION_NAME = "2.81";
     private static final String UPLOAD_LOG_TAG = "WEztermUpload";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
@@ -921,6 +922,7 @@ public class MainActivity extends Activity {
                     // is how a correction can paste into another session.
                     promptComposerDraftTargetKey = promptComposerTargetKey();
                 }
+                rememberPromptComposerDraft(promptComposerDraftTargetKey, editable.toString());
                 promptComposerDraftLocalGeneration++;
             }
         });
@@ -2907,18 +2909,21 @@ public class MainActivity extends Activity {
             return;
         }
         String targetKey = promptComposerTargetKey();
-        if (!targetKey.equals(promptComposerDraftTargetKey)
-                && promptComposerInput.getText().length() > 0) {
-            // WHY: a visible native draft belongs to the stable tmux `@windowId`
-            // where it was typed. Preserving that text after an Active-tab switch
-            // lets Send paste the old draft into a different conversation, which
-            // looks like the same random paste/duplicate regression the user has
-            // reported repeatedly. Because normal typing is local-only now, the
-            // only safe cross-tab behavior is to clear the preserved local draft
-            // when the target window changes.
+        if (!TextUtils.equals(targetKey, promptComposerDraftTargetKey)) {
+            saveVisiblePromptComposerDraft();
+        }
+        String targetDraft = rememberedPromptComposerDraft(targetKey);
+        String visibleDraft = promptComposerInput.getText().toString();
+        if (!TextUtils.equals(visibleDraft, targetDraft)) {
+            // WHY: v2.80 cleared the native composer whenever Active switched,
+            // which destroyed live phone drafts during proof/tab movement. Each
+            // stable tmux `@windowId` owns its own local Android draft now; Send
+            // still submits only to the pinned target, so preserving text does not
+            // reintroduce wrong-window paste or hidden `/draft-delta` mirroring.
             promptComposerProgrammaticTextChange = true;
             try {
-                promptComposerInput.setText("");
+                promptComposerInput.setText(targetDraft);
+                promptComposerInput.setSelection(promptComposerInput.getText().length());
             } finally {
                 promptComposerProgrammaticTextChange = false;
             }
@@ -2944,6 +2949,7 @@ public class MainActivity extends Activity {
         } finally {
             promptComposerProgrammaticTextChange = false;
         }
+        forgetPromptComposerDraft(promptComposerDraftTargetKey);
         promptComposerDraftTargetKey = promptComposerTargetKey();
         // WHY: Clear now only clears the visible native composer. It must not send
         // a calculated `/draft-delta` backspace into tmux, because normal phone typing is local-only now
@@ -2951,6 +2957,49 @@ public class MainActivity extends Activity {
         // an older build or hidden xterm path, empty-composer Backspace/Delete and
         // Option keys send literal tmux keys as an explicit recovery action.
         toast("Draft cleared");
+    }
+
+    private void saveVisiblePromptComposerDraft() {
+        if (promptComposerInput == null) {
+            return;
+        }
+        String targetKey = hasStableWindowId(promptComposerDraftTargetKey)
+                ? promptComposerDraftTargetKey
+                : promptComposerTargetKey();
+        rememberPromptComposerDraft(targetKey, promptComposerInput.getText().toString());
+    }
+
+    private void rememberPromptComposerDraft(String targetKey, String text) {
+        if (prefs == null || !hasStableWindowId(targetKey)) {
+            return;
+        }
+        String value = text == null ? "" : text;
+        String key = promptComposerDraftPrefsKey(targetKey);
+        SharedPreferences.Editor editor = prefs.edit();
+        if (value.isEmpty()) {
+            editor.remove(key);
+        } else {
+            editor.putString(key, value);
+        }
+        editor.apply();
+    }
+
+    private String rememberedPromptComposerDraft(String targetKey) {
+        if (prefs == null || !hasStableWindowId(targetKey)) {
+            return "";
+        }
+        return prefs.getString(promptComposerDraftPrefsKey(targetKey), "");
+    }
+
+    private void forgetPromptComposerDraft(String targetKey) {
+        if (prefs == null || !hasStableWindowId(targetKey)) {
+            return;
+        }
+        prefs.edit().remove(promptComposerDraftPrefsKey(targetKey)).apply();
+    }
+
+    private String promptComposerDraftPrefsKey(String targetKey) {
+        return PREF_PROMPT_DRAFT_PREFIX + targetKey.trim();
     }
 
     private void submitDockedPromptText(String text) {
@@ -3033,6 +3082,7 @@ public class MainActivity extends Activity {
             return;
         }
         if (clearText) {
+            forgetPromptComposerDraft(promptComposerDraftTargetKey);
             promptComposerProgrammaticTextChange = true;
             try {
                 promptComposerInput.setText("");
@@ -3041,6 +3091,8 @@ public class MainActivity extends Activity {
             }
             promptComposerDraftTargetKey = promptComposerTargetKey();
             promptComposerDraftLocalGeneration++;
+        } else {
+            saveVisiblePromptComposerDraft();
         }
         promptComposerVisibilityGeneration++;
         promptComposerInput.clearFocus();
@@ -3231,6 +3283,7 @@ public class MainActivity extends Activity {
                 toast(successToast);
             }
             finishPromptComposerSubmit(submitFingerprint);
+            forgetPromptComposerDraft(stableTargetKey);
             hideDockedPromptComposer(true, false);
             focusTerminalInputSoon(false);
             settleLiveBottomAfterSend("submit-text");
@@ -4710,6 +4763,7 @@ public class MainActivity extends Activity {
         promptComposerDraftTargetKey = hasStableWindowId(upload.windowId)
                 ? upload.windowId.trim()
                 : promptComposerTargetKey();
+        rememberPromptComposerDraft(promptComposerDraftTargetKey, nextText);
         promptComposerDraftLocalGeneration++;
         updateStartButtonLabel();
         restoreDockedPromptComposerFocus("upload-result");
@@ -5908,6 +5962,7 @@ public class MainActivity extends Activity {
                     }
                     clearRememberedCloseTarget("close-dispatched");
                     clearRememberedUploadForWindow(stableWindowId, "close-dispatched");
+                    forgetPromptComposerDraft(stableWindowId);
                     control(path, "Closed session");
                 })
                 .setNegativeButton("Cancel", null)

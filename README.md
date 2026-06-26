@@ -92,7 +92,12 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=181`, `versionName=2.80`.
+- Built checkpoint: `versionCode=182`, `versionName=2.81`.
+- v2.81 preserves unsent native-composer drafts per stable tmux `@windowId`
+  while tab switches hide the keyboard/composer. This fixes proof/user tab
+  movement destroying typed messages without bringing back hidden `/draft-delta`
+  mirroring or wrong-window Send; Clear/Send/Close remove only the owning
+  session draft.
 - v2.80 restores the phone bottom-anchor contract from the v2.5/v2.6-era
   layout: Android `adjustResize` owns keyboard height when it already resized
   the root, the app does not double-reserve IME space into a black bottom gap,

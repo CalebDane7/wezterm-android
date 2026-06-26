@@ -59,13 +59,13 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="181"' "current APK version must be bumped for the v2.80 APK bottom-anchor contract"
-require "$MANIFEST" 'android:versionName="2.80"' "current APK version must be bumped for the v2.80 APK bottom-anchor contract"
+require "$MANIFEST" 'android:versionCode="182"' "current APK version must be bumped for the v2.81 draft-preserving bottom-gap contract"
+require "$MANIFEST" 'android:versionName="2.81"' "current APK version must be bumped for the v2.81 draft-preserving bottom-gap contract"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.80";' "client /config proof must report the same v2.80 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.81";' "client /config proof must report the same v2.81 APK contract as the manifest"
 require "$MAIN" 'MediaStore.ACTION_PICK_IMAGES' "Upload must use Android Photo Picker for one-selection screenshots/media on Android 13+"
 require "$MAIN" 'uploadDocumentPickerIntent' "Upload must keep ACTION_OPEN_DOCUMENT fallback for non-photo-picker/files path"
 require "$MAIN" 'uploadUrisFromResult' "Upload result must handle both data URI and ClipData instead of dropping picker returns"
@@ -918,6 +918,12 @@ if [ -f "$MANTIS_CONTROL_SERVER" ]; then
     require_absent "$MANTIS_CONTROL_SERVER" 'Fast active picker' "Mantis light tabs must not hardcode every Active row to grey Ready"
     require "$MANTIS_CONTROL_SERVER" 'refreshQueued=false' "Mantis capture renderer must queue a follow-up repaint when a frame fetch is already in flight"
     require "$MANTIS_CONTROL_SERVER" 'Queue exactly one follow-up repaint' "Mantis capture renderer WHY comment must preserve the APK choppy-scroll root cause"
+    require "$MANTIS_CONTROL_SERVER" 'function visualViewportHeight()' "Mantis capture renderer must measure Android WebView visualViewport height"
+    require "$MANTIS_CONTROL_SERVER" 'function syncViewportHeight()' "Mantis capture renderer must pin terminal height to the visible viewport"
+    require "$MANTIS_CONTROL_SERVER" 'terminal.style.height=visibleHeight+"px"' "Mantis capture renderer must not rely on stale CSS 100dvh height"
+    require "$MANTIS_CONTROL_SERVER" 'window.visualViewport.addEventListener("resize",scheduleSoon)' "Mantis capture renderer must repaint on Android visualViewport resize"
+    require "$MANTIS_CONTROL_SERVER" 'the visible black bottom gutter from the v2.80 screenshot' "Mantis capture renderer WHY comment must preserve the v2.80 black bottom gap root cause"
+    require_absent "$MANTIS_CONTROL_SERVER" 'visible_rows = ([""] * leading_pad_rows) + visible_rows + ([""] * (len(pad) - leading_pad_rows))' "Mantis live renderer must not append trailing synthetic blanks after live content"
 fi
 require "$MAIN" 'private LinearLayout toolbarRow()' "toolbar must stay split into readable rows"
 require "$MAIN" 'setTouchableBackground(button' "toolbar buttons must keep visible ripple/tap feedback"
@@ -1169,6 +1175,12 @@ require_absent "$MAIN" 'postText("/draft-delta?backspace="' "normal Android typi
 require "$MAIN" 'promptComposerDraftTargetKey' "native composer draft must track the stable active window target"
 require "$MAIN" 'promptComposerTargetKey()' "native composer draft must identify the stable active window target"
 require "$MAIN" 'promptComposerDraftSubmitTargetKey()' "native composer Send/Enter must submit to the pinned draft target, not a later active target"
+require "$MAIN" 'PREF_PROMPT_DRAFT_PREFIX' "native composer drafts must be persisted per stable windowId so tab switches cannot destroy typed text"
+require "$MAIN" 'rememberPromptComposerDraft' "native composer draft persistence must save the visible draft before passive tab movement"
+require "$MAIN" 'rememberedPromptComposerDraft' "native composer must restore the current windowId draft instead of showing another session draft"
+require "$MAIN" 'saveVisiblePromptComposerDraft' "passive composer hiding must save the user's visible draft"
+require "$MAIN" 'v2.80 cleared the native composer' "draft-preservation WHY comment must preserve the old regression"
+require "$MAIN" 'forgetPromptComposerDraft(stableTargetKey)' "successful Send must remove only the submitted target draft"
 require "$MAIN" 'retargeting on every edit' "TextWatcher WHY comment must preserve the wrong-session paste regression"
 require "$MAIN" 'appendStableWindowQuery("/submit-text", stableTargetKey)' "safe prompt composer must pass the pinned target into submit-text"
 require "$MAIN" 'Normal phone typing is local-only until the visible' "TextWatcher WHY comment must preserve the no hidden draft mirror rule"
@@ -2052,6 +2064,10 @@ if [ -f "$SELECTION_LOCK_HELPER" ]; then
     require "$SELECTION_LOCK_HELPER" 'current tmux window is $current_monitor' "phone proof helper must fail when the running lane is not the lock monitor"
     require "$SELECTION_LOCK_HELPER" 'X-Mantis-Selection-Lock-Owner' "phone proof helper must send the server lock-owner header"
     require "$SELECTION_LOCK_HELPER" 'X-Mantis-Selection-Lock-Monitor' "phone proof helper must send the server lock-monitor header"
+    require "$SELECTION_LOCK_HELPER" 'phone_proof_refuse_visible_apk_draft()' "phone proof helper must refuse tab movement while a visible APK draft is present"
+    require "$SELECTION_LOCK_HELPER" 'PHONE_PROOF_ALLOW_DRAFT_STEAL' "draft-steal override must be explicit and disposable-only"
+    require "$SELECTION_LOCK_HELPER" 'android.widget.EditText' "phone proof helper must inspect the visible native composer before moving tabs"
+    require "$SELECTION_LOCK_HELPER" 'visible nonempty WEzTerm draft' "phone proof helper must explain the draft-steal blocker"
 else
     echo "Phone plan regression guard failed: missing selection lock helper" >&2
     echo "File: $SELECTION_LOCK_HELPER" >&2

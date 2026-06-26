@@ -121,7 +121,7 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_FILENAME_PREFIX = "upload_filename_";
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
-    private static final String APP_VERSION_NAME = "2.79";
+    private static final String APP_VERSION_NAME = "2.80";
     private static final String UPLOAD_LOG_TAG = "WEztermUpload";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
@@ -280,6 +280,9 @@ public class MainActivity extends Activity {
     private boolean keyZoomViewerStateActive = false;
     private long viewerPanUnlockedUntilMs = 0;
     private int lastImeInsetBottom = 0;
+    private int lastKeyboardReserveBottom = 0;
+    private int lastNavigationBarInsetBottom = 0;
+    private int lastAppliedRootBottomPadding = -1;
     private boolean sessionSwitchInFlight = false;
     private String selectedPhoneWindowId = "";
     private int selectedPhoneWindowIndex = -1;
@@ -1373,6 +1376,14 @@ public class MainActivity extends Activity {
         if (decor == null) {
             return;
         }
+        if (lastImeInsetBottom > 0 || isDockedPromptComposerVisible()) {
+            // WHY: v2.80 keeps the bottom typing anchor stable while the keyboard or
+            // native composer is visible. Hiding navigation bars and requesting fresh
+            // insets during IME settle can move the visible bottom after Android has
+            // already resized the activity, which reintroduced the black gap/slow
+            // tap-to-type feel the old v1.65-v2.60 layout avoided.
+            return;
+        }
         // WHY: matching the navigation-bar color still left a full Android nav
         // region below the toolbar that the user read as wasted black space. Use
         // Android's immersive navigation-bar API with transient swipe reveal so
@@ -1388,7 +1399,7 @@ public class MainActivity extends Activity {
                 );
                 controller.hide(WindowInsets.Type.navigationBars());
             }
-            if (requestInsets) {
+            if (requestInsets && lastImeInsetBottom == 0) {
                 decor.post(decor::requestApplyInsets);
             }
             return;
@@ -7691,15 +7702,30 @@ public class MainActivity extends Activity {
                 return;
             }
             int contentHeightPx = Math.round(webView.getContentHeight() * webViewScale);
-            int maxY = Math.max(0, contentHeightPx - webView.getHeight());
+            int visibleHeightPx = visibleWebViewHeightForBottomAnchor();
+            int maxY = Math.max(0, contentHeightPx - visibleHeightPx);
             if (maxY > 0 && webView.getScrollY() < maxY) {
-                // WHY: preserve horizontal pan while moving the zoomed Android
-                // viewer down enough that the live xterm input sits above the IME.
-                // Resetting X here would regress long-line reading; doing nothing
-                // leaves the composer hidden below the keyboard when zoomed in.
+                // WHY: v2.80 anchors zoomed bottom recovery to the visible phone
+                // bottom, not a stale full WebView/content height. With keyboard
+                // hidden this means the terminal live bottom reaches the actual
+                // bottom-left viewport edge; with the keyboard/composer visible it
+                // lands above the composer-safe area instead of behind the keyboard
+                // or above a black reserved strip. Preserve X so zoomed long-line
+                // reading pan from v2.76 does not regress.
                 webView.scrollTo(webView.getScrollX(), maxY);
             }
         }, 80);
+    }
+
+    private int visibleWebViewHeightForBottomAnchor() {
+        if (webView == null) {
+            return 0;
+        }
+        int height = Math.max(1, webView.getHeight());
+        if (lastKeyboardReserveBottom > 0) {
+            return Math.max(dp(96), height - lastKeyboardReserveBottom);
+        }
+        return height;
     }
 
     private String terminalFocusAndReconnectProbeScript(boolean requestKeyboard) {
@@ -8351,9 +8377,13 @@ public class MainActivity extends Activity {
                 );
                 android.graphics.Insets ime = insets.getInsets(WindowInsets.Type.ime());
                 top = bars.top;
-                lastImeInsetBottom = ime.bottom;
+                boolean imeVisible = insets.isVisible(WindowInsets.Type.ime());
+                lastImeInsetBottom = imeVisible ? ime.bottom : 0;
                 bottom = bars.bottom;
-                keyboardReserve = Math.max(0, ime.bottom - bars.bottom);
+                int rawKeyboardReserve = imeVisible ? Math.max(0, ime.bottom - bars.bottom) : 0;
+                keyboardReserve = shouldReserveKeyboardOutsideResizedRoot(view, rawKeyboardReserve)
+                        ? rawKeyboardReserve
+                        : 0;
             } else {
                 top = insets.getSystemWindowInsetTop();
                 lastImeInsetBottom = 0;
@@ -8365,22 +8395,58 @@ public class MainActivity extends Activity {
             // `ime.bottom` to this two-row toolbar after `adjustResize`, which made
             // the bottom bar expand into a huge blank panel and caused the live
             // terminal bottom to appear hidden behind buttons. Keep the toolbar
-            // fixed to its button rows plus the navigation inset. If this edge-to-
-            // edge WebView window still reports an IME inset instead of being fully
-            // resized, reserve that keyboard space on the root below the toolbar;
-            // never add it to the toolbar height itself.
+            // fixed to its button rows plus the navigation inset. v2.80 keeps
+            // `adjustResize` as the primary keyboard owner: if Android already
+            // resized the activity, do not also pad the root by the IME height. That
+            // double-reserve is the black bottom gap failure. Only keep a fallback
+            // root reserve when the content root is demonstrably not resized.
             view.setPadding(0, top, 0, keyboardReserve);
+            lastKeyboardReserveBottom = keyboardReserve;
+            lastNavigationBarInsetBottom = bottom;
             toolbar.setPadding(dp(5), dp(3), dp(5), dp(3) + bottom);
             ViewGroup.LayoutParams params = toolbar.getLayoutParams();
             if (params != null) {
                 params.height = dp(TOOLBAR_HEIGHT_DP) + bottom;
                 toolbar.setLayoutParams(params);
             }
-            if (keyboardReserve == 0) {
+            if (keyboardReserve == 0 && lastImeInsetBottom == 0) {
                 view.post(() -> hideNavigationDeadStrip("insets-no-keyboard"));
+            }
+            int appliedBottomPadding = keyboardReserve;
+            if (appliedBottomPadding != lastAppliedRootBottomPadding) {
+                lastAppliedRootBottomPadding = appliedBottomPadding;
+                view.post(() -> onBottomAnchorGeometryChanged(
+                        lastImeInsetBottom > 0 ? "insets-keyboard" : "insets-no-keyboard"
+                ));
             }
             return insets;
         });
+    }
+
+    private boolean shouldReserveKeyboardOutsideResizedRoot(View root, int rawKeyboardReserve) {
+        if (rawKeyboardReserve <= 0) {
+            return false;
+        }
+        Window window = getWindow();
+        View decor = window == null ? null : window.getDecorView();
+        int decorHeight = decor == null ? 0 : decor.getHeight();
+        int rootHeight = root == null ? 0 : root.getHeight();
+        if (decorHeight <= 0 || rootHeight <= 0) {
+            return false;
+        }
+        int tolerance = dp(12);
+        boolean rootAlreadyResizedForKeyboard = rootHeight + rawKeyboardReserve <= decorHeight + tolerance;
+        return !rootAlreadyResizedForKeyboard;
+    }
+
+    private void onBottomAnchorGeometryChanged(String reason) {
+        if (webView == null) {
+            return;
+        }
+        refreshCaptureRendererForLayoutChange("bottom-anchor-" + reason);
+        if (isViewerZoomed() && !isViewerPanAllowed()) {
+            scrollViewerToTypingPositionOnce("bottom-anchor-" + reason, 40);
+        }
     }
 
     private void requestHomeShortcutOnce() {

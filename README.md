@@ -92,7 +92,14 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=180`, `versionName=2.79`.
+- Built checkpoint: `versionCode=181`, `versionName=2.80`.
+- v2.80 restores the phone bottom-anchor contract from the v2.5/v2.6-era
+  layout: Android `adjustResize` owns keyboard height when it already resized
+  the root, the app does not double-reserve IME space into a black bottom gap,
+  navigation-bar hiding is skipped while the keyboard/native composer is active,
+  and zoomed bottom alignment uses the visible phone/composer-safe height instead
+  of stale full WebView content height. This is a layout/viewport fix, not a
+  rollback, mask, spacer, zoom reset, raw ttyd resize, or two-finger reroute.
 - v2.79 fixes the zoom/pan wrong-layer regression captured on 2026-06-26: the
   old Active-switch WebView lower black shield is disabled, preserve-viewer
   input visibility no longer runs xterm `scrollToBottom`/`scrollIntoView`, and

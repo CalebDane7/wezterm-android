@@ -59,13 +59,13 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="180"' "current APK version must be bumped for the v2.79 APK zoom/pan layer contract"
-require "$MANIFEST" 'android:versionName="2.79"' "current APK version must be bumped for the v2.79 APK zoom/pan layer contract"
+require "$MANIFEST" 'android:versionCode="181"' "current APK version must be bumped for the v2.80 APK bottom-anchor contract"
+require "$MANIFEST" 'android:versionName="2.80"' "current APK version must be bumped for the v2.80 APK bottom-anchor contract"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.79";' "client /config proof must report the same v2.79 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.80";' "client /config proof must report the same v2.80 APK contract as the manifest"
 require "$MAIN" 'MediaStore.ACTION_PICK_IMAGES' "Upload must use Android Photo Picker for one-selection screenshots/media on Android 13+"
 require "$MAIN" 'uploadDocumentPickerIntent' "Upload must keep ACTION_OPEN_DOCUMENT fallback for non-photo-picker/files path"
 require "$MAIN" 'uploadUrisFromResult' "Upload result must handle both data URI and ClipData instead of dropping picker returns"
@@ -74,6 +74,11 @@ require "$MAIN" 'WEztermUpload' "Upload must leave privacy-safe stage logs for f
 require "$MAIN" 'refreshCaptureRendererForLayoutChange' "composer/Bottom layout changes must pulse the capture renderer so the live cursor row repaints above the keyboard"
 require "$MAIN" 'hideNavigationDeadStrip' "APK must hide the permanent Android navigation-strip dead space below the toolbar"
 require "$MAIN" 'BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE' "hidden navigation bars must remain recoverable by swipe, not hard-disabled"
+require "$MAIN" 'shouldReserveKeyboardOutsideResizedRoot' "v2.80 bottom anchor must avoid double-reserving IME space after adjustResize"
+require "$MAIN" 'rootAlreadyResizedForKeyboard' "v2.80 bottom anchor must detect when Android already resized the root for the keyboard"
+require "$MAIN" 'visibleWebViewHeightForBottomAnchor' "zoomed bottom alignment must use the visible phone/composer-safe viewport height"
+require "$MAIN" 'bottom-anchor-' "bottom anchor geometry changes must repaint the capture renderer without tab-switch scroll loops"
+require "$MAIN" 'lastImeInsetBottom > 0 || isDockedPromptComposerVisible()' "navigation hiding must not run while keyboard/composer anchoring is active"
 require "$MAIN" 'http://100.113.254.7:8089/terminal-renderer' "APK visual URL must use the non-resizing control-server capture renderer"
 require "$MAIN" 'APK_CAPTURE_RENDERER_COLS = 132' "APK capture renderer must preserve the readable 132-column logical grid"
 require "$MAIN" 'refreshCaptureRendererSoon' "APK scroll controls must repaint the capture renderer without reloading or resizing tmux"
@@ -139,7 +144,7 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=180`, `versionName=2.79`.' "README checkpoint must match the installed v2.79 APK"
+require "$README" 'Built checkpoint: `versionCode=181`, `versionName=2.80`.' "README checkpoint must match the installed v2.80 APK"
     require "$README" 'zoom/pan wrong-layer regression' "README must document the current v2.79 zoom/pan layer fix"
     require "$README" 'Tap-to-type suppression is scoped to stale picker releases' "README must document the current v2.79 tap latency fix"
     require "$README" "WebView's actual" "README must document the current v2.78 real pinch scale-state fix"

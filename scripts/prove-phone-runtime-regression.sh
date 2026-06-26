@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$SCRIPT_DIR/phone-proof-selection-lock.sh"
+
 CONTROL_URL="${PHONE_CONTROL_URL:-http://100.113.254.7:8089}"
 INSTALL_URL="${PHONE_INSTALL_URL:-http://100.113.254.7:8091/install.html}"
 ADB_SERIAL="${ADB_SERIAL:-127.0.0.1:5556}"
@@ -12,6 +15,10 @@ APK="$ROOT/build/WEzterm.apk"
 EXPECTED_VERSION_NAME="${EXPECTED_VERSION_NAME:-$(grep -o 'android:versionName="[^"]*"' "$MANIFEST" | head -n 1 | cut -d'"' -f2)}"
 EXPECTED_VERSION_CODE="${EXPECTED_VERSION_CODE:-$(grep -o 'android:versionCode="[0-9]*"' "$MANIFEST" | head -n 1 | cut -d'"' -f2)}"
 EXPECTED_SHA="${EXPECTED_SHA:-$(sha256sum "$APK" | awk '{print $1}')}"
+
+curl() {
+    phone_proof_curl "$@"
+}
 
 assert_title_sync_stopped() {
     local pids
@@ -103,6 +110,8 @@ wait_for_pane_command() {
 urlencode() {
     python3 -c 'from urllib.parse import quote; import sys; print(quote(sys.argv[1], safe=""))' "$1"
 }
+
+phone_proof_require_selection_locks "phone runtime regression proof"
 
 echo "health"
 assert_title_sync_stopped

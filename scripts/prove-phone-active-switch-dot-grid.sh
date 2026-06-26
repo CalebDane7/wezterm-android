@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$SCRIPT_DIR/phone-proof-selection-lock.sh"
+
 ADB_SERIAL="${ADB_SERIAL:-100.77.22.120:5555}"
 PACKAGE="${WEZTERM_PACKAGE:-com.kaleeb.wezterm}"
 ACTIVITY="${WEZTERM_ACTIVITY:-$PACKAGE/.MainActivity}"
@@ -38,7 +41,7 @@ urlencode() {
 }
 
 control_get() {
-    curl -fsS "$CONTROL_URL$1"
+    phone_proof_curl -fsS "$CONTROL_URL$1"
 }
 
 cleanup_disposable_target() {
@@ -764,6 +767,7 @@ main() {
         return 0
     fi
 
+    phone_proof_require_selection_locks "active-switch dot-grid proof"
     adb_cmd get-state >/dev/null
     adb_cmd shell input keyevent WAKEUP >/dev/null || true
     wake_and_dismiss_overlays

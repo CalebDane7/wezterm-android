@@ -20,6 +20,7 @@ INSTALL_INDEX="$ROOT/build/index.html"
 RUNTIME_PROOF="$ROOT/scripts/prove-phone-runtime-regression.sh"
 MENU_UI_PROOF="$ROOT/scripts/prove-phone-menu-ui.sh"
 ACTIVE_DOT_GRID_PROOF="$ROOT/scripts/prove-phone-active-switch-dot-grid.sh"
+SELECTION_LOCK_HELPER="$ROOT/scripts/phone-proof-selection-lock.sh"
 CLAUDE_SPEC_PHASE0_PROOF="$ROOT/scripts/prove-phone-claude-spec-phase0.sh"
 BROWSER_PARITY_PROOF="$ROOT/scripts/prove-phone-browser-parity.sh"
 SCROLLBACK_CHUNK_PROOF="$ROOT/scripts/prove-phone-scrollback-chunk.sh"
@@ -582,6 +583,8 @@ require "$MAIN" 'payload.optJSONArray("displayWindows")' "APK Active Sessions mu
 require "$MAIN" 'addTabRows(list, groupRows, session, dialogRef, null, false)' "APK Active Sessions must not render child rows under grouped parent rows"
 require "$MAIN" 'rows must not reappear under their parent while web stays clean' "APK Active Sessions child-row guard must preserve the no-leak WHY comment"
 if [ -f "$RUNTIME_PROOF" ]; then
+    require "$RUNTIME_PROOF" 'phone_proof_require_selection_locks "phone runtime regression proof"' "runtime proof must acquire the main_phone selection locks before it can move tabs"
+    require "$RUNTIME_PROOF" 'phone_proof_curl "$@"' "runtime proof must send verified lock headers on control-server curl calls"
     require "$RUNTIME_PROOF" 'sessions activity groups' "runtime proof must check session/date picker data"
     require "$RUNTIME_PROOF" 'old parent sessions by date' "runtime proof must check old parent Codex sessions"
     require "$RUNTIME_PROOF" 'old sessions exclude subagents' "runtime proof must prove subagent sessions stay out"
@@ -857,6 +860,11 @@ require "$CONTROL_SERVER" '"up": "Up"' "legacy phone control server must allow a
 require "$CONTROL_SERVER" 'editing the native composer draft' "legacy phone control server send-key WHY comment must preserve typing/composer boundary"
 require "$CONTROL_SERVER" 'elif parsed.path == "/send-key":' "legacy phone control server must route send-key"
 if [ -f "$MANTIS_CONTROL_SERVER" ]; then
+    require "$MANTIS_CONTROL_SERVER" 'AUTOMATION_MAINPHONE_SELECTION_LOCK_PATHS' "Mantis control server must lock-gate CLI automation paths that can move main_phone"
+    require "$MANTIS_CONTROL_SERVER" 'Automation window selection requires matching Mantis selection-lock headers.' "Mantis control server must reject unowned CLI selection instead of stealing focus"
+    require "$MANTIS_CONTROL_SERVER" 'X-Mantis-Selection-Lock-Owner' "Mantis control server must require an explicit automation selection lock owner"
+    require "$MANTIS_CONTROL_SERVER" 'X-Mantis-Selection-Lock-Monitor' "Mantis control server must require an explicit automation selection lock monitor"
+    require "$MANTIS_CONTROL_SERVER" 'curl/' "Mantis control server must classify curl wrappers as automation, not user phone/browser clicks"
     require "$MANTIS_CONTROL_SERVER" '"/send-key",' "Mantis phone control server must allow the send-key mutating GET endpoint"
     require "$MANTIS_CONTROL_SERVER" 'def send_key(self, key, window_id=None):' "Mantis phone control server must implement stable-target send-key"
     require "$MANTIS_CONTROL_SERVER" 'ForwardDeleteSequence' "Mantis phone control server must not map Delete to tmux DC lone-Escape behavior"
@@ -1821,6 +1829,8 @@ require "$ROOT/scripts/prove-phone-menu-ui.sh" 'wait_for_focus' "UI proof must r
 require "$ROOT/scripts/prove-phone-menu-ui.sh" 'tmux_window_pane_mode "$proof_window"' "UI proof must read the explicit proof window during physical scroll"
 
 if [ -f "$ACTIVE_DOT_GRID_PROOF" ]; then
+    require "$ACTIVE_DOT_GRID_PROOF" 'phone_proof_require_selection_locks "active-switch dot-grid proof"' "targeted dot-grid proof must acquire the main_phone selection locks before it can move tabs"
+    require "$ACTIVE_DOT_GRID_PROOF" 'phone_proof_curl -fsS "$CONTROL_URL$1"' "targeted dot-grid proof must send verified lock headers on control-server calls"
     require "$ACTIVE_DOT_GRID_PROOF" 'DEFAULT_TARGET_TITLE="Phone Crash Restore"' "targeted dot-grid proof must default to the exact user-reported tab"
     require "$ACTIVE_DOT_GRID_PROOF" 'TARGET_WINDOW_ID' "targeted dot-grid proof must pin the selected Active row by stable @windowId"
     require "$ACTIVE_DOT_GRID_PROOF" 'WEZTERM_DOT_GRID_TARGET_WINDOW_ID' "targeted dot-grid proof must allow stable @windowId targeting when titles change during active work"
@@ -2027,6 +2037,18 @@ if [ -f "$LOCAL_HISTORY_UI_PROOF" ]; then
 else
     echo "Phone plan regression guard failed: missing local history UI proof script" >&2
     echo "File: $LOCAL_HISTORY_UI_PROOF" >&2
+    exit 1
+fi
+
+if [ -f "$SELECTION_LOCK_HELPER" ]; then
+    require "$SELECTION_LOCK_HELPER" 'phone_proof_require_selection_locks()' "phone proof helper must expose the shared selection-lock preflight"
+    require "$SELECTION_LOCK_HELPER" 'real-phone-ui-proof.lock tmux-mainphone-selection.lock' "phone proof helper must require both real-phone and main_phone selection locks"
+    require "$SELECTION_LOCK_HELPER" 'current tmux window is $current_monitor' "phone proof helper must fail when the running lane is not the lock monitor"
+    require "$SELECTION_LOCK_HELPER" 'X-Mantis-Selection-Lock-Owner' "phone proof helper must send the server lock-owner header"
+    require "$SELECTION_LOCK_HELPER" 'X-Mantis-Selection-Lock-Monitor' "phone proof helper must send the server lock-monitor header"
+else
+    echo "Phone plan regression guard failed: missing selection lock helper" >&2
+    echo "File: $SELECTION_LOCK_HELPER" >&2
     exit 1
 fi
 

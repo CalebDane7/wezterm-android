@@ -121,7 +121,7 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_FILENAME_PREFIX = "upload_filename_";
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
-    private static final String APP_VERSION_NAME = "2.76";
+    private static final String APP_VERSION_NAME = "2.77";
     private static final String UPLOAD_LOG_TAG = "WEztermUpload";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
@@ -136,23 +136,23 @@ public class MainActivity extends Activity {
     private static final int PROMPT_COMPOSER_INPUT_HEIGHT_DP = 44;
     private static final int PROMPT_COMPOSER_VERTICAL_PADDING_DP = 4;
     private static final long HISTORY_DRAG_THROTTLE_MS = 16;
-    private static final int HISTORY_DRAG_LINE_THRESHOLD_DP = 8;
+    private static final int HISTORY_DRAG_LINE_THRESHOLD_DP = 5;
     private static final int HISTORY_DRAG_PAGES_PER_STEP = 1;
-    private static final int HISTORY_DRAG_MAX_PAGES_PER_STEP = 20;
-    private static final int HISTORY_DRAG_DOWN_MAX_REPEATS = 8;
-    private static final int HISTORY_DRAG_DOWN_RELEASE_MAX_REPEATS = 8;
-    private static final int HISTORY_DRAG_MOMENTUM_MAX_FRAMES = 18;
+    private static final int HISTORY_DRAG_MAX_PAGES_PER_STEP = 24;
+    private static final int HISTORY_DRAG_DOWN_MAX_REPEATS = 10;
+    private static final int HISTORY_DRAG_DOWN_RELEASE_MAX_REPEATS = 14;
+    private static final int HISTORY_DRAG_MOMENTUM_MAX_FRAMES = 24;
     private static final long HISTORY_DRAG_MOMENTUM_FRAME_MS = 45;
-    private static final float HISTORY_DRAG_MOMENTUM_DECAY = 0.84f;
-    private static final float HISTORY_DRAG_MOMENTUM_STOP_VELOCITY_PX_PER_SEC = 180f;
+    private static final float HISTORY_DRAG_MOMENTUM_DECAY = 0.87f;
+    private static final float HISTORY_DRAG_MOMENTUM_STOP_VELOCITY_PX_PER_SEC = 140f;
     private static final float HISTORY_DRAG_MOMENTUM_REPEAT_VELOCITY_DIVISOR = 540f;
-    private static final int HISTORY_DRAG_MOMENTUM_UP_MAX_REPEATS = 12;
-    private static final int HISTORY_DRAG_MOMENTUM_DOWN_MAX_REPEATS = 3;
+    private static final int HISTORY_DRAG_MOMENTUM_UP_MAX_REPEATS = 16;
+    private static final int HISTORY_DRAG_MOMENTUM_DOWN_MAX_REPEATS = 6;
     private static final long HISTORY_DRAG_RELEASE_LONG_GESTURE_MS = 650;
     private static final long HISTORY_DRAG_REPEATED_FLING_WINDOW_MS = 700;
-    private static final int HISTORY_DRAG_REPEATED_FLING_BOOST_REPEATS = 6;
-    private static final int HISTORY_DRAG_SLOW_MOVE_MAX_REPEATS = 2;
-    private static final int HISTORY_DRAG_SLOW_PENDING_MAX_REPEATS = 2;
+    private static final int HISTORY_DRAG_REPEATED_FLING_BOOST_REPEATS = 8;
+    private static final int HISTORY_DRAG_SLOW_MOVE_MAX_REPEATS = 3;
+    private static final int HISTORY_DRAG_SLOW_PENDING_MAX_REPEATS = 6;
     private static final int HISTORY_DRAG_FAST_MOVE_REPEATS = 6;
     private static final int HISTORY_DRAG_FLING_MOVE_REPEATS = 10;
     private static final long TOUCH_SCROLL_RENDER_PULSE_MS = 16;
@@ -1587,6 +1587,7 @@ public class MainActivity extends Activity {
                 cancelHistoryMomentum();
                 clearPendingHistoryScroll();
                 cancelViewerTypingPositionRetries("multi-touch");
+                cancelLiveInputVisibilityRetries("multi-touch");
             }
             terminalMultiTouchGesture = true;
             terminalHistoryDragActive = false;
@@ -1687,6 +1688,7 @@ public class MainActivity extends Activity {
                 terminalLastViewerPanX = terminalTouchStartX;
                 allowViewerPanBriefly();
                 cancelViewerTypingPositionRetries("horizontal-pan");
+                cancelLiveInputVisibilityRetries("horizontal-pan");
                 panZoomedViewerHorizontally(event);
                 return forwardTouchToViewer(event);
             }
@@ -2190,17 +2192,14 @@ public class MainActivity extends Activity {
         // visible to Codex. Deliberate one-finger vertical drags use the server
         // history path, but now as small lineUp/lineDown commands so the screen
         // tracks the finger instead of jumping by whole pages.
-        // WHY: keep one request in flight and coalesce the newest direction so
-        // stale responses cannot fight the user's finger. If the user keeps
-        // dragging upward into old output, accumulate only fast steps for speed.
-        // Slow upward drags must not add every MOVE into one deferred catch-up
-        // burst; that is the "5 FPS / jumpy while reading" failure. The latest
-        // complaint confirmed that merely slowing constants still leaves backend
-        // cadence jumps, so queued slow samples are replaced with the latest tiny
-        // bounded step. Fast upward drags still accumulate bounded repeats for
-        // momentum, and downward return keeps the latest bounded step so it can
-        // paint intermediate lineDown movement and let the quiet bottom restore
-        // exit copy-mode.
+        // WHY: keep one request in flight and coalesce by direction so stale
+        // responses cannot fight the user's finger. v2.77 keeps the old "no
+        // huge delayed catch-up burst" guard, but stops replacing every slow
+        // sample with a single tiny pending step. The 2026-06-26 regression proof
+        // showed a 1400 px slow drag moving only about 9 rows. Preserve enough
+        // bounded distance inside one network/tmux request window for low-speed
+        // tracking, while still capping the replay so slow reading cannot become
+        // the old jumpy page-scroll failure.
         int maxRepeats = "lineDown".equals(where)
                 ? HISTORY_DRAG_DOWN_MAX_REPEATS
                 : HISTORY_DRAG_MAX_PAGES_PER_STEP;
@@ -2220,23 +2219,24 @@ public class MainActivity extends Activity {
                     && pendingHistoryScrollGeneration == gestureGeneration
                     && pendingHistoryScrollTargetKey.equals(stableTargetKey)) {
                 if ("lineDown".equals(where) || fromMomentum) {
-                    // WHY: post-release inertia should feel continuous, not like a
-                    // delayed catch-up jump. While an HTTP request is in flight,
-                    // momentum frames replace the pending step with the newest
-                    // bounded repeat instead of accumulating a huge replay burst.
+                    // WHY: returning toward live bottom needs real acceleration
+                    // too. Replacing every in-flight lineDown sample with the
+                    // newest tiny step made one-finger swipe-up stall far above
+                    // the prompt. Accumulate only inside the existing per-request
+                    // cap so this cannot replay an unbounded old gesture.
                     pendingHistoryScrollRepeats = Math.min(
                             maxRepeats,
-                            Math.max(pendingHistoryScrollRepeats, boundedRepeats)
+                            pendingHistoryScrollRepeats + boundedRepeats
                     );
                 } else if (boundedRepeats <= HISTORY_DRAG_SLOW_MOVE_MAX_REPEATS) {
-                    // WHY: slow upward reading movement must still feel like
-                    // 60 fps line tracking instead of queueing one delayed jump.
-                    // Replace queued tiny pending steps with the latest bounded
-                    // sample so backend cadence cannot turn a slow drag into the
-                    // old catch-up burst.
+                    // WHY: slow upward reading movement must track the finger even
+                    // when `/touch-scroll` is still in flight. Accumulate a small,
+                    // explicit slow cap instead of every MOVE; this fixes the
+                    // low-speed "finger moves but rows barely move" regression
+                    // without reviving the v1.42 page-sized delayed jump.
                     pendingHistoryScrollRepeats = Math.min(
                             HISTORY_DRAG_SLOW_PENDING_MAX_REPEATS,
-                            Math.max(pendingHistoryScrollRepeats, boundedRepeats)
+                            pendingHistoryScrollRepeats + boundedRepeats
                     );
                 } else {
                     // WHY: fast upward movement is a deliberate history flick, not
@@ -4956,9 +4956,9 @@ public class MainActivity extends Activity {
         JSONObject activeWindow = activeWindowFromPayload(payload);
         if (activeWindow != null) {
             // WHY: Active Sessions must immediately show where the phone is now.
-            // Grouping by "Needs Attention" or date can otherwise push the current
-            // tmux window below the fold, making the picker feel like the tap did
-            // not switch or that the current session disappeared.
+            // The grouped sections below are still useful for scanning, but the
+            // current tmux window is the user's orientation anchor and must never
+            // be pushed below the fold or duplicated inside another bucket.
             addSectionHeader(list, "Current", 1);
             addTabRow(list, activeWindow, session, dialogRef);
         }
@@ -4970,12 +4970,17 @@ public class MainActivity extends Activity {
                 if (windows == null || windows.length() == 0) {
                     continue;
                 }
+                // WHY: `/tabs` now groups Active Sessions by action state/color
+                // for phone scanning: needs-input first, completed middle,
+                // working bottom. Keep those grouped buckets, but filter out the
+                // active row because the protected top Current section already
+                // owns that orientation anchor.
                 List<JSONObject> groupRows = sortedWindows(windows, activeWindow);
                 if (groupRows.isEmpty()) {
                     continue;
                 }
                 addSectionHeader(list, group.optString("label", "Sessions"), groupRows.size());
-                addTabRows(list, groupRows, session, dialogRef, activeWindow, false);
+                addTabRows(list, groupRows, session, dialogRef, null, false);
             }
         } else {
             JSONArray windows = payload.optJSONArray("displayWindows");
@@ -4985,11 +4990,11 @@ public class MainActivity extends Activity {
             if (windows == null) {
                 windows = payload.getJSONArray("windows");
             }
-            List<JSONObject> rows = sortedWindows(windows, activeWindow);
-            if (rows.isEmpty() && activeWindow == null) {
+            List<JSONObject> rows = sortedWindows(windows);
+            if (rows.isEmpty()) {
                 addSectionHeader(list, "Nothing needs attention", 0);
             } else {
-                addTabRows(list, rows, session, dialogRef, activeWindow, !preferGroups);
+                addTabRows(list, rows, session, dialogRef, null, !preferGroups);
             }
         }
 
@@ -5371,7 +5376,6 @@ public class MainActivity extends Activity {
         TextView titleText = new TextView(this);
         titleText.setText(
                 (window.optBoolean("active", false) ? "Current: " : "")
-                        + (window.optBoolean("isChild", false) ? window.optString("roleLabel", "Child") + ": " : "")
                         + title
         );
         titleText.setTextSize(15);
@@ -7374,13 +7378,33 @@ public class MainActivity extends Activity {
             }
             allowViewerPanBriefly();
             cancelViewerTypingPositionRetries("key-zoom");
+            cancelLiveInputVisibilityRetries("key-zoom");
         }
         return true;
+    }
+
+    private void cancelLiveInputVisibilityRetries(String reason) {
+        // WHY: live-bottom and input-visibility helpers enqueue delayed
+        // scrollToBottom/scrollIntoView work. Once the user starts a native
+        // WebView pinch or zoomed pan, those old callbacks belong to the previous
+        // viewer position and can pull the zoomed page toward a corner. Use the
+        // same generation that passive entry alignment already checks.
+        liveInputVisibilityGeneration++;
     }
 
     private boolean isViewerPanAllowed() {
         return isViewerZoomed()
                 || terminalMultiTouchGesture
+                || terminalHorizontalPanActive
+                || System.currentTimeMillis() < viewerPanUnlockedUntilMs;
+    }
+
+    private boolean isViewerGestureSettleActive() {
+        // WHY: WebView can emit scale/scroll callbacks after ACTION_UP or after
+        // onScaleChanged. During this bounded settle window the viewer still owns
+        // position; passive terminal cleanup must not run scrollToBottom or
+        // document-scroll pins that make pinch zoom jump toward a corner.
+        return terminalMultiTouchGesture
                 || terminalHorizontalPanActive
                 || System.currentTimeMillis() < viewerPanUnlockedUntilMs;
     }
@@ -7770,14 +7794,13 @@ public class MainActivity extends Activity {
 
     private boolean isTerminalGestureRecoveryActive() {
         // WHY: bottom-edge recovery is still part of the physical scroll gesture
-        // after ACTION_UP has cleared `terminalHistoryDragActive`. Reconnect
-        // probes, blank-watchdog probes, IME show calls, and zoomed viewport
-        // pinning must not run during that async gap or the phone appears to
-        // refresh/reconnect repeatedly right before live bottom.
+        // after ACTION_UP has cleared `terminalHistoryDragActive`. The same is
+        // true for the bounded viewer-settle window after pinch/zoomed pan:
+        // passive cleanup must not run document pins, scrollToBottom, reconnect
+        // probes, or IME show calls while WebView still owns the viewpoint.
         return terminalHistoryDragActive
                 || terminalBottomRestoreInFlight
-                || terminalMultiTouchGesture
-                || terminalHorizontalPanActive;
+                || isViewerGestureSettleActive();
     }
 
     private void reloadTerminalForReconnect() {
@@ -8559,9 +8582,14 @@ public class MainActivity extends Activity {
             webViewScale = newScale;
             keyZoomViewerStateActive = newScale > WEBVIEW_ZOOMED_SCALE_THRESHOLD;
             allowViewerPanBriefly();
+            cancelViewerTypingPositionRetries("scale-change");
+            cancelLiveInputVisibilityRetries("scale-change");
             // WHY: WebView scale is the Android viewer zoom. Do not translate this
             // into ttyd/tmux font changes or tmux resize commands; one-finger
             // history remains tmux-owned and two-finger positioning stays viewer-owned.
+            // Also invalidate delayed live-bottom/input callbacks here: v2.77
+            // fixed the regression where stale post-entry alignment could run
+            // after a pinch and make the zoomed position rise toward a corner.
         }
 
         @Override

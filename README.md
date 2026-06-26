@@ -92,7 +92,13 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=177`, `versionName=2.76`.
+- Built checkpoint: `versionCode=178`, `versionName=2.77`.
+- v2.77 fixes the 2026-06-26 touch regression: slow one-finger drags now
+  preserve bounded in-flight distance instead of replacing movement with one
+  tiny pending step, fast flicks carry more cancellable inertia in both
+  directions, pinch/zoomed pan cancels stale live-bottom alignment callbacks,
+  and the capture renderer skips transient blank frames instead of flashing
+  black before repainting text.
 - v2.76 explicitly scrolls the zoomed WebView viewport during one-finger
   horizontal pan because v2.75 proved original-DOWN replay alone still left the
   visible point of view stuck. This remains viewer-owned and does not reroute

@@ -92,7 +92,15 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=183`, `versionName=2.82`.
+- Built checkpoint: `versionCode=184`, `versionName=2.83`.
+- v2.83 keeps the v2.82 stable capture-renderer target and removes the
+  remaining capture-renderer transition churn that made tap-to-type, Send,
+  explicit Bottom, and visualViewport movement feel slow or flicker after the
+  black-gap fixes. Composer transitions use idle capture pulses instead of the
+  old xterm fit/canvas settle train; capture-renderer pages short-circuit xterm
+  document reset scripts; Active/Old no longer use loading modals as latency
+  cover. This preserves native two-finger readability, smooth one-finger scroll,
+  the accepted bottom-anchor behavior, and stable `@windowId` targeting.
 - v2.82 pins the read-only capture renderer to the selected stable tmux
   `@windowId` without a WebView reload, so Active/New/Old tab movement cannot
   leave the selected title strip over a blank/wrong terminal body when another

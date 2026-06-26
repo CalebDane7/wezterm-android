@@ -59,13 +59,13 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="183"' "current APK version must be bumped for the v2.82 selected-renderer bottom-gap contract"
-require "$MANIFEST" 'android:versionName="2.82"' "current APK version must be bumped for the v2.82 selected-renderer bottom-gap contract"
+require "$MANIFEST" 'android:versionCode="184"' "current APK version must be bumped for the v2.83 capture-renderer transition latency contract"
+require "$MANIFEST" 'android:versionName="2.83"' "current APK version must be bumped for the v2.83 capture-renderer transition latency contract"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.82";' "client /config proof must report the same v2.82 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.83";' "client /config proof must report the same v2.83 APK contract as the manifest"
 require "$MAIN" 'MediaStore.ACTION_PICK_IMAGES' "Upload must use Android Photo Picker for one-selection screenshots/media on Android 13+"
 require "$MAIN" 'uploadDocumentPickerIntent' "Upload must keep ACTION_OPEN_DOCUMENT fallback for non-photo-picker/files path"
 require "$MAIN" 'uploadUrisFromResult' "Upload result must handle both data URI and ClipData instead of dropping picker returns"
@@ -158,7 +158,9 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=183`, `versionName=2.82`.' "README checkpoint must match the installed v2.82 APK"
+    require "$README" 'Built checkpoint: `versionCode=184`, `versionName=2.83`.' "README checkpoint must match the installed v2.83 APK"
+    require "$README" 'v2.83 keeps the v2.82 stable capture-renderer target' "README must document the current v2.83 capture-renderer transition latency fix"
+    require "$README" 'Composer transitions use idle capture pulses instead of the old xterm fit/canvas settle train' "README must preserve the v2.83 tap/send latency owner boundary"
     require "$README" 'zoom/pan wrong-layer regression' "README must document the current v2.79 zoom/pan layer fix"
     require "$README" 'Tap-to-type suppression is scoped to stale picker releases' "README must document the current v2.79 tap latency fix"
     require "$README" "WebView's actual" "README must document the current v2.78 real pinch scale-state fix"
@@ -327,8 +329,8 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.82' "install page must advertise the current v2.82 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>183</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.83' "install page must advertise the current v2.83 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>184</code>' "install page versionCode must match the manifest"
     require "$INSTALL_PAGE" 'Workspace Save/Load/Close' "install page must mention the v2.62 workspace control fix"
     require "$INSTALL_PAGE" 'composer-above-buttons layout' "install page must mention the restored composer-above-buttons layout"
     require "$INSTALL_PAGE" 'compact v2.65 toolbar chrome' "install page must mention the compact bottom toolbar fix"
@@ -445,7 +447,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.82 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.83 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"

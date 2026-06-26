@@ -121,7 +121,7 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_FILENAME_PREFIX = "upload_filename_";
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
-    private static final String APP_VERSION_NAME = "2.78";
+    private static final String APP_VERSION_NAME = "2.79";
     private static final String UPLOAD_LOG_TAG = "WEztermUpload";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
@@ -788,59 +788,13 @@ public class MainActivity extends Activity {
     }
 
     private void installActiveSwitchWebViewLowerDotShield(String reason, float topFraction, long delayMs) {
-        if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
-            return;
-        }
-        long lifetimeMs = ACTIVE_SWITCH_WEBVIEW_LOWER_DOT_SHIELD_MS;
-        float boundedTopFraction = Math.max(0.30f, Math.min(0.58f, topFraction));
-        // WHY: v2.24 proved the native lower shield can still lose to Android
-        // WebView composition: the installed APK showed the dotted lower field
-        // even while tmux capture contained no dot rows. This WebView-local shield
-        // is installed directly from the Active-switch Java path before xterm's
-        // delayed settle script is required to run. It is fixed to the lower
-        // terminal viewport, non-interactive, long enough for the proof harness UI-dump/capture delay,
-        // and removed by the same typing/read/touch cleanup
-        // as the older masks so it cannot become the user's old all-black-bottom
-        // regression.
-        String safeReason = sanitizeJavascriptReason(reason);
-        webView.evaluateJavascript(
-                "(function(){"
-                        + "try{"
-                        + "var expires=Date.now()+" + lifetimeMs + ";"
-                        + "window.__weztermActiveSwitchLowerDotShieldExpiresAt=expires;"
-                        + "function removeShield(){try{window.__weztermActiveSwitchLowerDotShieldExpiresAt=0;"
-                        + "if(window.__weztermActiveSwitchLowerDotShieldTimer){clearInterval(window.__weztermActiveSwitchLowerDotShieldTimer);window.__weztermActiveSwitchLowerDotShieldTimer=null;}"
-                        + "var existing=document.getElementById('wezterm-active-switch-lower-dot-shield');"
-                        + "if(existing&&existing.parentNode){existing.parentNode.removeChild(existing);}}catch(e){}}"
-                        + "function blankLike(text){return !String(text||'').replace(/\\u00a0/g,' ').trim();}"
-                        + "function dotLike(text){var s=String(text||'').replace(/\\u00a0/g,' ').trim();return !!s&&/^[.\\u00b7\\u2022\\u2219\\u25e6\\u2800-\\u28ff]+$/.test(s);}"
-                        + "function terminalRect(){var el=document.querySelector('.xterm-screen')||document.querySelector('.xterm')||document.body||document.documentElement;return el&&el.getBoundingClientRect?el.getBoundingClientRect():null;}"
-                        + "function lowerTop(rect){"
-                        + "var top=rect.height*" + boundedTopFraction + ";"
-                        + "try{var rows=document.querySelectorAll('.xterm-rows>div,.xterm-rows>span');var lastMeaningful=null;var firstDotAfterMeaningful=null;"
-                        + "for(var i=0;i<rows.length;i++){var row=rows[i];var txt=row.textContent||'';var rr=row.getBoundingClientRect&&row.getBoundingClientRect();if(!rr){continue;}var rowTop=rr.top-rect.top;var rowBottom=rr.bottom-rect.top;"
-                        + "if(dotLike(txt)&&lastMeaningful!==null&&rowTop>=rect.height*0.25&&firstDotAfterMeaningful===null){firstDotAfterMeaningful=Math.max(0,rowTop);}"
-                        + "else if(!blankLike(txt)&&!dotLike(txt)){lastMeaningful=Math.max(0,rowBottom);}}"
-                        + "if(typeof firstDotAfterMeaningful==='number'){top=firstDotAfterMeaningful;}"
-                        + "else if(typeof lastMeaningful==='number'&&lastMeaningful<rect.height-36){top=Math.max(top,lastMeaningful);}"
-                        + "}catch(e){}"
-                        + "return Math.max(rect.height*0.30,Math.min(rect.height-48,top));}"
-                        + "function applyShield(){try{"
-                        + "if(!window.__weztermActiveSwitchLowerDotShieldExpiresAt||Date.now()>window.__weztermActiveSwitchLowerDotShieldExpiresAt){removeShield();return;}"
-                        + "var rect=terminalRect();if(!rect||!rect.height||!rect.width){return;}"
-                        + "var mask=document.getElementById('wezterm-active-switch-lower-dot-shield');"
-                        + "if(!mask){mask=document.createElement('div');mask.id='wezterm-active-switch-lower-dot-shield';mask.setAttribute('aria-hidden','true');(document.body||document.documentElement).appendChild(mask);}"
-                        + "var viewportWidth=window.innerWidth||document.documentElement.clientWidth||rect.right;var viewportHeight=window.innerHeight||document.documentElement.clientHeight||rect.bottom;var top=Math.max(0,Math.min(viewportHeight-1,rect.top+lowerTop(rect)));"
-                        + "mask.style.setProperty('pointer-events','none','important');mask.style.setProperty('position','fixed','important');mask.style.setProperty('display','block','important');mask.style.setProperty('background','#000','important');mask.style.setProperty('z-index','2147483647','important');mask.style.setProperty('transform','translateZ(0)','important');mask.style.setProperty('left',Math.max(0,rect.left)+'px','important');mask.style.setProperty('right',Math.max(0,viewportWidth-rect.right)+'px','important');mask.style.setProperty('top',top+'px','important');mask.style.setProperty('bottom',Math.max(0,viewportHeight-rect.bottom)+'px','important');"
-                        + "}catch(e){}}"
-                        + "applyShield();"
-                        + "if(window.__weztermActiveSwitchLowerDotShieldTimer){clearInterval(window.__weztermActiveSwitchLowerDotShieldTimer);}"
-                        + "window.__weztermActiveSwitchLowerDotShieldTimer=setInterval(applyShield,80);"
-                        + "return 'active-switch-webview-lower-dot-shield:" + safeReason + "';"
-                        + "}catch(e){return 'err';}"
-                + "})()",
-                null
-        );
+        // WHY: user proof on 2026-06-26 showed the old WebView-local lower shield
+        // is the wrong layer for Active/zoom fixes: covering stale/dotted paint with
+        // a fixed black rectangle can become the giant black bottom box. Keep this
+        // helper as a cleanup boundary for old call sites, but permanently disable
+        // creation; real repair must come from renderer/live-bottom paint and viewer
+        // ownership guards, never from a broad lower mask.
+        removeActiveSwitchWebViewLowerDotShield(reason + "-v279-disabled");
     }
 
     private void removeActiveSwitchWebViewLowerDotShield(String reason) {
@@ -1599,6 +1553,16 @@ public class MainActivity extends Activity {
         }
 
         if (action == MotionEvent.ACTION_DOWN) {
+            boolean startedInsidePassiveSuppression = passiveNavigationTapSuppressed;
+            if (passiveNavigationTapSuppressed) {
+                // WHY: passive tab/open suppression is for orphan releases from a disappearing picker,
+                // not for the user's next real tap. Once a new
+                // terminal ACTION_DOWN starts, let ACTION_UP open the native composer
+                // promptly; otherwise repeated switch-settle calls can make typing
+                // feel blocked for many seconds.
+                terminalBodyTapSuppressedUntilMs = 0;
+                passiveNavigationTapSuppressed = false;
+            }
             if (!passiveNavigationTapSuppressed) {
                 cancelXtermBlankTailMask("terminal-touch");
             }
@@ -1615,20 +1579,7 @@ public class MainActivity extends Activity {
             terminalHorizontalPanActive = false;
             terminalBottomRestoreInFlight = false;
             terminalForwardingTouchToViewer = false;
-            terminalTouchStartedDuringPassiveSuppression = passiveNavigationTapSuppressed;
-            if (passiveNavigationTapSuppressed) {
-                // WHY: after a passive tab switch or Bottom recovery, a quick
-                // terminal tap must not become typing, but a vertical drag should
-                // immediately become full-screen reading. Hide any lingering
-                // composer/IME before movement classification so scanning starts
-                // with maximum space. Do not cancel the passive-switch dot settle
-                // on ACTION_DOWN alone: the user-reported row-tap fallout can land
-                // here before xterm repaints, and canceling the shield immediately
-                // is how the dotted field kept returning. A real vertical drag
-                // still enters read mode on MOVE, which cancels masks through the
-                // normal read/touch path.
-                hideDockedPromptComposerForNavigation("passive-nav-scroll-start");
-            }
+            terminalTouchStartedDuringPassiveSuppression = startedInsidePassiveSuppression;
             recycleTerminalViewerDownEvent();
             terminalViewerDownEvent = MotionEvent.obtain(event);
             terminalTouchReachedLiveBottom = false;
@@ -1701,6 +1652,9 @@ public class MainActivity extends Activity {
                 // the early part of a vertical swipe is what made old tabs page
                 // scroll below the terminal text area before the tmux/Codex
                 // history layer could take over.
+                if (terminalTouchStartedDuringPassiveSuppression) {
+                    hideDockedPromptComposerForNavigation("passive-nav-scroll-start");
+                }
                 terminalHistoryDragActive = true;
                 terminalLastHistoryDragY = terminalTouchStartY;
                 enterReadMode();
@@ -1756,15 +1710,19 @@ public class MainActivity extends Activity {
                 return true;
             }
             if (startedDuringPassiveSuppression
+                    && System.currentTimeMillis() < terminalBodyTapSuppressedUntilMs
                     && action == MotionEvent.ACTION_UP
                     && !consumed
                     && !wasMultiTouch
                     && !wasHorizontalPan
                     && !movedPastTapSlop) {
-                // WHY: this is the protected passive-navigation tap swallow. A
-                // simple tap right after a tab switch/Bottom should do nothing;
-                // a vertical drag from the same window already bypassed this and
-                // became tmux history scroll above.
+                // WHY: this is the protected passive-navigation tap swallow for
+                // stale timed releases only. A fresh ACTION_DOWN now clears the
+                // timeout so deliberate tap-to-type opens the native composer; a
+                // simple tap right after a tab switch/Bottom should do nothing only
+                // when it is that stale release without a fresh terminal down event;
+                // a vertical drag from the same window already bypassed this and became
+                // tmux history scroll above.
                 recycleTerminalViewerDownEvent();
                 return true;
             }
@@ -2875,9 +2833,10 @@ public class MainActivity extends Activity {
             // WHY: the real-phone Active Sessions proof for v2.13 still showed the
             // docked composer reopening as `Send` after a row tap. That happens when
             // the dialog's release lands on the terminal body after the picker closes.
-            // Active switching is navigation, not typing, so swallow only this
-            // passive-window tap-up path; normal deliberate terminal taps after the suppression window still open the composer
-            // and preserve backspace/typing.
+            // Active switching is navigation, not typing, so swallow only an orphan
+            // tap-up that has no fresh terminal ACTION_DOWN. A real new tap clears
+            // the passive suppression in handleTerminalTouch and must open the native composer promptly.
+            // normal deliberate terminal taps after the suppression window still open the composer.
             hideDockedPromptComposerForSessionSwitch("passive-switch-tap-up-block");
             return;
         }
@@ -3040,7 +2999,11 @@ public class MainActivity extends Activity {
                 pinTerminalViewportLocal();
                 fitTerminalToCurrentViewSoon(reason);
                 keepToolbarOnlyXtermSettleAliveAfterControlAction(reason);
-                scrollViewerToTypingPositionOnce(reason, 180);
+                if (shouldPreserveZoomedViewerForPassiveBottom(reason)) {
+                    cancelViewerTypingPositionRetries(reason + "-preserve-zoomed-send");
+                } else {
+                    scrollViewerToTypingPositionOnce(reason, 180);
+                }
                 scheduleToolbarStatusDotRefresh(150);
             }, exc -> toast("WEzterm control is not reachable"));
         }, 420);
@@ -3160,10 +3123,10 @@ public class MainActivity extends Activity {
         // three separate bugs at once: ACTION_UP fell through from the picker and
         // reopened the native composer, the toolbar stayed on Send/keyboard, and
         // xterm painted dotted stale rows instead of the same full-height bottom
-        // state the manual Bottom button gives. Keep terminal-body taps and stale
-        // hidden-textarea focus callbacks suppressed through the async select +
-        // bottom settle window; the next deliberate terminal tap still opens the
-        // native composer normally.
+        // state the manual Bottom button gives. Suppress stale terminal-body
+        // releases and hidden-textarea focus callbacks through the async select +
+        // bottom settle window; a fresh terminal ACTION_DOWN clears this timeout so
+        // the next deliberate tap still opens the native composer normally.
         terminalBodyTapSuppressedUntilMs = Math.max(
                 terminalBodyTapSuppressedUntilMs,
                 System.currentTimeMillis() + PASSIVE_NAVIGATION_TOUCH_SUPPRESS_MS
@@ -3473,7 +3436,11 @@ public class MainActivity extends Activity {
                 // one skipped frame cannot strand the user above the text. Preserve
                 // scrollX and do not resize tmux, reset pinch zoom, or revive the old
                 // scrollToBottom/scrollIntoView loop.
-                scrollViewerToTypingPositionAfterBottom(reason);
+                if (shouldPreserveZoomedViewerForPassiveBottom(reason)) {
+                    cancelViewerTypingPositionRetries(reason + "-preserve-zoomed-viewer");
+                } else {
+                    scrollViewerToTypingPositionAfterBottom(reason);
+                }
                 normalizeXtermCanvasAfterSessionSwitch(reason);
                 scheduleToolbarStatusDotRefresh(150);
             }
@@ -7443,14 +7410,15 @@ public class MainActivity extends Activity {
             return;
         }
         // WHY: Active switching and first entry must look exactly like the user
-        // pressed Bottom: the selected pane is at the live prompt and the WebView
-        // viewer is aligned to that prompt. This is deliberately passive; it runs
-        // xterm's scrollToBottom/scrollIntoView path but never reloads ttyd, never
-        // focuses the hidden textarea, never opens the native composer, and never
-        // shows the IME.
+        // pressed Bottom when the WebView is unzoomed. While zoomed or recently
+        // panned, Android/WebView owns the viewer; the visibility script switches to
+        // attribute-only mode so stale passive callbacks cannot drag xterm/document
+        // layers to a corner and create the giant black bottom field. It still
+        // never reloads ttyd, never focuses the hidden textarea, never opens the native composer,
+        // and never shows the IME.
         webView.evaluateJavascript(liveInputVisibilityScript(isViewerPanAllowed()), null);
-        if (isViewerZoomed()) {
-            scrollViewerToTypingPositionOnce(reason + "-passive-live-bottom", 180);
+        if (isViewerPanAllowed()) {
+            cancelViewerTypingPositionRetries(reason + "-passive-preserve-viewer");
         }
     }
 
@@ -7509,14 +7477,17 @@ public class MainActivity extends Activity {
                         + "if(document.documentElement){document.documentElement.scrollTop=0;document.documentElement.scrollLeft=0;}"
                         + "if(document.body){document.body.scrollTop=0;document.body.scrollLeft=0;}"
                         + "window.scrollTo(0,0);";
+        String terminalBottomScroll = preserveViewerPan
+                ? ""
+                : "var t=window.term||window.terminal;"
+                        + "if(t&&typeof t.scrollToBottom==='function'){t.scrollToBottom();}"
+                        + "var viewport=document.querySelector('.xterm-viewport');"
+                        + "if(viewport){viewport.scrollTop=viewport.scrollHeight;}"
+                        + "var screen=document.querySelector('.xterm-screen,.xterm');"
+                        + "if(screen&&typeof screen.scrollIntoView==='function'){screen.scrollIntoView({block:'end',inline:'nearest'});}";
         return "(function(){"
                 + "try{"
-                + "var t=window.term||window.terminal;"
-                + "if(t&&typeof t.scrollToBottom==='function'){t.scrollToBottom();}"
-                + "var viewport=document.querySelector('.xterm-viewport');"
-                + "if(viewport){viewport.scrollTop=viewport.scrollHeight;}"
-                + "var screen=document.querySelector('.xterm-screen,.xterm');"
-                + "if(screen&&typeof screen.scrollIntoView==='function'){screen.scrollIntoView({block:'end',inline:'nearest'});}"
+                + terminalBottomScroll
                 + "var el=document.querySelector('.xterm-helper-textarea, .xterm textarea, textarea');"
                 + "if(el){"
                 + "el.setAttribute('autocapitalize','none');"
@@ -7529,9 +7500,32 @@ public class MainActivity extends Activity {
                 + "el.setAttribute('data-ms-editor','false');"
                 + "}"
                 + resetDocumentScroll
-                + "return 'visible';"
+                + (preserveViewerPan ? "return 'visible-preserve-viewer';" : "return 'visible';")
                 + "}catch(e){return 'err';}"
                 + "})()";
+    }
+
+    private boolean shouldPreserveZoomedViewerForPassiveBottom(String reason) {
+        if (!isViewerPanAllowed()) {
+            return false;
+        }
+        String normalized = reason == null ? "" : reason.toLowerCase(Locale.US);
+        // WHY: tab-open/send/passive confirmations already move tmux to live bottom
+        // server-side. When Android WebView is zoomed, a blind viewer `scrollTo(maxY)`
+        // can reveal the renderer's black lower field and look like the viewport
+        // snapped away from the message. Preserve explicit Bottom/touch-bottom
+        // recovery, but keep passive tab and send settles out of the zoom viewer.
+        return normalized.contains("tab-open")
+                || normalized.contains("passive-live-bottom")
+                || normalized.contains("-confirm")
+                || normalized.startsWith("select-live")
+                || normalized.startsWith("new-session")
+                || normalized.startsWith("old-session")
+                || normalized.startsWith("crashed-session")
+                || normalized.startsWith("workspace-restore")
+                || normalized.startsWith("submit-text")
+                || normalized.startsWith("send-enter")
+                || normalized.startsWith("send-key");
     }
 
     private void fitTerminalToCurrentViewSoon(String reason) {

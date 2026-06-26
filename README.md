@@ -92,7 +92,13 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=179`, `versionName=2.78`.
+- Built checkpoint: `versionCode=180`, `versionName=2.79`.
+- v2.79 fixes the zoom/pan wrong-layer regression captured on 2026-06-26: the
+  old Active-switch WebView lower black shield is disabled, preserve-viewer
+  input visibility no longer runs xterm `scrollToBottom`/`scrollIntoView`, and
+  passive tab/send settles do not blind-scroll a zoomed WebView.
+  Tap-to-type suppression is scoped to stale picker releases so a fresh terminal
+  tap can open the native composer promptly.
 - v2.78 fixes the installed-APK pinch-anchor regression that v2.77 still failed
   in real two-pointer proof: the zoom/pan gates now check the WebView's actual
   scale when `onScaleChanged` state is stale, so delayed document pins and xterm

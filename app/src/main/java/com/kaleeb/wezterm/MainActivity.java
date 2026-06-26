@@ -2902,8 +2902,7 @@ public class MainActivity extends Activity {
         restoreDockedPromptComposerFocus(reason);
         reassertDockedPromptComposerFocus(reason, composerGeneration, 120);
         reassertDockedPromptComposerFocus(reason, composerGeneration, 360);
-        fitTerminalToCurrentViewSoon("composer-" + reason);
-        refreshCaptureRendererForLayoutChange("composer-" + reason);
+        refreshCaptureRendererForComposerTransition("composer-" + reason);
         alignViewerForComposerReason(reason);
         // WHY: do not arm a WebView bitmap reload when opening the native
         // composer. v1.85 proved that low-paint sampling during this resize can
@@ -3084,8 +3083,7 @@ public class MainActivity extends Activity {
                     return;
                 }
                 pinTerminalViewportLocal();
-                fitTerminalToCurrentViewSoon(reason);
-                keepToolbarOnlyXtermSettleAliveAfterControlAction(reason);
+                refreshCaptureRendererForComposerTransition(reason + "-post-send");
                 if (shouldPreserveZoomedViewerForPassiveBottom(reason)) {
                     cancelViewerTypingPositionRetries(reason + "-preserve-zoomed-send");
                 } else {
@@ -3133,8 +3131,7 @@ public class MainActivity extends Activity {
             }
             hideTerminalKeyboardQuietly("composer-hide");
         }
-        fitTerminalToCurrentViewSoon("composer-hide");
-        refreshCaptureRendererForLayoutChange("composer-hide");
+        refreshCaptureRendererForComposerTransition("composer-hide");
     }
 
     private void updateStartButtonLabel() {
@@ -7275,6 +7272,20 @@ public class MainActivity extends Activity {
         // resizing the shared tmux window.
         uiHandler.postDelayed(() -> refreshCaptureRendererNow(reason + "-layout-settle-1"), 260);
         uiHandler.postDelayed(() -> refreshCaptureRendererNow(reason + "-layout-settle-2"), 620);
+    }
+
+    private void refreshCaptureRendererForComposerTransition(String reason) {
+        // WHY: tap-to-type and Send hide/show the native composer while Android's
+        // IME is resizing the WebView. The APK now renders through the control
+        // server capture renderer, so running the old xterm fit/dot-scrub train
+        // during composer transitions only stacks evaluateJavascript/paint work
+        // and recreates the black flicker plus multi-second Send feel. Pulse the
+        // capture renderer only when it is idle; the locked bottom anchor remains
+        // owned by the renderer geometry, and one-finger scroll/zoom/pan stay
+        // untouched.
+        refreshCaptureRendererPulse(reason);
+        uiHandler.postDelayed(() -> refreshCaptureRendererPulse(reason + "-composer-settle-1"), 180);
+        uiHandler.postDelayed(() -> refreshCaptureRendererPulse(reason + "-composer-settle-2"), 520);
     }
 
     private void refreshCaptureRenderer(String reason, boolean includeFollowUp) {

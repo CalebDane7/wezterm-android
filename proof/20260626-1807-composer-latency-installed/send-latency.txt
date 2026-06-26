@@ -1,0 +1,4 @@
+before_tap_ms=1782468562964
+send_tap_ms=1782468569971
+seen_ms=1782468570617
+latency_ms=646

@@ -1,0 +1,1 @@
+send_button=Send x=1071 y=1858

@@ -1,0 +1,24 @@
+apk-v283-proof$ echo%20APKV283SEND180921
+bash: echo%20APKV283SEND180921: command not found
+apk-v283-proof$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

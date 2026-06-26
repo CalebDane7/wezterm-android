@@ -92,7 +92,13 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=185`, `versionName=2.84`.
+- Built checkpoint: `versionCode=186`, `versionName=2.85`.
+- v2.85 keeps the v2.84 optimistic, draft-safe Send behavior and routes native
+  APK submits through `/submit-text?resize=0` so tapping Send skips the legacy
+  tmux resize/release branch. This preserves stable `@windowId` targeting,
+  idempotency, and server paste+Enter while avoiding another latency fix that
+  touches scroll, bottom anchoring, two-finger zoom/pan, or renderer repaint
+  ownership.
 - v2.84 makes native composer Send draft-safe but locally immediate: the APK
   hides the composer as soon as the idempotent `/submit-text` POST is queued,
   restores the draft on failure, clears it only after server success, logs

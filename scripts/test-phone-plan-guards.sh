@@ -59,13 +59,13 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="185"' "current APK version must be bumped for the v2.84 send-latency contract"
-require "$MANIFEST" 'android:versionName="2.84"' "current APK version must be bumped for the v2.84 send-latency contract"
+require "$MANIFEST" 'android:versionCode="186"' "current APK version must be bumped for the v2.85 send-latency contract"
+require "$MANIFEST" 'android:versionName="2.85"' "current APK version must be bumped for the v2.85 send-latency contract"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.84";' "client /config proof must report the same v2.84 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.85";' "client /config proof must report the same v2.85 APK contract as the manifest"
 require "$MAIN" 'MediaStore.ACTION_PICK_IMAGES' "Upload must use Android Photo Picker for one-selection screenshots/media on Android 13+"
 require "$MAIN" 'uploadDocumentPickerIntent' "Upload must keep ACTION_OPEN_DOCUMENT fallback for non-photo-picker/files path"
 require "$MAIN" 'uploadUrisFromResult' "Upload result must handle both data URI and ClipData instead of dropping picker returns"
@@ -158,7 +158,9 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=185`, `versionName=2.84`.' "README checkpoint must match the installed v2.84 APK"
+    require "$README" 'Built checkpoint: `versionCode=186`, `versionName=2.85`.' "README checkpoint must match the installed v2.85 APK"
+    require "$README" 'v2.85 keeps the v2.84 optimistic, draft-safe Send behavior' "README must document the v2.85 non-resizing native Send latency fix"
+    require "$README" '/submit-text?resize=0' "README must document that native Send skips the legacy tmux resize branch"
     require "$README" 'v2.84 makes native composer Send draft-safe but locally immediate' "README must document the v2.84 Send latency root fix"
     require "$README" 'last proven control base' "README must document the v2.84 control-base ordering fix"
     require "$README" 'v2.83 keeps the v2.82 stable capture-renderer target' "README must document the current v2.83 capture-renderer transition latency fix"
@@ -331,8 +333,8 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.84' "install page must advertise the current v2.84 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>185</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.85' "install page must advertise the current v2.85 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>186</code>' "install page versionCode must match the manifest"
     require "$INSTALL_PAGE" 'Workspace Save/Load/Close' "install page must mention the v2.62 workspace control fix"
     require "$INSTALL_PAGE" 'composer-above-buttons layout' "install page must mention the restored composer-above-buttons layout"
     require "$INSTALL_PAGE" 'compact v2.65 toolbar chrome' "install page must mention the compact bottom toolbar fix"
@@ -449,7 +451,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.84 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.85 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"
@@ -1222,7 +1224,7 @@ require "$MAIN" 'startToolbarButton.setText(promptComposerBar.getVisibility() ==
 require "$MAIN" 'KEYCODE_BACK && isDockedPromptComposerVisible()' "native composer must dismiss with Android Back instead of adding duplicate buttons"
 require_absent "$MAIN" 'Button send = button("Send"' "native composer must not add a second Send button below the toolbar"
 require_absent "$MAIN" 'Button cancel = button("Cancel"' "native composer must not add a hidden-looking Cancel button below the toolbar"
-require "$MAIN" 'postTextWithIdempotency(appendStableWindowQuery("/submit-text", stableTargetKey)' "safe prompt composer must send one server-side paste+Enter to the pinned stable windowId target"
+require "$MAIN" 'postTextWithIdempotency(appendStableWindowQuery("/submit-text?resize=0", stableTargetKey)' "safe prompt composer must send one non-resizing server-side paste+Enter to the pinned stable windowId target"
 require_absent "$MAIN" 'postText("/draft-delta?backspace="' "normal Android typing must not mirror live draft deltas into tmux"
 require "$MAIN" 'promptComposerDraftTargetKey' "native composer draft must track the stable active window target"
 require "$MAIN" 'promptComposerTargetKey()' "native composer draft must identify the stable active window target"
@@ -1234,7 +1236,8 @@ require "$MAIN" 'saveVisiblePromptComposerDraft' "passive composer hiding must s
 require "$MAIN" 'v2.80 cleared the native composer' "draft-preservation WHY comment must preserve the old regression"
 require "$MAIN" 'clearPromptComposerAfterSuccessfulSubmit(stableTargetKey, value)' "successful Send must remove only the submitted target draft"
 require "$MAIN" 'retargeting on every edit' "TextWatcher WHY comment must preserve the wrong-session paste regression"
-require "$MAIN" 'appendStableWindowQuery("/submit-text", stableTargetKey)' "safe prompt composer must pass the pinned target into submit-text"
+require "$MAIN" 'appendStableWindowQuery("/submit-text?resize=0", stableTargetKey)' "safe prompt composer must pass the pinned target into non-resizing submit-text"
+require "$MAIN" 'must not take the old phone resize/release branch on every tap' "Send latency WHY comment must preserve the v2.85 non-resizing root cause"
 require "$MAIN" 'Normal phone typing is local-only until the visible' "TextWatcher WHY comment must preserve the no hidden draft mirror rule"
 require "$MAIN" 'Send must paste the complete visible native composer' "Send WHY comment must preserve single-submit ownership"
 require "$MAIN" 'EditorInfo.IME_ACTION_SEND' "native composer keyboard Enter/action must be configured as Send"

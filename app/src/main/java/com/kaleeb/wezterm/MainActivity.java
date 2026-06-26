@@ -123,7 +123,7 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
     private static final String PREF_PROMPT_DRAFT_PREFIX = "prompt_draft_";
-    private static final String APP_VERSION_NAME = "2.84";
+    private static final String APP_VERSION_NAME = "2.85";
     private static final String UPLOAD_LOG_TAG = "WEztermUpload";
     private static final String SEND_LOG_TAG = "WEztermSend";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
@@ -3312,7 +3312,13 @@ public class MainActivity extends Activity {
         // request must use the draft's pinned `@windowId`, not a later `/active`
         // value. This is the durable guard against prompts being pasted into a
         // different active session after tab switches, polling, or proof setup.
-        postTextWithIdempotency(appendStableWindowQuery("/submit-text", stableTargetKey), value, submitIdempotencyKey, payload -> {
+        // WHY: native APK Send already renders through the capture renderer and
+        // must not take the old phone resize/release branch on every tap. That
+        // branch is now a legacy escape hatch; leaving it in the hot Send path
+        // made some submits wait on tmux size bookkeeping before the user saw a
+        // response. Keep the same stable @windowId, idempotency key, and server
+        // paste+Enter, but explicitly use the non-resizing submit mode.
+        postTextWithIdempotency(appendStableWindowQuery("/submit-text?resize=0", stableTargetKey), value, submitIdempotencyKey, payload -> {
             logPromptSendStage("response", stableTargetKey, sendStartedAtMs, submitChars);
             if (!payload.optBoolean("ok", false)) {
                 finishPromptComposerSubmit(submitFingerprint);

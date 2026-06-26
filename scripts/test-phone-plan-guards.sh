@@ -59,13 +59,13 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="184"' "current APK version must be bumped for the v2.83 capture-renderer transition latency contract"
-require "$MANIFEST" 'android:versionName="2.83"' "current APK version must be bumped for the v2.83 capture-renderer transition latency contract"
+require "$MANIFEST" 'android:versionCode="185"' "current APK version must be bumped for the v2.84 send-latency contract"
+require "$MANIFEST" 'android:versionName="2.84"' "current APK version must be bumped for the v2.84 send-latency contract"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.83";' "client /config proof must report the same v2.83 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.84";' "client /config proof must report the same v2.84 APK contract as the manifest"
 require "$MAIN" 'MediaStore.ACTION_PICK_IMAGES' "Upload must use Android Photo Picker for one-selection screenshots/media on Android 13+"
 require "$MAIN" 'uploadDocumentPickerIntent' "Upload must keep ACTION_OPEN_DOCUMENT fallback for non-photo-picker/files path"
 require "$MAIN" 'uploadUrisFromResult' "Upload result must handle both data URI and ClipData instead of dropping picker returns"
@@ -158,9 +158,11 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=184`, `versionName=2.83`.' "README checkpoint must match the installed v2.83 APK"
+    require "$README" 'Built checkpoint: `versionCode=185`, `versionName=2.84`.' "README checkpoint must match the installed v2.84 APK"
+    require "$README" 'v2.84 makes native composer Send draft-safe but locally immediate' "README must document the v2.84 Send latency root fix"
+    require "$README" 'last proven control base' "README must document the v2.84 control-base ordering fix"
     require "$README" 'v2.83 keeps the v2.82 stable capture-renderer target' "README must document the current v2.83 capture-renderer transition latency fix"
-    require "$README" 'Composer transitions use idle capture pulses instead of the old xterm fit/canvas settle train' "README must preserve the v2.83 tap/send latency owner boundary"
+    require "$README" 'Composer transitions use idle capture pulses' "README must preserve the v2.83 tap/send latency owner boundary"
     require "$README" 'zoom/pan wrong-layer regression' "README must document the current v2.79 zoom/pan layer fix"
     require "$README" 'Tap-to-type suppression is scoped to stale picker releases' "README must document the current v2.79 tap latency fix"
     require "$README" "WebView's actual" "README must document the current v2.78 real pinch scale-state fix"
@@ -329,8 +331,8 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.83' "install page must advertise the current v2.83 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>184</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.84' "install page must advertise the current v2.84 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>185</code>' "install page versionCode must match the manifest"
     require "$INSTALL_PAGE" 'Workspace Save/Load/Close' "install page must mention the v2.62 workspace control fix"
     require "$INSTALL_PAGE" 'composer-above-buttons layout' "install page must mention the restored composer-above-buttons layout"
     require "$INSTALL_PAGE" 'compact v2.65 toolbar chrome' "install page must mention the compact bottom toolbar fix"
@@ -447,7 +449,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.83 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.84 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"
@@ -455,6 +457,7 @@ require "$MAIN" 'private static final String CONTROL_URL = "http://100.113.254.7
 require "$MAIN" 'CONTROL_URLS' "control API must retry across direct Tailnet IP and MagicDNS"
 require "$MAIN" 'restorePreferredEndpointsOnLauncherReentry' "launcher re-entry must reset stale singleTask endpoint state"
 require "$MAIN" 'activeControlBaseUrl = CONTROL_URL' "launcher re-entry must restore control calls to the direct Tailnet IP"
+require "$MAIN" 'isKnownControlBaseUrl(activeControlBaseUrl)' "control API must prefer the last proven control base before fallback"
 require "$MAIN" 'WOL_MAC_ADDRESSES' "WEzterm must keep wake-on-open MAC targets for the laptop"
 require "$MAIN" 'wakeLaptopForTerminal("app-open")' "WEzterm must send Wake-on-LAN on app open"
 require "$MAIN" 'wakeLaptopForTerminal("resume")' "WEzterm must send Wake-on-LAN when reopened/resumed"
@@ -1229,7 +1232,7 @@ require "$MAIN" 'rememberPromptComposerDraft' "native composer draft persistence
 require "$MAIN" 'rememberedPromptComposerDraft' "native composer must restore the current windowId draft instead of showing another session draft"
 require "$MAIN" 'saveVisiblePromptComposerDraft' "passive composer hiding must save the user's visible draft"
 require "$MAIN" 'v2.80 cleared the native composer' "draft-preservation WHY comment must preserve the old regression"
-require "$MAIN" 'forgetPromptComposerDraft(stableTargetKey)' "successful Send must remove only the submitted target draft"
+require "$MAIN" 'clearPromptComposerAfterSuccessfulSubmit(stableTargetKey, value)' "successful Send must remove only the submitted target draft"
 require "$MAIN" 'retargeting on every edit' "TextWatcher WHY comment must preserve the wrong-session paste regression"
 require "$MAIN" 'appendStableWindowQuery("/submit-text", stableTargetKey)' "safe prompt composer must pass the pinned target into submit-text"
 require "$MAIN" 'Normal phone typing is local-only until the visible' "TextWatcher WHY comment must preserve the no hidden draft mirror rule"
@@ -1250,6 +1253,10 @@ require "$MAIN" 'pasting the same draft' "submit in-flight WHY comment must pres
 require "$MAIN" 'postTextWithIdempotency' "native composer /submit-text must send an idempotency key across control URL retries"
 require "$MAIN" 'Idempotency-Key' "native composer /submit-text retries must use the standard idempotency header"
 require "$MAIN" 'fallback control URL' "idempotency WHY comment must preserve the lost-response retry duplicate root cause"
+require "$MAIN" 'Hide locally as soon as the idempotent POST is queued' "Send latency fix must keep immediate local composer feedback"
+require "$MAIN" 'clearPromptComposerAfterSuccessfulSubmit' "Send must clear drafts only after /submit-text succeeds"
+require "$MAIN" 'restorePromptComposerAfterFailedSubmit' "Send must restore the visible draft after a failed optimistic submit"
+require "$MAIN" 'WEztermSend' "Send path must leave privacy-safe stage timing logs"
 require "$MAIN" 'Stop is the phone equivalent of the desktop Escape key' "Stop WHY comment must preserve the direct Stop-equals-Escape mapping"
 require "$MAIN" 'Stop owns one Escape' "Stop must not submit drafts or queue a phone-only state machine"
 require_absent "$MAIN" 'STOP_SECOND_PRESS_INTERRUPT_MS' "Stop must not use a phone-only second-press state window"

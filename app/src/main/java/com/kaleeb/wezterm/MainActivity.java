@@ -26,6 +26,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.provider.MediaStore;
 import android.provider.OpenableColumns;
 import android.text.Editable;
@@ -122,8 +123,9 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
     private static final String PREF_PROMPT_DRAFT_PREFIX = "prompt_draft_";
-    private static final String APP_VERSION_NAME = "2.83";
+    private static final String APP_VERSION_NAME = "2.84";
     private static final String UPLOAD_LOG_TAG = "WEztermUpload";
+    private static final String SEND_LOG_TAG = "WEztermSend";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
             | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
@@ -2869,6 +2871,10 @@ public class MainActivity extends Activity {
             showSafePromptComposer();
             return;
         }
+        if (promptComposerSubmitInFlight) {
+            toast("Sending prompt...");
+            return;
+        }
         if ("tap-up".equals(reason) && System.currentTimeMillis() < terminalBodyTapSuppressedUntilMs) {
             // WHY: the real-phone Active Sessions proof for v2.13 still showed the
             // docked composer reopening as `Send` after a row tap. That happens when
@@ -3289,17 +3295,28 @@ public class MainActivity extends Activity {
         }
         String submitIdempotencyKey = "phone-submit-" + UUID.randomUUID().toString();
         long generation = leaveReadModeForLiveInput();
+        long sendStartedAtMs = SystemClock.elapsedRealtime();
+        int submitChars = value.length();
+        logPromptSendStage("queued", stableTargetKey, sendStartedAtMs, submitChars);
+        if (isDockedPromptComposerVisible()) {
+            // WHY: the controller/tmux submit path is already sub-second, but the
+            // user still felt a multi-second Send because the APK kept the native
+            // composer open until the HTTP callback and then stacked IME/render
+            // settle work. Hide locally as soon as the idempotent POST is queued,
+            // while preserving the draft until server success so failures restore
+            // the exact text instead of losing the user's prompt.
+            hideDockedPromptComposer(false, false);
+            logPromptSendStage("local-hide", stableTargetKey, sendStartedAtMs, submitChars);
+        }
         // WHY: visible phone drafts are local-only until Send, so the submit
         // request must use the draft's pinned `@windowId`, not a later `/active`
         // value. This is the durable guard against prompts being pasted into a
         // different active session after tab switches, polling, or proof setup.
         postTextWithIdempotency(appendStableWindowQuery("/submit-text", stableTargetKey), value, submitIdempotencyKey, payload -> {
-            if (generation != terminalModeGeneration) {
-                finishPromptComposerSubmit(submitFingerprint);
-                return;
-            }
+            logPromptSendStage("response", stableTargetKey, sendStartedAtMs, submitChars);
             if (!payload.optBoolean("ok", false)) {
                 finishPromptComposerSubmit(submitFingerprint);
+                restorePromptComposerAfterFailedSubmit(stableTargetKey);
                 toast(payload.optString("error", "Send failed"));
                 return;
             }
@@ -3307,8 +3324,10 @@ public class MainActivity extends Activity {
                 toast(successToast);
             }
             finishPromptComposerSubmit(submitFingerprint);
-            forgetPromptComposerDraft(stableTargetKey);
-            hideDockedPromptComposer(true, false);
+            clearPromptComposerAfterSuccessfulSubmit(stableTargetKey, value);
+            if (generation != terminalModeGeneration) {
+                return;
+            }
             focusTerminalInputSoon(false);
             settleLiveBottomAfterSend("submit-text");
             if (afterSuccess != null) {
@@ -3316,11 +3335,53 @@ public class MainActivity extends Activity {
             }
         }, exc -> {
             finishPromptComposerSubmit(submitFingerprint);
+            logPromptSendStage("failure", stableTargetKey, sendStartedAtMs, submitChars);
+            restorePromptComposerAfterFailedSubmit(stableTargetKey);
             toast("WEzterm control is not reachable");
             if (afterFailure != null) {
                 afterFailure.run();
             }
         });
+    }
+
+    private void clearPromptComposerAfterSuccessfulSubmit(String targetKey, String submittedValue) {
+        forgetPromptComposerDraft(targetKey);
+        if (promptComposerInput == null || !targetKey.equals(promptComposerDraftTargetKey)) {
+            return;
+        }
+        String visibleValue = promptComposerInput.getText().toString().trim();
+        if (!submittedValue.equals(visibleValue)) {
+            return;
+        }
+        promptComposerProgrammaticTextChange = true;
+        try {
+            promptComposerInput.setText("");
+        } finally {
+            promptComposerProgrammaticTextChange = false;
+        }
+        promptComposerDraftLocalGeneration++;
+    }
+
+    private void restorePromptComposerAfterFailedSubmit(String targetKey) {
+        if (!hasStableWindowId(targetKey) || !targetKey.equals(promptComposerTargetKey())) {
+            return;
+        }
+        promptComposerDraftTargetKey = targetKey;
+        showDockedPromptComposer("submit-failed");
+    }
+
+    private void logPromptSendStage(String stage, String targetKey, long startedAtMs, int textChars) {
+        long elapsedMs = startedAtMs > 0 ? Math.max(0, SystemClock.elapsedRealtime() - startedAtMs) : 0;
+        Log.i(SEND_LOG_TAG,
+                "stage=" + stage
+                        + " target=" + safePromptSendTargetForLog(targetKey)
+                        + " textChars=" + Math.max(0, textChars)
+                        + " elapsedMs=" + elapsedMs
+                        + " composerVisible=" + isDockedPromptComposerVisible());
+    }
+
+    private String safePromptSendTargetForLog(String targetKey) {
+        return hasStableWindowId(targetKey) ? targetKey.trim() : "unstable";
     }
 
     private boolean beginPromptComposerSubmit(String fingerprint) {
@@ -8318,10 +8379,35 @@ public class MainActivity extends Activity {
     }
 
     private String controlBaseUrl(int index) {
-        if (index < 0 || index >= CONTROL_URLS.length) {
-            return CONTROL_URL;
+        String preferredBaseUrl = isKnownControlBaseUrl(activeControlBaseUrl)
+                ? activeControlBaseUrl
+                : CONTROL_URL;
+        if (index <= 0) {
+            return preferredBaseUrl;
         }
-        return CONTROL_URLS[index];
+        int orderedIndex = 1;
+        for (String candidate : CONTROL_URLS) {
+            if (candidate.equals(preferredBaseUrl)) {
+                continue;
+            }
+            if (orderedIndex == index) {
+                return candidate;
+            }
+            orderedIndex++;
+        }
+        return CONTROL_URL;
+    }
+
+    private boolean isKnownControlBaseUrl(String baseUrl) {
+        if (baseUrl == null) {
+            return false;
+        }
+        for (String candidate : CONTROL_URLS) {
+            if (candidate.equals(baseUrl)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String controlUrlForPath(String path) {

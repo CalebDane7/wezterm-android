@@ -92,7 +92,14 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=184`, `versionName=2.83`.
+- Built checkpoint: `versionCode=185`, `versionName=2.84`.
+- v2.84 makes native composer Send draft-safe but locally immediate: the APK
+  hides the composer as soon as the idempotent `/submit-text` POST is queued,
+  restores the draft on failure, clears it only after server success, logs
+  privacy-safe Send stage timings, and prefers the last proven control base
+  before fallback. This fixes the remaining multi-second Send feel without
+  touching scroll constants, bottom anchoring, two-finger zoom/pan, or Active/Old
+  loading-modal behavior.
 - v2.83 keeps the v2.82 stable capture-renderer target and removes the
   remaining capture-renderer transition churn that made tap-to-type, Send,
   explicit Bottom, and visualViewport movement feel slow or flicker after the

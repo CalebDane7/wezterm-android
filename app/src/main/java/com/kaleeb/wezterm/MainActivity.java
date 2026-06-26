@@ -3501,7 +3501,12 @@ public class MainActivity extends Activity {
                 toast(message);
             }
             pinTerminalViewportLocal();
-            refreshCaptureRendererForLayoutChange(reason + "-live-bottom");
+            boolean explicitBottomView = reason != null && reason.startsWith("live-bottom-view");
+            if (explicitBottomView) {
+                refreshCaptureRendererForImmediateBottom(reason + "-live-bottom");
+            } else {
+                refreshCaptureRendererForLayoutChange(reason + "-live-bottom");
+            }
             if (showComposer) {
                 showDockedPromptComposer("live-bottom");
             } else {
@@ -3515,8 +3520,12 @@ public class MainActivity extends Activity {
                 clearBroadSessionSwitchVisualMasks(reason + "-live-bottom-confirmed");
                 hideDockedPromptComposerForSessionSwitch(reason + "-post-bottom");
                 keepPassiveTabOpenPlainSoon(reason);
-                fitTerminalToCurrentViewSoon(reason);
-                keepToolbarOnlyXtermSettleAlive(reason);
+                if (explicitBottomView) {
+                    refreshCaptureRendererForImmediateBottom(reason + "-post-bottom");
+                } else {
+                    fitTerminalToCurrentViewSoon(reason);
+                    keepToolbarOnlyXtermSettleAlive(reason);
+                }
                 alignLiveBottomViewportForPassiveEntrySoon(reason);
                 // WHY: explicit Bottom confirms tmux is at live bottom, but a
                 // zoomed Android WebView can still be panned above the final prompt.
@@ -3529,7 +3538,9 @@ public class MainActivity extends Activity {
                 } else {
                     scrollViewerToTypingPositionAfterBottom(reason);
                 }
-                normalizeXtermCanvasAfterSessionSwitch(reason);
+                if (!explicitBottomView) {
+                    normalizeXtermCanvasAfterSessionSwitch(reason);
+                }
                 scheduleToolbarStatusDotRefresh(150);
             }
             if (afterSuccess != null) {
@@ -4967,8 +4978,18 @@ public class MainActivity extends Activity {
         // stable `@windowId` Open/Close; Old Sessions has its own old-only
         // saved-session endpoint so it cannot inherit live-window rows or broad
         // `/sessions` latency.
-        getJsonWithRetry("/tabs?light=1", payload -> showActiveSessionsDialog(payload, "Active Sessions", true), exc ->
-                getJsonWithRetry("/tabs", payload -> showActiveSessionsDialog(payload, "Active Sessions", true))
+        AlertDialog loadingDialog = showLoadingDialog("Active Sessions", "Loading active sessions...");
+        getJsonWithRetry("/tabs?light=1", payload -> {
+            dismissDialogQuietly(loadingDialog);
+            showActiveSessionsDialog(payload, "Active Sessions", true);
+        }, exc ->
+                getJsonWithRetry("/tabs", payload -> {
+                    dismissDialogQuietly(loadingDialog);
+                    showActiveSessionsDialog(payload, "Active Sessions", true);
+                }, fallbackExc -> {
+                    dismissDialogQuietly(loadingDialog);
+                    toast("WEzterm control is not reachable");
+                })
         );
     }
 
@@ -4978,8 +4999,14 @@ public class MainActivity extends Activity {
         // Keep APK Old on the same `/sessions?oldOnly=1` contract as the web
         // remote so Android cannot drift into showing live rows or stale
         // process-name titles when the broad `/sessions` payload changes.
-        getJsonWithRetry("/sessions?oldOnly=1", this::showOldSessionsDialog, exc ->
-                toast("WEzterm control is not reachable")
+        AlertDialog loadingDialog = showLoadingDialog("Old Sessions", "Loading saved sessions...");
+        getJsonWithRetry("/sessions?oldOnly=1", payload -> {
+            dismissDialogQuietly(loadingDialog);
+            showOldSessionsDialog(payload);
+        }, exc -> {
+            dismissDialogQuietly(loadingDialog);
+            toast("WEzterm control is not reachable");
+        }
         );
     }
 
@@ -5004,6 +5031,37 @@ public class MainActivity extends Activity {
     private void showNeedsAttention() {
         hideDockedPromptComposerForNavigation("needs-attention-dialog");
         getJsonWithRetry("/needs-attention", payload -> showActiveSessionsDialog(payload, "Needs Attention", false));
+    }
+
+    private AlertDialog showLoadingDialog(String title, String message) {
+        TextView text = new TextView(this);
+        text.setText(message);
+        text.setTextSize(16);
+        text.setTextColor(Color.rgb(205, 214, 244));
+        int pad = dp(16);
+        text.setPadding(pad, pad, pad, pad);
+        // WHY: Active/Old endpoint timings are fast, but while the native
+        // composer/IME hides the phone used to show no immediate feedback. A
+        // lightweight loading dialog makes the toolbar tap visibly acknowledge
+        // instantly without switching sessions, clearing drafts, or touching the
+        // one-finger scroll/zoom gesture paths.
+        return new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setView(text)
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void dismissDialogQuietly(AlertDialog dialog) {
+        if (dialog == null) {
+            return;
+        }
+        try {
+            if (dialog.isShowing()) {
+                dialog.dismiss();
+            }
+        } catch (Exception ignored) {
+        }
     }
 
     private void showActiveSessionsDialog(JSONObject payload, String title, boolean preferGroups) throws Exception {
@@ -7286,6 +7344,17 @@ public class MainActivity extends Activity {
         refreshCaptureRendererPulse(reason);
         uiHandler.postDelayed(() -> refreshCaptureRendererPulse(reason + "-composer-settle-1"), 180);
         uiHandler.postDelayed(() -> refreshCaptureRendererPulse(reason + "-composer-settle-2"), 520);
+    }
+
+    private void refreshCaptureRendererForImmediateBottom(String reason) {
+        // WHY: the server `/live-bottom` call is already the fast owner for
+        // Bottom. Running the old xterm fit/canvas scrub train after an explicit
+        // Bottom tap made a sub-second endpoint feel delayed and could repaint
+        // while the user was trying to read. Keep one immediate capture refresh
+        // for explicit Bottom, then one coalesced settle; tab-open and other
+        // passive xterm recovery paths keep their proven guards separately.
+        refreshCaptureRendererNow(reason);
+        uiHandler.postDelayed(() -> refreshCaptureRendererPulse(reason + "-bottom-settle"), 180);
     }
 
     private void refreshCaptureRenderer(String reason, boolean includeFollowUp) {

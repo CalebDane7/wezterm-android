@@ -1,0 +1,1 @@
+{"ok": false, "error": "Automation window selection requires matching Mantis selection-lock headers.", "requiredHeaders": ["X-Mantis-Selection-Lock-Owner", "X-Mantis-Selection-Lock-Monitor"]}

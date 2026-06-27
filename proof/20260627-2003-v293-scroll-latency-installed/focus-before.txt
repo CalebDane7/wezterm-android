@@ -1,0 +1,4 @@
+  mCurrentFocus=Window{31ac6e7 u0 com.kaleeb.wezterm/com.kaleeb.wezterm.MainActivity}
+  mFocusedApp=ActivityRecord{189316960 u0 com.kaleeb.wezterm/.MainActivity t2335}
+    mAwake=true mScreenOnEarly=true mScreenOnFully=true
+    mShowingDream=false mDreamingLockscreen=false

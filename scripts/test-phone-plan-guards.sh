@@ -362,6 +362,7 @@ fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
     require "$INSTALL_PAGE" 'WEzterm v2.93' "install page must advertise the current v2.93 APK"
     require "$INSTALL_PAGE" 'versionCode: <code>194</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'visual-only one-finger touch-scroll nudge' "install page must mention the v2.93 scroll-latency fix"
     require "$INSTALL_PAGE" 'Workspace Save/Load/Close' "install page must mention the v2.62 workspace control fix"
     require "$INSTALL_PAGE" 'composer-above-buttons layout' "install page must mention the restored composer-above-buttons layout"
     require "$INSTALL_PAGE" 'compact v2.65 toolbar chrome' "install page must mention the compact bottom toolbar fix"

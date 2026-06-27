@@ -123,7 +123,7 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
     private static final String PREF_PROMPT_DRAFT_PREFIX = "prompt_draft_";
-    private static final String APP_VERSION_NAME = "2.88";
+    private static final String APP_VERSION_NAME = "2.89";
     private static final int PREMIUM_CONTROL_CORNER_RADIUS_DP = 14;
     private static final int PREMIUM_DIALOG_CORNER_RADIUS_DP = 22;
     private static final int PREMIUM_STATUS_DOT_SP = 18;
@@ -281,6 +281,7 @@ public class MainActivity extends Activity {
     private long lastHistoryFlingAtMs = 0;
     private boolean touchScrollRenderPulseScheduled = false;
     private long touchScrollRenderPulseUntilMs = 0;
+    private long captureRendererScaleSyncGeneration = 0;
     private long terminalTouchGestureGeneration = 0;
     private long terminalLongPressCopyGeneration = 0;
     private String terminalTouchStableWindowId = "";
@@ -7770,6 +7771,59 @@ public class MainActivity extends Activity {
         uiHandler.postDelayed(() -> refreshCaptureRendererPulse(reason + "-bottom-settle"), 180);
     }
 
+    private void syncCaptureRendererAfterViewerScaleChange(String reason) {
+        if (webView == null) {
+            return;
+        }
+        long generation = ++captureRendererScaleSyncGeneration;
+        invalidateWebViewAfterViewerScale(reason);
+        syncCaptureRendererViewportOnlyForScale(reason);
+        uiHandler.postDelayed(() -> {
+            if (generation != captureRendererScaleSyncGeneration || webView == null) {
+                return;
+            }
+            invalidateWebViewAfterViewerScale(reason + "-settle");
+            syncCaptureRendererViewportOnlyForScale(reason + "-settle");
+        }, 96);
+    }
+
+    private void invalidateWebViewAfterViewerScale(String reason) {
+        if (webView == null) {
+            return;
+        }
+        // WHY: zoom-out can reveal WebView pixels that the Android compositor has
+        // not repainted yet, leaving a temporary black panel even though the
+        // capture renderer still owns the same terminal rows. Invalidate only the
+        // viewer/capture surface; do not reload WebView, resize tmux, reset zoom,
+        // or route two-finger gestures through `/touch-scroll`.
+        webView.invalidate();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            webView.postInvalidateOnAnimation();
+        } else {
+            webView.postInvalidate();
+        }
+    }
+
+    private void syncCaptureRendererViewportOnlyForScale(String reason) {
+        if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            return;
+        }
+        webView.evaluateJavascript(captureRendererViewportOnlyScaleReturnScript(reason), null);
+    }
+
+    private String captureRendererViewportOnlyScaleReturnScript(String reason) {
+        String safeReason = sanitizeJavascriptReason(reason);
+        return "(function(){"
+                + "try{"
+                + "var r=window.__mantisCaptureRenderer;"
+                + "if(!r){return 'not-capture';}"
+                + "if(typeof r.syncViewportOnly==='function'){r.syncViewportOnly('apk-scale-" + safeReason + "');return 'capture-scale-sync';}"
+                + "if(typeof r.measure==='function'){r.measure();return 'capture-scale-measure';}"
+                + "return 'capture-scale-missing';"
+                + "}catch(e){return 'capture-scale-error';}"
+        + "})()";
+    }
+
     private void refreshCaptureRenderer(String reason, boolean includeFollowUp) {
         if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
             return;
@@ -7980,6 +8034,7 @@ public class MainActivity extends Activity {
             allowViewerPanBriefly();
             cancelViewerTypingPositionRetries("key-zoom");
             cancelLiveInputVisibilityRetries("key-zoom");
+            syncCaptureRendererAfterViewerScaleChange("key-zoom");
         }
         return true;
     }
@@ -9295,6 +9350,7 @@ public class MainActivity extends Activity {
             allowViewerPanBriefly();
             cancelViewerTypingPositionRetries("scale-change");
             cancelLiveInputVisibilityRetries("scale-change");
+            syncCaptureRendererAfterViewerScaleChange("scale-change");
             // WHY: WebView scale is the Android viewer zoom. Do not translate this
             // into ttyd/tmux font changes or tmux resize commands; one-finger
             // history remains tmux-owned and two-finger positioning stays viewer-owned.

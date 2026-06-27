@@ -59,13 +59,13 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="189"' "current APK version must be bumped for the v2.88 upload/long-press-copy contract"
-require "$MANIFEST" 'android:versionName="2.88"' "current APK version must be bumped for the v2.88 upload/long-press-copy contract"
+require "$MANIFEST" 'android:versionCode="190"' "current APK version must be bumped for the v2.89 zoom repaint contract"
+require "$MANIFEST" 'android:versionName="2.89"' "current APK version must be bumped for the v2.89 zoom repaint contract"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.88";' "client /config proof must report the same v2.88 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.89";' "client /config proof must report the same v2.89 APK contract as the manifest"
 require "$MAIN" 'MediaStore.ACTION_PICK_IMAGES' "Upload must use Android Photo Picker for one-selection screenshots/media on Android 13+"
 require "$MAIN" 'uploadDocumentPickerIntent' "Upload must keep ACTION_OPEN_DOCUMENT fallback for non-photo-picker/files path"
 require "$MAIN" 'uploadUrisFromResult' "Upload result must handle both data URI and ClipData instead of dropping picker returns"
@@ -158,7 +158,8 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=189`, `versionName=2.88`.' "README checkpoint must match the installed v2.88 APK"
+    require "$README" 'Built checkpoint: `versionCode=190`, `versionName=2.89`.' "README checkpoint must match the installed v2.89 APK"
+    require "$README" 'v2.89 keeps v2.88 toolbar/upload/copy behavior' "README must document the v2.89 zoom repaint contract"
     require "$README" 'v2.88 keeps the v2.87 visual-only native shell contract' "README must document the v2.88 upload/long-press-copy contract"
     require "$README" 'v2.87 keeps the visual-only native shell contract' "README must document the v2.87 active/workspace visual contract"
     require "$README" 'v2.86 is a visual-only native shell polish' "README must preserve the v2.86 visual-only native shell contract"
@@ -336,8 +337,8 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.88' "install page must advertise the current v2.88 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>189</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.89' "install page must advertise the current v2.89 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>190</code>' "install page versionCode must match the manifest"
     require "$INSTALL_PAGE" 'Workspace Save/Load/Close' "install page must mention the v2.62 workspace control fix"
     require "$INSTALL_PAGE" 'composer-above-buttons layout' "install page must mention the restored composer-above-buttons layout"
     require "$INSTALL_PAGE" 'compact v2.65 toolbar chrome' "install page must mention the compact bottom toolbar fix"
@@ -454,7 +455,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.88 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.89 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"
@@ -1500,6 +1501,12 @@ require "$MAIN" 'isTopTerminalTap(event)' "only the top tmux/status strip should
 require "$MAIN" 'return event.getY() <= dp(24);' "top tmux/status strip forwarding must stay narrow so shell prompt taps open the native composer"
 require "$MAIN" 'terminal body taps open the native composer' "terminal body tap WHY comment must preserve native composer ownership"
 require "$MAIN" 'public void onScaleChanged(WebView view, float oldScale, float newScale)' "Android/WebView zoom changes must be tracked"
+require "$MAIN" 'syncCaptureRendererAfterViewerScaleChange("scale-change")' "WebView pinch scale changes must trigger capture-renderer geometry repaint"
+require "$MAIN" 'captureRendererViewportOnlyScaleReturnScript' "APK scale repaint must use a capture-renderer geometry-only script"
+require "$MAIN" "r.syncViewportOnly('apk-scale-" "APK scale repaint must call the renderer viewport-only hook instead of fetching rows directly"
+require "$MAIN" 'postInvalidateOnAnimation' "APK scale repaint must invalidate the WebView compositor after zoom changes"
+require "$MANTIS_CONTROL_SERVER" 'syncViewportOnly,setWindowId' "Mantis capture renderer must expose geometry-only sync to the APK scale path"
+require "$MANTIS_CONTROL_SERVER" 'geometry-only hook from WebView.onScaleChanged' "Mantis capture renderer WHY comment must preserve the zoom-out black repaint owner"
 require "$MAIN" 'Do not translate this' "WebView zoom must not be converted into tmux/font resize behavior"
 require "$MAIN" 'handleViewerZoomKey' "hardware/automation zoom keys must create a real WebView zoomed proof state"
 require "$MAIN" 'KEYCODE_ZOOM_IN' "zoom-in key must be wired to WebView zoom for real zoomed pan proof"

@@ -92,7 +92,12 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=189`, `versionName=2.88`.
+- Built checkpoint: `versionCode=190`, `versionName=2.89`.
+- v2.89 keeps v2.88 toolbar/upload/copy behavior and adds a native WebView
+  scale repaint guard: two-finger zoom changes invalidate the viewer compositor
+  and call the capture renderer's geometry-only viewport sync, without resizing
+  tmux, reloading WebView, resetting zoom, fetching rows directly mid-pinch, or
+  changing one-finger `/touch-scroll` ownership.
 - v2.88 keeps the v2.87 visual-only native shell contract, moves direct Upload
   into Workspace's old top-row slot, keeps Workspace visible in Upload's old
   second-row slot, and makes terminal-body long-press open a native selectable

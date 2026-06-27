@@ -1507,6 +1507,8 @@ require "$MAIN" "r.syncViewportOnly('apk-scale-" "APK scale repaint must call th
 require "$MAIN" 'postInvalidateOnAnimation' "APK scale repaint must invalidate the WebView compositor after zoom changes"
 require "$MANTIS_CONTROL_SERVER" 'syncViewportOnly,setWindowId' "Mantis capture renderer must expose geometry-only sync to the APK scale path"
 require "$MANTIS_CONTROL_SERVER" 'geometry-only hook from WebView.onScaleChanged' "Mantis capture renderer WHY comment must preserve the zoom-out black repaint owner"
+require "$MANTIS_CONTROL_SERVER" 'function zoomOutRowBufferRows' "Mantis capture renderer must keep a small row buffer for immediate zoom-out visibility"
+require "$MANTIS_CONTROL_SERVER" 'newly exposed area is' "Mantis capture renderer row-buffer WHY comment must preserve the black zoom-out root cause"
 require "$MAIN" 'Do not translate this' "WebView zoom must not be converted into tmux/font resize behavior"
 require "$MAIN" 'handleViewerZoomKey' "hardware/automation zoom keys must create a real WebView zoomed proof state"
 require "$MAIN" 'KEYCODE_ZOOM_IN' "zoom-in key must be wired to WebView zoom for real zoomed pan proof"

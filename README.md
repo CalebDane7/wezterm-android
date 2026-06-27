@@ -92,7 +92,11 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=192`, `versionName=2.91`.
+- Built checkpoint: `versionCode=193`, `versionName=2.92`.
+- v2.92 keeps Desktop as the protected default and changes Settings from a
+  status-looking `Viewport mode: Mobile` row into an explicit
+  `Switch to Desktop viewport` / `Switch to Mobile viewport` action, so Mobile
+  can always switch back without touching Active Sessions or resizing tmux.
 - v2.91 keeps the integrated zoom/viewport/upload renderer work and makes the
   bottom Close control neutral slate, so red is reserved for Stop and green is
   reserved for Start/Send without changing any button handlers.

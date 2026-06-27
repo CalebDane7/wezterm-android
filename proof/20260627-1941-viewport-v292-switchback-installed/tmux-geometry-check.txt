@@ -1,0 +1,3 @@
+geometry_changed={}
+missing_windows=[]
+new_windows=[]

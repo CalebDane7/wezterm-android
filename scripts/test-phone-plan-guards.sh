@@ -59,13 +59,13 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="192"' "current APK version must be bumped for the v2.91 close-neutral visual contract"
-require "$MANIFEST" 'android:versionName="2.91"' "current APK version must be bumped for the v2.91 close-neutral visual contract"
+require "$MANIFEST" 'android:versionCode="193"' "current APK version must be bumped for the v2.92 viewport switch-back contract"
+require "$MANIFEST" 'android:versionName="2.92"' "current APK version must be bumped for the v2.92 viewport switch-back contract"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.91";' "client /config proof must report the same v2.91 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.92";' "client /config proof must report the same v2.92 APK contract as the manifest"
 require "$MAIN" 'MediaStore.ACTION_PICK_IMAGES' "Upload must use Android Photo Picker for one-selection screenshots/media on Android 13+"
 require "$MAIN" 'uploadDocumentPickerIntent' "Upload must keep ACTION_OPEN_DOCUMENT fallback for non-photo-picker/files path"
 require "$MAIN" 'uploadUrisFromResult' "Upload result must handle both data URI and ClipData instead of dropping picker returns"
@@ -99,6 +99,12 @@ require "$MAIN" 'PREF_VIEWPORT_MODE = "viewport_mode"' "APK must persist the Des
 require "$MAIN" 'VIEWPORT_MODE_DESKTOP = "desktop"' "APK must name the protected fixed-column Desktop viewport mode"
 require "$MAIN" 'VIEWPORT_MODE_MOBILE = "mobile"' "APK must name the phone-width Mobile viewport mode"
 require "$MAIN" 'MOBILE_VIEWPORT_MIN_FONT_SIZE = 14' "Mobile viewport must raise the renderer font enough to reduce pinch dependence"
+require "$MAIN" 'Switch to Desktop viewport' "Settings must expose an obvious Mobile-to-Desktop switch-back action"
+require "$MAIN" 'Switch to Mobile viewport' "Settings must expose an obvious Desktop-to-Mobile switch action"
+require "$MAIN" 'Viewport mode choices' "Settings must keep the detailed Desktop/Mobile chooser reachable"
+require "$MAIN" 'Use Desktop: fixed 132-column zoom/pan' "Viewport mode dialog must make Desktop selection explicit"
+require "$MAIN" 'Use Mobile: fit phone width' "Viewport mode dialog must make Mobile selection explicit"
+require "$MAIN" 'a status-looking "Viewport mode: Mobile" row' "Viewport switch WHY comment must preserve the user-reported switch-back confusion"
 require "$MAIN" 'String colsQuery = mobileViewport' "APK viewport URL builder must branch fixed cols by viewport mode"
 require "$MAIN" '? ""' "Mobile viewport mode must omit fixed cols so the capture renderer auto-fits Android width"
 require "$MAIN" '"&cols=" + APK_CAPTURE_RENDERER_COLS' "Desktop viewport mode must keep the protected 132-column capture renderer"
@@ -169,7 +175,9 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=192`, `versionName=2.91`.' "README checkpoint must match the installed v2.91 APK"
+    require "$README" 'Built checkpoint: `versionCode=193`, `versionName=2.92`.' "README checkpoint must match the installed v2.92 APK"
+    require "$README" 'status-looking `Viewport mode: Mobile` row' "README must document the v2.92 viewport switch-back complaint"
+    require "$README" 'Switch to Desktop viewport' "README must document the v2.92 explicit switch-back action"
     require "$README" 'red is reserved for Stop' "README must document the v2.91 close-neutral toolbar contract"
     require "$README" 'reserved for Start/Send' "README must document the v2.91 close-neutral toolbar contract"
     require "$README" 'v2.89 keeps v2.88 toolbar/upload/copy behavior' "README must document the v2.89 zoom repaint contract"
@@ -350,8 +358,8 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.91' "install page must advertise the current v2.91 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>192</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.92' "install page must advertise the current v2.92 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>193</code>' "install page versionCode must match the manifest"
     require "$INSTALL_PAGE" 'Workspace Save/Load/Close' "install page must mention the v2.62 workspace control fix"
     require "$INSTALL_PAGE" 'composer-above-buttons layout' "install page must mention the restored composer-above-buttons layout"
     require "$INSTALL_PAGE" 'compact v2.65 toolbar chrome' "install page must mention the compact bottom toolbar fix"
@@ -468,7 +476,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.91 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.92 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"

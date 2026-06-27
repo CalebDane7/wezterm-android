@@ -124,7 +124,7 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
     private static final String PREF_PROMPT_DRAFT_PREFIX = "prompt_draft_";
-    private static final String APP_VERSION_NAME = "2.91";
+    private static final String APP_VERSION_NAME = "2.92";
     private static final int PREMIUM_CONTROL_CORNER_RADIUS_DP = 14;
     private static final int PREMIUM_DIALOG_CORNER_RADIUS_DP = 22;
     private static final int ACTIVE_SESSION_ROW_GAP_DP = 10;
@@ -3973,8 +3973,10 @@ public class MainActivity extends Activity {
 
     private void showToolbarSettings() {
         hideDockedPromptComposerForNavigation("toolbar-settings-dialog");
+        boolean mobileViewport = VIEWPORT_MODE_MOBILE.equals(currentViewportMode());
         final String[] labels = {
-                "Viewport mode: " + viewportModeLabel(),
+                mobileViewport ? "Switch to Desktop viewport" : "Switch to Mobile viewport",
+                "Viewport mode choices",
                 "Refresh",
                 "Scroll",
                 "Option keys",
@@ -3984,14 +3986,21 @@ public class MainActivity extends Activity {
                 .setTitle("Settings")
                 .setItems(labels, (dialog, which) -> {
                     if (which == 0) {
-                        showViewportModeSettings();
+                        // WHY: a status-looking "Viewport mode: Mobile" row
+                        // failed real-phone proof because it did not read like
+                        // a switch-back control. Keep an explicit first-row
+                        // action so Mobile can always return to protected
+                        // Desktop without resizing tmux or using Active.
+                        setViewportMode(mobileViewport ? VIEWPORT_MODE_DESKTOP : VIEWPORT_MODE_MOBILE);
                     } else if (which == 1) {
-                        refreshTerminalTransport();
+                        showViewportModeSettings();
                     } else if (which == 2) {
-                        showViewControls();
+                        refreshTerminalTransport();
                     } else if (which == 3) {
-                        showKeyControls();
+                        showViewControls();
                     } else if (which == 4) {
+                        showKeyControls();
+                    } else if (which == 5) {
                         showNeedsAttention();
                     }
                 })
@@ -4002,8 +4011,8 @@ public class MainActivity extends Activity {
     private void showViewportModeSettings() {
         hideDockedPromptComposerForNavigation("viewport-mode-settings");
         final String[] labels = {
-                "Desktop: fixed 132-column zoom/pan",
-                "Mobile: fit phone width"
+                "Use Desktop: fixed 132-column zoom/pan",
+                "Use Mobile: fit phone width"
         };
         int checked = VIEWPORT_MODE_MOBILE.equals(currentViewportMode()) ? 1 : 0;
         new AlertDialog.Builder(this)

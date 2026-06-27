@@ -17,7 +17,7 @@ See [Apple User Support](docs/apple-users.md).
 - Opens as a real Android app named `WEzterm`, not a Chrome shortcut.
 - Connects to the desktop terminal over Tailscale.
 - Shows a bottom toolbar with the primary work controls: `New`, `Old`,
-  `Upload`, `Active`, `Bottom`, `Copy/Paste`, `Workspace`, `Tools`, `Close`,
+  `Upload`, `Active`, `Bottom`, `Copy/Paste`, `Workspace`, `Settings`, `Close`,
   `Start`, and `Stop`.
 - Uses stable tmux window IDs for selecting and closing active sessions.
 - Orders the Active Sessions picker newest-first by tmux activity and snaps it to
@@ -27,8 +27,8 @@ See [Apple User Support](docs/apple-users.md).
 - Shows `Active Sessions` for currently open desktop/phone sessions.
 - Shows `Old Sessions` as saved parent Codex sessions grouped by exact date,
   with subagent sessions filtered out so helper agents do not pollute the list.
-- Keeps `Refresh` and `Scroll` recovery under `Tools`, so the rare repair paths
-  remain available without taking daily toolbar space.
+- Keeps `Refresh` and `Scroll` recovery under `Settings`, so the rare repair
+  paths remain available without taking daily toolbar space.
 - Keeps live-bottom recovery visible as `Bottom` and automatic after tab
   switching, so a bad gesture/read-mode state never traps typing.
 - Provides a visible `Copy/Paste` menu so phone clipboard text can be pasted
@@ -93,6 +93,11 @@ Android users use the native APK.
 ## Current Checkpoint
 
 - Built checkpoint: `versionCode=190`, `versionName=2.89`.
+- Unreleased viewport Settings slice keeps Desktop as the default fixed
+  132-column renderer with existing zoom/pan behavior, and adds an optional
+  Mobile viewport mode under `Settings` that omits the fixed `cols` query so
+  the existing read-only capture renderer fits Android width and wraps rows
+  without resizing shared tmux.
 - v2.89 keeps v2.88 toolbar/upload/copy behavior and adds a native WebView
   scale repaint guard: two-finger zoom changes invalidate the viewer compositor
   and call the capture renderer's geometry-only viewport sync, without resizing
@@ -113,7 +118,7 @@ Android users use the native APK.
 - v2.86 is a visual-only native shell polish: it keeps the v2.85 renderer,
   Send, scroll, IME, Active/Old data, stable `@windowId`, Upload, and
   Start/Stop/Close handlers intact while improving the Android chrome. The
-  toolbar removes always-visible `Refresh` and `Scroll` in favor of `Tools`,
+  toolbar removes always-visible `Refresh` and `Scroll` in favor of `Settings`,
   keeps those recovery actions reachable, uses smoother 14dp controls and a
   22dp Active Sessions shell, adds one-pixel borders plus native elevation for
   separation/dimensionality, changes Stop/Close from bright red to a muted

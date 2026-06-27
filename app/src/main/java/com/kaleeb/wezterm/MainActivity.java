@@ -118,6 +118,7 @@ public class MainActivity extends Activity {
     private static final String PREFS = "wezterm";
     private static final String PREF_PIN_REQUESTED = "pin_requested";
     private static final String PREF_FONT_SIZE = "font_size";
+    private static final String PREF_VIEWPORT_MODE = "viewport_mode";
     private static final String PREF_UPLOAD_PATH_PREFIX = "upload_path_";
     private static final String PREF_UPLOAD_FILENAME_PREFIX = "upload_filename_";
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
@@ -126,6 +127,10 @@ public class MainActivity extends Activity {
     private static final String APP_VERSION_NAME = "2.89";
     private static final int PREMIUM_CONTROL_CORNER_RADIUS_DP = 14;
     private static final int PREMIUM_DIALOG_CORNER_RADIUS_DP = 22;
+    private static final int ACTIVE_SESSION_ROW_GAP_DP = 10;
+    private static final int ACTIVE_SESSION_CARD_VERTICAL_PADDING_DP = 11;
+    private static final int ACTIVE_SESSION_TITLE_LINE_SPACING_DP = 3;
+    private static final int ACTIVE_SESSION_SCROLL_BOTTOM_INSET_DP = 18;
     private static final int PREMIUM_STATUS_DOT_SP = 18;
     private static final int PREMIUM_CONTROL_STROKE_COLOR = Color.rgb(78, 84, 108);
     private static final int PREMIUM_BUTTON_ELEVATION_DP = 2;
@@ -138,8 +143,11 @@ public class MainActivity extends Activity {
     private static final int TERMINAL_IME_OPTIONS = EditorInfo.IME_ACTION_SEND
             | EditorInfo.IME_FLAG_NO_FULLSCREEN;
     private static final int DEFAULT_FONT_SIZE = 12;
+    private static final int MOBILE_VIEWPORT_MIN_FONT_SIZE = 14;
     private static final int MIN_FONT_SIZE = 8;
     private static final int MAX_FONT_SIZE = 18;
+    private static final String VIEWPORT_MODE_DESKTOP = "desktop";
+    private static final String VIEWPORT_MODE_MOBILE = "mobile";
     private static final int TOOLBAR_HEIGHT_DP = 92;
     private static final int TITLE_STRIP_HEIGHT_DP = 18;
     private static final int PROMPT_COMPOSER_INPUT_HEIGHT_DP = 44;
@@ -176,6 +184,7 @@ public class MainActivity extends Activity {
     private static final float WEBVIEW_ZOOMED_SCALE_THRESHOLD = 1.02f;
     private static final float ZOOMED_HORIZONTAL_PAN_DRIFT_RATIO = 0.70f;
     private static final long VIEWER_PAN_UNLOCK_MS = 2500;
+    private static final long PINCH_GEOMETRY_ONLY_SYNC_MIN_MS = 64;
     private static final long TERMINAL_FOCUS_BURST_MIN_INTERVAL_MS = 700;
     private static final long LIVE_INPUT_VISIBILITY_BURST_MIN_INTERVAL_MS = 220;
     private static final long PROMPT_COMPOSER_SOFT_INPUT_MIN_INTERVAL_MS = 900;
@@ -203,6 +212,7 @@ public class MainActivity extends Activity {
     private static final int PASSIVE_TAB_OPEN_BOTTOM_RETRY_LIMIT = 5;
     private static final long PASSIVE_TAB_OPEN_BOTTOM_RETRY_MS = 260;
     private static final int REQUEST_UPLOAD_MEDIA = 5201;
+    private static final int MAX_UPLOAD_PICKER_ITEMS = 20;
     private static final long MAX_MEDIA_UPLOAD_BYTES = 2L * 1024L * 1024L * 1024L;
     private static final int MEDIA_UPLOAD_STREAM_CHUNK_BYTES = 1024 * 1024;
     private static final int LOCAL_HISTORY_CHUNK_LINES = 500;
@@ -284,6 +294,7 @@ public class MainActivity extends Activity {
     private long captureRendererScaleSyncGeneration = 0;
     private boolean captureRendererScaleSyncDeferredUntilTouchRelease = false;
     private String captureRendererScaleSyncDeferredReason = "scale-change";
+    private long lastCaptureRendererGeometryOnlyScaleSyncAtMs = 0;
     private long terminalTouchGestureGeneration = 0;
     private long terminalLongPressCopyGeneration = 0;
     private String terminalTouchStableWindowId = "";
@@ -440,8 +451,8 @@ public class MainActivity extends Activity {
             }
             for (Uri uri : uris) {
                 prepareReadAccessForUpload(data, uri);
-                uploadMediaUri(uri, false);
             }
+            uploadMediaUrisSequentially(uris, false);
         }
     }
 
@@ -1018,17 +1029,17 @@ public class MainActivity extends Activity {
         });
         bottomRow.addView(copyPasteButton);
         bottomRow.addView(toolbarNavigationButton("Workspace", v -> showWorkspaces()));
-        // WHY: the user does not use Refresh or Scroll as daily actions, but plan
-        // history protects both as recovery paths. Remove those two labels from
-        // prime toolbar space and keep the same handlers behind one secondary
-        // visual control so this remains a layout/presentation change only.
-        Button toolsButton = toolbarNavigationButton("Tools", v -> showToolbarTools());
-        toolsButton.setOnLongClickListener(v -> {
-            hideDockedPromptComposerForNavigation("toolbar-tools-long-press");
+        // WHY: Settings is the right home for persistent APK preferences such as
+        // Desktop/Mobile viewport mode, but the protected Refresh/Scroll recovery
+        // actions still live here. This is a container rename, not a control
+        // removal or gesture-owner change.
+        Button settingsButton = toolbarNavigationButton("Settings", v -> showToolbarSettings());
+        settingsButton.setOnLongClickListener(v -> {
+            hideDockedPromptComposerForNavigation("toolbar-settings-long-press");
             showCommandPalette();
             return true;
         });
-        bottomRow.addView(toolsButton);
+        bottomRow.addView(settingsButton);
         // WHY: Close kills the selected tmux window — the other destructive action,
         // so it shares Stop's red role. Construction still goes through the guarded
         // toolbarNavigationButton("Close", v -> confirmClose()) call; the button is
@@ -1096,7 +1107,7 @@ public class MainActivity extends Activity {
 
     private Button toolbarButton(String label, View.OnClickListener listener) {
         Button button = button(label, listener);
-        if (!"Tools".equals(label) && !"Copy/Paste".equals(label) && !"Start".equals(label)) {
+        if (!"Settings".equals(label) && !"Copy/Paste".equals(label) && !"Start".equals(label)) {
             installPlainToolbarTapHandler(button);
         }
         // WHY: 10-11sp toolbar labels were a logged "font too small" complaint on
@@ -2529,19 +2540,47 @@ public class MainActivity extends Activity {
         String targetQuery = hasStableWindowId(targetKey)
                 ? "&windowId=" + urlEncode(targetKey.trim())
                 : "";
+        String viewportMode = currentViewportMode();
+        boolean mobileViewport = VIEWPORT_MODE_MOBILE.equals(viewportMode);
+        String colsQuery = mobileViewport
+                ? ""
+                : "&cols=" + APK_CAPTURE_RENDERER_COLS;
+        int rendererFontSize = rendererFontSizeForViewportMode(fontSize, viewportMode);
         return baseUrl
-                + "?fontSize=" + fontSize
-                // WHY: the capture renderer is read-only, so it must emulate the
-                // old readable 132-column APK grid without resizing tmux. Letting
-                // it auto-measure the narrow WebView produced the 55-column Claude
-                // wrap regression; resizing tmux would revive the Windows/web
-                // black-box regression.
-                + "&cols=" + APK_CAPTURE_RENDERER_COLS
+                + "?fontSize=" + rendererFontSize
+                + "&viewportMode=" + urlEncode(viewportMode)
+                // WHY: Desktop mode is the protected current APK behavior: the
+                // capture renderer emulates the old readable 132-column grid
+                // without resizing tmux. Mobile mode intentionally omits `cols`
+                // so the existing read-only renderer measures Android width and
+                // wraps to the phone viewport without touching shared tmux
+                // geometry, pinch ownership, or the 132-column Desktop path.
+                + colsQuery
                 + targetQuery
                 + "&disableLeaveAlert=true"
                 + "&rendererType=dom"
                 + "&customGlyphs=false"
                 + "&scrollOnUserInput=true";
+    }
+
+    private String currentViewportMode() {
+        if (prefs == null) {
+            return VIEWPORT_MODE_DESKTOP;
+        }
+        String mode = prefs.getString(PREF_VIEWPORT_MODE, VIEWPORT_MODE_DESKTOP);
+        return VIEWPORT_MODE_MOBILE.equals(mode) ? VIEWPORT_MODE_MOBILE : VIEWPORT_MODE_DESKTOP;
+    }
+
+    private int rendererFontSizeForViewportMode(int fontSize, String viewportMode) {
+        int bounded = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, fontSize));
+        if (VIEWPORT_MODE_MOBILE.equals(viewportMode)) {
+            return Math.max(MOBILE_VIEWPORT_MIN_FONT_SIZE, bounded);
+        }
+        return bounded;
+    }
+
+    private String viewportModeLabel() {
+        return VIEWPORT_MODE_MOBILE.equals(currentViewportMode()) ? "Mobile" : "Desktop";
     }
 
     private boolean isKnownTerminalUrl(String url) {
@@ -3932,29 +3971,67 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void showToolbarTools() {
-        hideDockedPromptComposerForNavigation("toolbar-tools-dialog");
+    private void showToolbarSettings() {
+        hideDockedPromptComposerForNavigation("toolbar-settings-dialog");
         final String[] labels = {
+                "Viewport mode: " + viewportModeLabel(),
                 "Refresh",
                 "Scroll",
                 "Option keys",
                 "Needs Attention"
         };
         new AlertDialog.Builder(this)
-                .setTitle("Tools")
+                .setTitle("Settings")
                 .setItems(labels, (dialog, which) -> {
                     if (which == 0) {
-                        refreshTerminalTransport();
+                        showViewportModeSettings();
                     } else if (which == 1) {
-                        showViewControls();
+                        refreshTerminalTransport();
                     } else if (which == 2) {
-                        showKeyControls();
+                        showViewControls();
                     } else if (which == 3) {
+                        showKeyControls();
+                    } else if (which == 4) {
                         showNeedsAttention();
                     }
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
+    }
+
+    private void showViewportModeSettings() {
+        hideDockedPromptComposerForNavigation("viewport-mode-settings");
+        final String[] labels = {
+                "Desktop: fixed 132-column zoom/pan",
+                "Mobile: fit phone width"
+        };
+        int checked = VIEWPORT_MODE_MOBILE.equals(currentViewportMode()) ? 1 : 0;
+        new AlertDialog.Builder(this)
+                .setTitle("Viewport mode")
+                .setSingleChoiceItems(labels, checked, (dialog, which) -> {
+                    String nextMode = which == 1 ? VIEWPORT_MODE_MOBILE : VIEWPORT_MODE_DESKTOP;
+                    setViewportMode(nextMode);
+                    dialog.dismiss();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void setViewportMode(String nextMode) {
+        String normalized = VIEWPORT_MODE_MOBILE.equals(nextMode)
+                ? VIEWPORT_MODE_MOBILE
+                : VIEWPORT_MODE_DESKTOP;
+        String current = currentViewportMode();
+        if (normalized.equals(current)) {
+            toast("Viewport mode " + viewportModeLabel());
+            return;
+        }
+        prefs.edit().putString(PREF_VIEWPORT_MODE, normalized).apply();
+        // WHY: viewport mode is a renderer query contract only. Reload the
+        // capture page with the same stable target, but never resize tmux or
+        // alter the touch/zoom handlers that protect Desktop mode.
+        loadTerminal();
+        toast("Viewport mode " + viewportModeLabel());
     }
 
     private void showViewControls() {
@@ -4687,23 +4764,20 @@ public class MainActivity extends Activity {
     private void pickMediaForUpload() {
         // WHY: screenshots/media should move from the phone to the desktop over
         // the same Tailscale control channel as Copy/Paste. Android's Photo
-        // Picker returns a user-selected image/video URI directly after selection
-        // without broad storage access or the old file-picker confirmation step;
-        // keep ACTION_OPEN_DOCUMENT as the fallback/files path when Photo Picker
-        // is unavailable.
+        // Picker returns user-selected URIs without broad storage access. The
+        // multi-upload flow needs images, videos, and generic files in one picker,
+        // so ACTION_OPEN_DOCUMENT is primary and Photo Picker remains the
+        // media-only fallback when DocumentsUI cannot handle the request.
         // WHY: launching Android's document picker pauses/resumes the Activity.
         // Treat the return as a native-dialog transition, not a terminal failure,
         // so the blank watchdog and passive page lifecycle probes cannot reload
         // or scroll the WebView while the user is trying to attach media.
         nativePickerQuietUntilMs = System.currentTimeMillis() + 8000;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            Intent photoPicker = new Intent(MediaStore.ACTION_PICK_IMAGES);
-            photoPicker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            if (launchUploadPicker(photoPicker, "photo-picker")) {
+        if (!launchUploadPicker(uploadDocumentPickerIntent(), "document-picker")) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                    && launchUploadPicker(uploadPhotoPickerIntent(), "photo-picker")) {
                 return;
             }
-        }
-        if (!launchUploadPicker(uploadDocumentPickerIntent(), "document-picker")) {
             nativePickerQuietUntilMs = 0;
             toast("No Android file picker available");
         }
@@ -4730,6 +4804,7 @@ public class MainActivity extends Activity {
         intent.setType("*/*");
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         intent.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
         intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
                 "image/*",
                 "video/*",
@@ -4738,6 +4813,18 @@ public class MainActivity extends Activity {
                 "application/octet-stream"
         });
         return intent;
+    }
+
+    private Intent uploadPhotoPickerIntent() {
+        Intent photoPicker = new Intent(MediaStore.ACTION_PICK_IMAGES);
+        photoPicker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            int maxItems = Math.min(MAX_UPLOAD_PICKER_ITEMS, MediaStore.getPickImagesMaxLimit());
+            if (maxItems > 1) {
+                photoPicker.putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, maxItems);
+            }
+        }
+        return photoPicker;
     }
 
     private void handleIncomingMediaShare(Intent intent) {
@@ -4749,14 +4836,14 @@ public class MainActivity extends Activity {
             List<Uri> uris = uploadUrisFromShareIntent(intent);
             for (Uri uri : uris) {
                 prepareReadAccessForUpload(intent, uri);
-                uploadMediaUri(uri, true);
             }
+            uploadMediaUrisSequentially(uris, true);
         } else if (Intent.ACTION_SEND_MULTIPLE.equals(action)) {
             List<Uri> uris = uploadUrisFromShareIntent(intent);
             for (Uri uri : uris) {
                 prepareReadAccessForUpload(intent, uri);
-                uploadMediaUri(uri, true);
             }
+            uploadMediaUrisSequentially(uris, true);
         }
     }
 
@@ -4841,6 +4928,49 @@ public class MainActivity extends Activity {
     }
 
     private void uploadMediaUri(Uri uri, boolean fromShare) {
+        List<Uri> uris = new ArrayList<>();
+        addUploadUriIfMissing(uris, uri);
+        uploadMediaUrisSequentially(uris, fromShare);
+    }
+
+    private void uploadMediaUrisSequentially(List<Uri> uris, boolean fromShare) {
+        if (uris == null || uris.isEmpty()) {
+            return;
+        }
+        // WHY: a multi-select picker can return several files at once, but each
+        // returned desktop path must be appended to the same native composer in a
+        // stable order. Uploading one selected URI per HTTP thread races composer
+        // staging and can make the last-finished file look like the only upload.
+        final List<Uri> uploadUris = new ArrayList<>(uris);
+        final String uploadTargetWindowId = uploadAssociationWindowId();
+        Log.i(UPLOAD_LOG_TAG, "upload-batch-start source=" + (fromShare ? "share" : "picker")
+                + " count=" + uploadUris.size()
+                + " targetWindow=" + uploadTargetWindowId);
+        new Thread(() -> {
+            int successCount = 0;
+            for (Uri uri : uploadUris) {
+                try {
+                    JSONObject payload = performMediaUpload(uri, fromShare, uploadTargetWindowId);
+                    successCount++;
+                    uiHandler.post(() -> showUploadedMediaResult(payload, uploadTargetWindowId));
+                } catch (Exception exc) {
+                    Log.e(UPLOAD_LOG_TAG, "upload-failed source=" + (fromShare ? "share" : "picker")
+                            + " scheme=" + (uri == null ? "" : uri.getScheme())
+                            + " authority=" + (uri == null ? "" : uri.getAuthority())
+                            + " error=" + exc.getClass().getSimpleName(), exc);
+                    wakeLaptopForTerminal("upload-unreachable");
+                    scheduleTerminalWakeRetry("upload-unreachable");
+                    uiHandler.post(() -> toast("Media upload failed: " + exc.getMessage()));
+                }
+            }
+            Log.i(UPLOAD_LOG_TAG, "upload-batch-complete source=" + (fromShare ? "share" : "picker")
+                    + " count=" + uploadUris.size()
+                    + " success=" + successCount
+                    + " targetWindow=" + uploadTargetWindowId);
+        }).start();
+    }
+
+    private JSONObject performMediaUpload(Uri uri, boolean fromShare, String uploadTargetWindowId) throws Exception {
         String displayName = queryMediaDisplayName(uri);
         String contentType = getContentResolver().getType(uri);
         if (contentType == null || contentType.trim().isEmpty()) {
@@ -4848,72 +4978,59 @@ public class MainActivity extends Activity {
         }
         long declaredSize = queryMediaSize(uri);
         if (declaredSize > MAX_MEDIA_UPLOAD_BYTES) {
-            toast("Media is too large for phone upload: " + humanBytes(declaredSize));
-            return;
+            throw new IllegalArgumentException("Media is too large for phone upload: " + humanBytes(declaredSize));
         }
         String finalContentType = contentType;
-        String uploadTargetWindowId = uploadAssociationWindowId();
         Log.i(UPLOAD_LOG_TAG, "upload-start source=" + (fromShare ? "share" : "picker")
                 + " scheme=" + uri.getScheme()
                 + " authority=" + uri.getAuthority()
                 + " mime=" + finalContentType
                 + " declaredSize=" + declaredSize
                 + " targetWindow=" + uploadTargetWindowId);
-        new Thread(() -> {
-            HttpURLConnection connection = null;
-            try {
-                URL url = new URL(controlUrlForPath("/upload-media?filename=" + urlEncode(displayName)));
-                connection = (HttpURLConnection) url.openConnection();
-                connection.setRequestMethod("POST");
-                connection.setDoOutput(true);
-                connection.setConnectTimeout(10000);
-                connection.setReadTimeout(10 * 60 * 1000);
-                connection.setRequestProperty("Content-Type", finalContentType);
-                connection.setRequestProperty("X-WEzTerm-Filename", displayName);
-                if (declaredSize >= 0) {
-                    // WHY: Android's HttpURLConnection docs warn that POST bodies are
-                    // buffered in memory unless a streaming mode is selected. For
-                    // videos, fixed-length streaming is the fastest safe path when
-                    // OpenableColumns.SIZE is available because it sends the selected
-                    // URI straight to the desktop without building a giant byte[].
-                    connection.setFixedLengthStreamingMode(declaredSize);
-                } else {
-                    // WHY: some content providers do not expose a size. Chunked
-                    // streaming keeps the upload video-safe instead of falling back
-                    // to HttpURLConnection's full-body memory buffer.
-                    connection.setChunkedStreamingMode(MEDIA_UPLOAD_STREAM_CHUNK_BYTES);
-                }
-                long uploadedBytes;
-                try (OutputStream outputStream = connection.getOutputStream()) {
-                    uploadedBytes = streamUriToOutput(uri, outputStream);
-                }
-                if (uploadedBytes <= 0) {
-                    throw new IllegalArgumentException("Selected media is empty");
-                }
-                int code = connection.getResponseCode();
-                InputStream stream = code >= 200 && code < 400
-                        ? connection.getInputStream()
-                        : connection.getErrorStream();
-                String body = readAll(stream);
-                Log.i(UPLOAD_LOG_TAG, "upload-response code=" + code
-                        + " bytes=" + uploadedBytes
-                        + " bodyChars=" + (body == null ? 0 : body.length()));
-                JSONObject payload = new JSONObject(body);
-                uiHandler.post(() -> showUploadedMediaResult(payload, uploadTargetWindowId));
-            } catch (Exception exc) {
-                Log.e(UPLOAD_LOG_TAG, "upload-failed source=" + (fromShare ? "share" : "picker")
-                        + " scheme=" + uri.getScheme()
-                        + " authority=" + uri.getAuthority()
-                        + " error=" + exc.getClass().getSimpleName(), exc);
-                wakeLaptopForTerminal("upload-unreachable");
-                scheduleTerminalWakeRetry("upload-unreachable");
-                uiHandler.post(() -> toast("Media upload failed: " + exc.getMessage()));
-            } finally {
-                if (connection != null) {
-                    connection.disconnect();
-                }
+        HttpURLConnection connection = null;
+        try {
+            URL url = new URL(controlUrlForPath("/upload-media?filename=" + urlEncode(displayName)));
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setDoOutput(true);
+            connection.setConnectTimeout(10000);
+            connection.setReadTimeout(10 * 60 * 1000);
+            connection.setRequestProperty("Content-Type", finalContentType);
+            connection.setRequestProperty("X-WEzTerm-Filename", displayName);
+            if (declaredSize >= 0) {
+                // WHY: Android's HttpURLConnection docs warn that POST bodies are
+                // buffered in memory unless a streaming mode is selected. For
+                // videos, fixed-length streaming is the fastest safe path when
+                // OpenableColumns.SIZE is available because it sends the selected
+                // URI straight to the desktop without building a giant byte[].
+                connection.setFixedLengthStreamingMode(declaredSize);
+            } else {
+                // WHY: some content providers do not expose a size. Chunked
+                // streaming keeps the upload video-safe instead of falling back
+                // to HttpURLConnection's full-body memory buffer.
+                connection.setChunkedStreamingMode(MEDIA_UPLOAD_STREAM_CHUNK_BYTES);
             }
-        }).start();
+            long uploadedBytes;
+            try (OutputStream outputStream = connection.getOutputStream()) {
+                uploadedBytes = streamUriToOutput(uri, outputStream);
+            }
+            if (uploadedBytes <= 0) {
+                throw new IllegalArgumentException("Selected media is empty");
+            }
+            int code = connection.getResponseCode();
+            InputStream stream = code >= 200 && code < 400
+                    ? connection.getInputStream()
+                    : connection.getErrorStream();
+            String body = readAll(stream);
+            Log.i(UPLOAD_LOG_TAG, "upload-response code=" + code
+                    + " bytes=" + uploadedBytes
+                    + " bodyChars=" + (body == null ? 0 : body.length()));
+            return new JSONObject(body);
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
     }
 
     private long streamUriToOutput(Uri uri, OutputStream outputStream) throws Exception {
@@ -5269,10 +5386,17 @@ public class MainActivity extends Activity {
         ScrollView scrollView = new ScrollView(this);
         scrollView.setFocusable(false);
         scrollView.setFillViewport(false);
+        // WHY: summary-plus-tail titles are deliberately longer now. The native
+        // picker must create breathing room around wrapped rows instead of
+        // shortening the title brain or letting the bottom row clip into the
+        // rounded dialog shell.
+        scrollView.setPadding(0, 0, 0, dp(ACTIVE_SESSION_SCROLL_BOTTOM_INSET_DP));
+        scrollView.setClipToPadding(true);
         LinearLayout list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
         list.setFocusable(false);
-        list.setPadding(0, dp(6), 0, dp(2));
+        list.setClipToPadding(false);
+        list.setPadding(dp(4), dp(8), dp(4), dp(ACTIVE_SESSION_SCROLL_BOTTOM_INSET_DP));
         scrollView.addView(list);
 
         final AlertDialog[] dialogRef = new AlertDialog[1];
@@ -5796,12 +5920,20 @@ public class MainActivity extends Activity {
 
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(window.optBoolean("isChild", false) ? dp(18) : 0, dp(4), 0, dp(4));
+        row.setGravity(android.view.Gravity.TOP);
+        row.setClipToPadding(false);
+        row.setPadding(window.optBoolean("isChild", false) ? dp(18) : 0, 0, 0, 0);
 
         LinearLayout openPanel = new LinearLayout(this);
         openPanel.setOrientation(LinearLayout.VERTICAL);
         openPanel.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        openPanel.setPadding(dp(12), dp(8), dp(12), dp(8));
+        openPanel.setClipToPadding(false);
+        openPanel.setPadding(
+                dp(12),
+                dp(ACTIVE_SESSION_CARD_VERTICAL_PADDING_DP),
+                dp(12),
+                dp(ACTIVE_SESSION_CARD_VERTICAL_PADDING_DP)
+        );
         setTouchableBackground(openPanel,
                 window.optBoolean("active", false)
                         ? Color.rgb(51, 58, 78)
@@ -5816,7 +5948,9 @@ public class MainActivity extends Activity {
 
         LinearLayout titleRow = new LinearLayout(this);
         titleRow.setOrientation(LinearLayout.HORIZONTAL);
-        titleRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        titleRow.setGravity(android.view.Gravity.TOP);
+        titleRow.setBaselineAligned(false);
+        titleRow.setClipToPadding(false);
 
         TextView statusDot = new StatusDotTextView(this);
         statusDot.setText("●");
@@ -5834,8 +5968,10 @@ public class MainActivity extends Activity {
         titleText.setSingleLine(false);
         titleText.setMaxLines(Integer.MAX_VALUE);
         titleText.setEllipsize(null);
-        titleText.setIncludeFontPadding(false);
+        titleText.setIncludeFontPadding(true);
         titleText.setHorizontallyScrolling(false);
+        titleText.setLineSpacing(dp(ACTIVE_SESSION_TITLE_LINE_SPACING_DP), 1.0f);
+        titleText.setPadding(0, 0, 0, dp(1));
         // WHY: the full session title is now a long-press copy target. Android
         // child views with long-click listeners can intercept taps instead of
         // letting the parent card open the session, which made Active switching
@@ -5859,10 +5995,12 @@ public class MainActivity extends Activity {
         // before switching or closing it. The dot is driven by control-server
         // pane evidence, not by the mutable title string, so scanability improves
         // without changing the stable windowId close/select target.
-        titleRow.addView(statusDot, new LinearLayout.LayoutParams(
-                dp(24),
-                LinearLayout.LayoutParams.MATCH_PARENT
-        ));
+        LinearLayout.LayoutParams dotParams = new LinearLayout.LayoutParams(
+                dp(28),
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        dotParams.setMargins(0, dp(2), dp(6), 0);
+        titleRow.addView(statusDot, dotParams);
         statusDot.setClickable(true);
         statusDot.setOnClickListener(openSessionClick);
         titleRow.addView(titleText, new LinearLayout.LayoutParams(
@@ -5903,13 +6041,18 @@ public class MainActivity extends Activity {
                 1
         ));
         LinearLayout.LayoutParams closeParams = new LinearLayout.LayoutParams(
-                dp(76),
+                dp(72),
                 LinearLayout.LayoutParams.WRAP_CONTENT
         );
-        close.setMinHeight(dp(56));
-        closeParams.setMargins(dp(8), 0, 0, 0);
+        close.setMinHeight(dp(60));
+        closeParams.setMargins(dp(10), dp(4), 0, dp(4));
         row.addView(close, closeParams);
-        list.addView(row);
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        rowParams.setMargins(0, dp(4), 0, dp(ACTIVE_SESSION_ROW_GAP_DP));
+        list.addView(row, rowParams);
     }
 
     private void addOldSessionRow(
@@ -7790,6 +7933,7 @@ public class MainActivity extends Activity {
             // the pinch, then do one geometry-only sync after release.
             captureRendererScaleSyncDeferredUntilTouchRelease = true;
             captureRendererScaleSyncDeferredReason = reason;
+            syncCaptureRendererGeometryOnlyForLivePinch(reason);
             uiHandler.postDelayed(() -> {
                 if (generation != captureRendererScaleSyncGeneration
                         || terminalMultiTouchGesture
@@ -7809,6 +7953,34 @@ public class MainActivity extends Activity {
             invalidateWebViewAfterViewerScale(reason + "-settle");
             syncCaptureRendererViewportOnlyForScale(reason + "-settle");
         }, 96);
+    }
+
+    private void syncCaptureRendererGeometryOnlyForLivePinch(String reason) {
+        if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (now - lastCaptureRendererGeometryOnlyScaleSyncAtMs < PINCH_GEOMETRY_ONLY_SYNC_MIN_MS) {
+            return;
+        }
+        lastCaptureRendererGeometryOnlyScaleSyncAtMs = now;
+        // WHY: physical zoom-out can expose a newly visible region before release.
+        // During the pinch we may update only visualViewport geometry/prepaint; row
+        // refresh remains deferred until release so pinch does not jump under the
+        // fingers or start network/tmux work mid-gesture.
+        webView.evaluateJavascript(captureRendererGeometryOnlyLivePinchScript(reason), null);
+    }
+
+    private String captureRendererGeometryOnlyLivePinchScript(String reason) {
+        String safeReason = sanitizeJavascriptReason(reason);
+        return "(function(){"
+                + "try{"
+                + "var r=window.__mantisCaptureRenderer;"
+                + "if(!r){return 'not-capture';}"
+                + "if(typeof r.syncViewportGeometryOnly==='function'){r.syncViewportGeometryOnly('apk-scale-geometry-" + safeReason + "');return 'capture-geometry-only';}"
+                + "return 'capture-geometry-missing';"
+                + "}catch(e){return 'capture-geometry-error';}"
+                + "})()";
     }
 
     private void flushDeferredCaptureRendererScaleSync(String reason) {

@@ -1,0 +1,2 @@
+orig_window=@10
+proof_window=@44

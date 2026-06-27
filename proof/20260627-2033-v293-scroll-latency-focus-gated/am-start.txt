@@ -1,0 +1,7 @@
+Starting: Intent { cmp=com.kaleeb.wezterm/.MainActivity }
+Status: ok
+LaunchState: COLD
+Activity: com.kaleeb.wezterm/.MainActivity
+TotalTime: 173
+WaitTime: 174
+Complete

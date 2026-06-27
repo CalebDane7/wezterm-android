@@ -59,13 +59,13 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="194"' "current APK version must be bumped for the v2.93 scroll-latency contract"
-require "$MANIFEST" 'android:versionName="2.93"' "current APK version must be bumped for the v2.93 scroll-latency contract"
+require "$MANIFEST" 'android:versionCode="195"' "current APK version must be bumped for the v2.94 zoom layout-coverage contract"
+require "$MANIFEST" 'android:versionName="2.94"' "current APK version must be bumped for the v2.94 zoom layout-coverage contract"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.93";' "client /config proof must report the same v2.93 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.94";' "client /config proof must report the same v2.94 APK contract as the manifest"
 require "$MAIN" 'MediaStore.ACTION_PICK_IMAGES' "Upload must use Android Photo Picker for one-selection screenshots/media on Android 13+"
 require "$MAIN" 'uploadDocumentPickerIntent' "Upload must keep ACTION_OPEN_DOCUMENT fallback for non-photo-picker/files path"
 require "$MAIN" 'uploadUrisFromResult' "Upload result must handle both data URI and ClipData instead of dropping picker returns"
@@ -175,7 +175,9 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=194`, `versionName=2.93`.' "README checkpoint must match the installed v2.93 APK"
+    require "$README" 'Built checkpoint: `versionCode=195`, `versionName=2.94`.' "README checkpoint must match the installed v2.94 APK"
+    require "$README" 'larger Android layout viewport' "README must document the v2.94 zoom-out layout-coverage contract"
+    require "$README" 'does not fetch rows mid-pinch' "README must document that v2.94 preserves no row fetches during pinch"
     require "$README" 'visual-only one-finger touch-scroll nudge' "README must document the v2.93 visual-only scroll-latency contract"
     require "$README" 'does not change scroll' "README must document that v2.93 preserves ratio/flick/viewport ownership"
     require "$README" 'status-looking `Viewport mode: Mobile` row' "README must document the v2.92 viewport switch-back complaint"
@@ -360,8 +362,9 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.93' "install page must advertise the current v2.93 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>194</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.94' "install page must advertise the current v2.94 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>195</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'layout viewport zoom-out row coverage' "install page must mention the v2.94 zoom layout-coverage fix"
     require "$INSTALL_PAGE" 'visual-only one-finger touch-scroll nudge' "install page must mention the v2.93 scroll-latency fix"
     require "$INSTALL_PAGE" 'Workspace Save/Load/Close' "install page must mention the v2.62 workspace control fix"
     require "$INSTALL_PAGE" 'composer-above-buttons layout' "install page must mention the restored composer-above-buttons layout"
@@ -479,7 +482,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.93 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.94 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"
@@ -990,6 +993,11 @@ if [ -f "$MANTIS_CONTROL_SERVER" ]; then
     require "$MANTIS_CONTROL_SERVER" 'refreshQueued=false' "Mantis capture renderer must queue a follow-up repaint when a frame fetch is already in flight"
     require "$MANTIS_CONTROL_SERVER" 'Queue exactly one follow-up repaint' "Mantis capture renderer WHY comment must preserve the APK choppy-scroll root cause"
     require "$MANTIS_CONTROL_SERVER" 'function visualViewportGeometry()' "Mantis capture renderer must measure Android WebView visualViewport geometry"
+    require "$MANTIS_CONTROL_SERVER" 'layoutHeight' "Mantis capture renderer must know the larger Android layout viewport height for zoom-out coverage"
+    require "$MANTIS_CONTROL_SERVER" 'rowCoverageHeight=Math.max(visibleHeight,viewport.layoutHeight||0)' "Mantis capture renderer must prefetch rows for layout-height zoom-out coverage during normal refresh"
+    require "$MANTIS_CONTROL_SERVER" 'smaller zoomed viewport, a later physical zoom-out' "Mantis capture renderer WHY comment must preserve the v2.94 zoom-out black repaint root cause"
+    require "$MANTIS_CONTROL_SERVER" 'can reveal vertical CSS area that the last frame never rendered' "Mantis capture renderer WHY comment must preserve the v2.94 zoom-out black repaint root cause"
+    require "$MANTIS_CONTROL_SERVER" 'deferred post-pinch refresh' "Mantis capture renderer WHY comment must preserve why rows are not fetched mid-pinch"
     require "$MANTIS_CONTROL_SERVER" 'function syncViewportHeight()' "Mantis capture renderer must pin terminal height to the visible viewport"
     require "$MANTIS_CONTROL_SERVER" 'terminal.style.height=visibleBottom+"px"' "Mantis capture renderer must anchor to the actual Android visual viewport bottom"
     require "$MANTIS_CONTROL_SERVER" 'offsetTop+height' "Mantis capture renderer must account for panned visualViewport offset after pinch/zoom"

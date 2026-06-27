@@ -1,0 +1,8 @@
+proof_dir=/home/cabule/wezterm-android/proof/20260627-2033-v293-scroll-latency-focus-gated
+total_frames=35
+unique_terminal_frames=25
+first_changed_frame=4
+first_changed_seconds_at_12fps=0.333
+slow_drag_responsive=true
+bottom_return_ok=true
+accepted=true

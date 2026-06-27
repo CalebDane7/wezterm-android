@@ -124,7 +124,7 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
     private static final String PREF_PROMPT_DRAFT_PREFIX = "prompt_draft_";
-    private static final String APP_VERSION_NAME = "2.93";
+    private static final String APP_VERSION_NAME = "2.94";
     private static final int PREMIUM_CONTROL_CORNER_RADIUS_DP = 14;
     private static final int PREMIUM_DIALOG_CORNER_RADIUS_DP = 22;
     private static final int ACTIVE_SESSION_ROW_GAP_DP = 10;

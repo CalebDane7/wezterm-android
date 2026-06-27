@@ -1,0 +1,2 @@
+slow_coords=720 760 720 1280 duration_ms=1600
+fast_coords=720 760 720 1280 duration_ms=180

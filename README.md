@@ -92,7 +92,12 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=194`, `versionName=2.93`.
+- Built checkpoint: `versionCode=195`, `versionName=2.94`.
+- v2.94 prepaints zoom-out row coverage from the larger Android layout viewport
+  during normal settled renderer refreshes, so a physical two-finger zoom-out
+  can reveal already-rendered terminal rows instead of waiting on a post-pinch
+  repaint. It preserves geometry-only visualViewport sync during pinch, does not fetch rows mid-pinch, and does not reroute zoom to
+  tmux/font/scroll/reload/reset.
 - v2.93 adds a visual-only one-finger touch-scroll nudge so the phone-visible
   capture renderer follows slow finger movement immediately while tmux-owned
   `/touch-scroll` and `/terminal-frame` catch up. It does not change scroll

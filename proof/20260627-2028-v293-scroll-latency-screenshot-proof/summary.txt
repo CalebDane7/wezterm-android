@@ -1,0 +1,6 @@
+proof_dir=/home/cabule/wezterm-android/proof/20260627-2028-v293-scroll-latency-screenshot-proof
+total_frames=60
+unique_terminal_frames=37
+first_changed_frame=3
+first_changed_seconds_at_12fps=0.25
+slow_drag_responsive=true

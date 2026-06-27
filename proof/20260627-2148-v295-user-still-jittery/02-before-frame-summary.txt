@@ -1,0 +1,3 @@
+top_line=285
+row_count=80
+first=V295_SCROLL_LINE_285 abcdefghijklmnopqrstuvwxyz 0123456789

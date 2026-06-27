@@ -1,0 +1,7 @@
+artifact=/home/cabule/wezterm-android/proof/20260627-2148-v295-user-still-jittery
+2026-06-27T21:49:04+08:00
+    versionCode=196 minSdk=26 targetSdk=35
+    versionName=2.95
+    lastUpdateTime=2026-06-27 20:53:39
+  mCurrentFocus=Window{fdb722d u0 com.instagram.android/com.instagram.urlhandlers.clips.ClipsUrlHandlerActivity}
+  mFocusedApp=ActivityRecord{57239330 u0 com.instagram.android/com.instagram.urlhandlers.clips.ClipsUrlHandlerActivity t2349}

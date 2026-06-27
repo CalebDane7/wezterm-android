@@ -1,0 +1,1 @@
+  mCurrentFocus=Window{c479935 u0 com.whatsapp.w4b/com.whatsapp.mediaview.MediaViewActivity}

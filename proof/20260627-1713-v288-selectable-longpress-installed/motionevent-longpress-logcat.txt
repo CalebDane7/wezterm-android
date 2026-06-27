@@ -1,0 +1,5 @@
+--------- beginning of main
+06-27 17:16:27.245 25887 25887 I WEztermCopy: terminal-long-press-select trigger
+06-27 17:16:27.332 25887 25887 I WEztermCopy: selectable-terminal-text chars=1408
+06-27 17:16:31.776 25887 25887 I WEztermCopy: terminal-long-press-select trigger
+06-27 17:16:31.858 25887 25887 I WEztermCopy: selectable-terminal-text chars=1408

@@ -977,7 +977,7 @@ terminal = None
 buttons = []
 nav_top = None
 screen_bottom = 0
-toolbar_labels = {"Active", "Old", "Workspace", "New", "Bottom", "Copy/Paste", "Upload", "Tools", "Close", "Start", "Stop"}
+toolbar_labels = {"New", "Old", "Upload", "Active", "Bottom", "Copy/Paste", "Workspace", "Tools", "Close", "Start", "Stop"}
 composer_top = None
 composer_bottom = None
 
@@ -2230,7 +2230,7 @@ ensure_toolbar
 ensure_plain_toolbar
 
 echo "phone menu UI proof: toolbar labels"
-for label in New Old Workspace Active Bottom "Copy/Paste" Upload Tools Close Start Stop; do
+for label in New Old Upload Active Bottom "Copy/Paste" Workspace Tools Close Start Stop; do
     assert_toolbar_button_text "$label"
 done
 assert_absent "Tabs"

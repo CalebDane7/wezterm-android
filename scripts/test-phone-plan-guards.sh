@@ -59,13 +59,13 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="188"' "current APK version must be bumped for the v2.87 active/workspace visual contract"
-require "$MANIFEST" 'android:versionName="2.87"' "current APK version must be bumped for the v2.87 active/workspace visual contract"
+require "$MANIFEST" 'android:versionCode="189"' "current APK version must be bumped for the v2.88 upload/long-press-copy contract"
+require "$MANIFEST" 'android:versionName="2.88"' "current APK version must be bumped for the v2.88 upload/long-press-copy contract"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.87";' "client /config proof must report the same v2.87 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.88";' "client /config proof must report the same v2.88 APK contract as the manifest"
 require "$MAIN" 'MediaStore.ACTION_PICK_IMAGES' "Upload must use Android Photo Picker for one-selection screenshots/media on Android 13+"
 require "$MAIN" 'uploadDocumentPickerIntent' "Upload must keep ACTION_OPEN_DOCUMENT fallback for non-photo-picker/files path"
 require "$MAIN" 'uploadUrisFromResult' "Upload result must handle both data URI and ClipData instead of dropping picker returns"
@@ -158,7 +158,8 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=188`, `versionName=2.87`.' "README checkpoint must match the installed v2.87 APK"
+    require "$README" 'Built checkpoint: `versionCode=189`, `versionName=2.88`.' "README checkpoint must match the installed v2.88 APK"
+    require "$README" 'v2.88 keeps the v2.87 visual-only native shell contract' "README must document the v2.88 upload/long-press-copy contract"
     require "$README" 'v2.87 keeps the visual-only native shell contract' "README must document the v2.87 active/workspace visual contract"
     require "$README" 'v2.86 is a visual-only native shell polish' "README must preserve the v2.86 visual-only native shell contract"
     require "$README" 'v2.85 keeps the v2.84 optimistic, draft-safe Send behavior' "README must document the v2.85 non-resizing native Send latency fix"
@@ -335,8 +336,8 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.87' "install page must advertise the current v2.87 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>188</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.88' "install page must advertise the current v2.88 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>189</code>' "install page versionCode must match the manifest"
     require "$INSTALL_PAGE" 'Workspace Save/Load/Close' "install page must mention the v2.62 workspace control fix"
     require "$INSTALL_PAGE" 'composer-above-buttons layout' "install page must mention the restored composer-above-buttons layout"
     require "$INSTALL_PAGE" 'compact v2.65 toolbar chrome' "install page must mention the compact bottom toolbar fix"
@@ -453,7 +454,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.87 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.88 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"
@@ -642,7 +643,7 @@ if [ -f "$MENU_UI_PROOF" ]; then
     require "$MENU_UI_PROOF" 'assert_installed_package_version' "menu UI proof must reject stale installed APKs before testing phone behavior"
     require "$MENU_UI_PROOF" 'versionCode=$EXPECTED_VERSION_CODE' "menu UI proof must compare the installed package versionCode to the source manifest"
     require "$MENU_UI_PROOF" 'versionName=$EXPECTED_VERSION_NAME' "menu UI proof must compare the installed package versionName to the source manifest"
-    require "$MENU_UI_PROOF" 'for label in New Old Workspace Active Bottom "Copy/Paste" Upload Tools Close Start Stop' "menu UI proof must check every visible toolbar label in the v2.87 thumb-zone order"
+    require "$MENU_UI_PROOF" 'for label in New Old Upload Active Bottom "Copy/Paste" Workspace Tools Close Start Stop' "menu UI proof must check every visible toolbar label in the v2.88 upload/workspace order"
     require "$MENU_UI_PROOF" 'tap_visible_text_from_current_dump "Old"' "menu UI proof must open Old Sessions from a stable toolbar dump"
     require "$MENU_UI_PROOF" 'wait_for_visible_text "Old Sessions" "Old Sessions"' "menu UI proof must wait for the Old Sessions dialog after tapping Old"
     require "$MENU_UI_PROOF" 'wait_for_visible_text "Resume" "Resume"' "menu UI proof must wait for old-session resume actions"
@@ -850,6 +851,8 @@ require_absent "$MAIN" 'AlphaAnimation pulse' "legacy per-row AlphaAnimation pul
 require_absent "$MAIN" 'toolbarNavigationButton("Scroll", v -> showViewControls())' "Scroll must not return to prime toolbar space after the v2.86 visual cleanup"
 require "$MAIN" 'toolbarNavigationButton("Copy/Paste", v -> showCopyPasteControls())' "Copy/Paste must remain visible"
 require "$MAIN" 'toolbarNavigationButton("Upload", v -> pickMediaForUpload())' "direct media Upload must remain visible on the main toolbar"
+require "$MAIN" 'Upload is a frequent phone-origin action' "Upload must stay in the top-row Workspace slot"
+require "$MAIN" 'Workspace stays visible in Upload' "Workspace must stay visible after Upload moves into the old Workspace slot"
 require "$MAIN" 'native composer must remain above the APK controls' "APK layout must keep the native composer above the toolbar buttons"
 require "$MAIN" 'window.setNavigationBarColor(Color.rgb(17, 18, 24))' "APK nav strip must match the v2.86 toolbar instead of becoming a black dead zone"
 require "$MAIN" 'Clear unsent draft' "APK must expose the clear-draft action"
@@ -1177,6 +1180,20 @@ require "$MAIN" '"Paste phone clipboard into terminal"' "paste dialog option mus
 require "$MAIN" '"Copy visible terminal text"' "copy dialog option must remain"
 require "$MAIN" '"Upload media from phone"' "Copy/Paste menu must expose phone media upload"
 require "$MAIN" 'copyPasteButton.setOnLongClickListener' "Copy/Paste long-press must keep a fast direct upload fallback"
+require "$MAIN" 'TERMINAL_LONG_PRESS_COPY_MS = 700' "terminal long-press copy must use an explicit hold threshold"
+require "$MAIN" 'scheduleTerminalLongPressCopy(event)' "terminal ACTION_DOWN must arm long-press copy"
+require "$MAIN" 'cancelPendingTerminalLongPressCopy("move-past-slop")' "terminal movement must cancel long-press copy before scroll ownership changes"
+require "$MAIN" 'cancelPendingTerminalLongPressCopy("multi-touch")' "terminal pinch gestures must cancel long-press copy"
+require "$MAIN" 'showSelectableTerminalTextSheet();' "terminal long-press must open the native selectable terminal text sheet"
+require "$MAIN" 'private void showSelectableTerminalTextSheet()' "terminal long-press selectable sheet must stay implemented"
+require "$MAIN" 'terminalText.setTextIsSelectable(true)' "terminal long-press sheet must allow normal Android text selection handles"
+require "$MAIN" 'terminalText.setContentDescription("Selectable terminal text")' "terminal long-press sheet must expose a stable UIAutomator proof target"
+require "$MAIN" 'setCanceledOnTouchOutside(false)' "terminal long-press sheet must not disappear when the original finger releases outside the dialog"
+require "$MAIN" 'private void copyVisibleTerminalToClipboard()' "Copy/Paste menu must keep the existing visible-terminal clipboard path"
+require "$MAIN" 'WEztermCopy' "terminal copy proof must leave privacy-safe copy-stage logs"
+require "$MAIN" 'terminal-long-press-select trigger' "terminal long-press proof must distinguish selectable-sheet behavior from copy-all"
+require "$MAIN" 'selectable-terminal-text chars=' "terminal selection proof logs must expose length only, not copied terminal text"
+require "$MAIN" 'making the WebView itself selectable fights the custom tmux' "terminal long-press WHY comment must preserve the no-WebView-selection owner boundary"
 require "$MAIN" 'showSafePromptComposer' "native prompt composer must remain available"
 require "$MAIN" 'promptComposerInput = new PromptComposerEditText(this)' "docked native composer must remain implemented with Back/IME dismissal"
 require "$MAIN" 'promptComposerInput.setContentDescription("Type prompt")' "native composer must be visible to UIAutomator proof"

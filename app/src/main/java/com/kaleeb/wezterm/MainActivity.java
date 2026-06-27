@@ -123,7 +123,7 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
     private static final String PREF_PROMPT_DRAFT_PREFIX = "prompt_draft_";
-    private static final String APP_VERSION_NAME = "2.87";
+    private static final String APP_VERSION_NAME = "2.88";
     private static final int PREMIUM_CONTROL_CORNER_RADIUS_DP = 14;
     private static final int PREMIUM_DIALOG_CORNER_RADIUS_DP = 22;
     private static final int PREMIUM_STATUS_DOT_SP = 18;
@@ -131,6 +131,7 @@ public class MainActivity extends Activity {
     private static final int PREMIUM_BUTTON_ELEVATION_DP = 2;
     private static final String UPLOAD_LOG_TAG = "WEztermUpload";
     private static final String SEND_LOG_TAG = "WEztermSend";
+    private static final String TERMINAL_COPY_LOG_TAG = "WEztermCopy";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
             | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
@@ -148,6 +149,7 @@ public class MainActivity extends Activity {
     private static final int HISTORY_DRAG_PAGES_PER_STEP = 1;
     private static final int HISTORY_DRAG_MAX_PAGES_PER_STEP = 24;
     private static final int HISTORY_DRAG_DOWN_MAX_REPEATS = 10;
+    private static final long TERMINAL_LONG_PRESS_COPY_MS = 700;
     private static final int HISTORY_DRAG_DOWN_RELEASE_MAX_REPEATS = 14;
     private static final int HISTORY_DRAG_MOMENTUM_MAX_FRAMES = 24;
     private static final long HISTORY_DRAG_MOMENTUM_FRAME_MS = 45;
@@ -280,8 +282,11 @@ public class MainActivity extends Activity {
     private boolean touchScrollRenderPulseScheduled = false;
     private long touchScrollRenderPulseUntilMs = 0;
     private long terminalTouchGestureGeneration = 0;
+    private long terminalLongPressCopyGeneration = 0;
     private String terminalTouchStableWindowId = "";
     private long terminalTouchDownWallClockMs = 0;
+    private boolean terminalLongPressCopyArmed = false;
+    private boolean terminalLongPressCopyConsumed = false;
     private long lastHistoryDragAtMs = 0;
     private long terminalLastHistoryDragEventAtMs = 0;
     private float webViewScale = 1.0f;
@@ -984,7 +989,10 @@ public class MainActivity extends Activity {
         topRow.addView(toolbarNavigationButton("New", v ->
                 controlAndSettleLiveBottom("/new?fast=1", "", "new-session")));
         topRow.addView(toolbarNavigationButton("Old", v -> showOldSessions()));
-        topRow.addView(toolbarNavigationButton("Workspace", v -> showWorkspaces()));
+        // WHY: Upload is a frequent phone-origin action, so it gets the old
+        // Workspace slot in the top row. Workspace stays visible in Upload's
+        // former second-row slot; this is a layout swap, not a handler change.
+        topRow.addView(toolbarNavigationButton("Upload", v -> pickMediaForUpload()));
         topRow.addView(toolbarNavigationButton("Active", v -> showActiveSessions()));
         // WHY: live-bottom is the user's most frequent recovery when one-finger
         // return-to-bottom still misses the final prompt line. Keep it as a one-tap
@@ -1006,11 +1014,7 @@ public class MainActivity extends Activity {
             return true;
         });
         bottomRow.addView(copyPasteButton);
-        // WHY: screenshots, videos, PDFs, and other reference files need a one-tap
-        // path from the app chrome itself. Keeping Upload separate from Copy/Paste
-        // avoids burying the fastest media path in a dialog while preserving every
-        // existing toolbar control that prior plan receipts protect.
-        bottomRow.addView(toolbarNavigationButton("Upload", v -> pickMediaForUpload()));
+        bottomRow.addView(toolbarNavigationButton("Workspace", v -> showWorkspaces()));
         // WHY: the user does not use Refresh or Scroll as daily actions, but plan
         // history protects both as recovery paths. Remove those two labels from
         // prime toolbar space and keep the same handlers behind one secondary
@@ -1562,6 +1566,7 @@ public class MainActivity extends Activity {
             // DOWN into WebView before forwarding this event so native pinch zoom
             // has a complete gesture stream.
             if (!terminalMultiTouchGesture) {
+                cancelPendingTerminalLongPressCopy("multi-touch");
                 // WHY: a second finger changes ownership from tmux history to the
                 // Android/WebView viewer. Any outstanding one-finger scroll response
                 // now belongs to an old gesture and must not later mark live-bottom
@@ -1620,6 +1625,7 @@ public class MainActivity extends Activity {
             // every request with this generation keeps stale server replies from
             // triggering the bottom restore/refresh jump on a later gesture.
             terminalTouchGestureGeneration++;
+            scheduleTerminalLongPressCopy(event);
             cancelHistoryMomentum();
             clearPendingHistoryScroll();
             lastHistoryDragAtMs = 0;
@@ -1657,6 +1663,7 @@ public class MainActivity extends Activity {
             float absDy = Math.abs(dy);
             if (absDx > terminalTouchSlop || absDy > terminalTouchSlop) {
                 terminalTouchExceededTapSlop = true;
+                cancelPendingTerminalLongPressCopy("move-past-slop");
             }
             if (!terminalHistoryDragActive && shouldHandOffToViewerHorizontalPan(absDx, absDy)) {
                 // WHY: one-finger horizontal movement is the user's line-reading
@@ -1668,6 +1675,7 @@ public class MainActivity extends Activity {
                 terminalHorizontalPanActive = true;
                 terminalLastViewerPanX = terminalTouchStartX;
                 allowViewerPanBriefly();
+                cancelPendingTerminalLongPressCopy("horizontal-pan");
                 cancelViewerTypingPositionRetries("horizontal-pan");
                 cancelLiveInputVisibilityRetries("horizontal-pan");
                 panZoomedViewerHorizontally(event);
@@ -1685,6 +1693,7 @@ public class MainActivity extends Activity {
                 if (terminalTouchStartedDuringPassiveSuppression) {
                     hideDockedPromptComposerForNavigation("passive-nav-scroll-start");
                 }
+                cancelPendingTerminalLongPressCopy("history-drag-start");
                 terminalHistoryDragActive = true;
                 terminalLastHistoryDragY = terminalTouchStartY;
                 enterReadMode();
@@ -1704,6 +1713,7 @@ public class MainActivity extends Activity {
             boolean reachedLiveBottom = terminalTouchReachedLiveBottom;
             boolean wasForwardingTouchToViewer = terminalForwardingTouchToViewer;
             boolean startedDuringPassiveSuppression = terminalTouchStartedDuringPassiveSuppression;
+            boolean longPressCopied = terminalLongPressCopyConsumed;
             if (action == MotionEvent.ACTION_UP && terminalHistoryDragActive) {
                 dispatchHistoryReleaseFling(event);
                 keepCaptureRendererPulsingDuringTouch("touch-scroll-release");
@@ -1721,12 +1731,17 @@ public class MainActivity extends Activity {
             terminalTouchReachedLiveBottom = false;
             terminalTouchStartedInHistoryViewport = false;
             terminalTouchStartedDuringPassiveSuppression = false;
+            clearTerminalLongPressCopyState();
             if (wasMultiTouch || wasHorizontalPan) {
                 allowViewerPanBriefly();
             }
             recycleTerminalVelocityTracker();
             if (wasForwardingTouchToViewer) {
                 forwardTouchToViewer(event);
+                recycleTerminalViewerDownEvent();
+                return true;
+            }
+            if (longPressCopied) {
                 recycleTerminalViewerDownEvent();
                 return true;
             }
@@ -1800,6 +1815,52 @@ public class MainActivity extends Activity {
         }
 
         return false;
+    }
+
+    private void scheduleTerminalLongPressCopy(MotionEvent event) {
+        cancelPendingTerminalLongPressCopy("new-down");
+        terminalLongPressCopyConsumed = false;
+        if (event == null || isTopTerminalTap(event)) {
+            return;
+        }
+        terminalLongPressCopyArmed = true;
+        long generation = ++terminalLongPressCopyGeneration;
+        // WHY: making the WebView itself selectable fights the custom tmux
+        // scroll/pinch/pan owner paths. Long-press uses /copy-visible as the
+        // text source, then opens a native selectable sheet so Android handles
+        // highlight/copy without changing terminal gesture ownership.
+        uiHandler.postDelayed(() -> {
+            if (!terminalLongPressCopyArmed
+                    || generation != terminalLongPressCopyGeneration
+                    || terminalHistoryDragActive
+                    || terminalMultiTouchGesture
+                    || terminalHorizontalPanActive
+                    || terminalTouchExceededTapSlop) {
+                return;
+            }
+            terminalLongPressCopyArmed = false;
+            terminalLongPressCopyConsumed = true;
+            View feedbackTarget = terminalFrame != null ? terminalFrame : webView;
+            if (feedbackTarget != null) {
+                feedbackTarget.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            }
+            Log.i(TERMINAL_COPY_LOG_TAG, "terminal-long-press-select trigger");
+            showSelectableTerminalTextSheet();
+        }, TERMINAL_LONG_PRESS_COPY_MS);
+    }
+
+    private void cancelPendingTerminalLongPressCopy(String reason) {
+        if (!terminalLongPressCopyArmed) {
+            return;
+        }
+        terminalLongPressCopyArmed = false;
+        terminalLongPressCopyGeneration++;
+    }
+
+    private void clearTerminalLongPressCopyState() {
+        terminalLongPressCopyArmed = false;
+        terminalLongPressCopyConsumed = false;
+        terminalLongPressCopyGeneration++;
     }
 
     private boolean shouldHandOffToViewerHorizontalPan(float absDx, float absDy) {
@@ -4550,7 +4611,70 @@ public class MainActivity extends Activity {
             clipboardManager.setPrimaryClip(
                     ClipData.newPlainText("WEzterm visible terminal", text)
             );
+            Log.i(TERMINAL_COPY_LOG_TAG, "visible-copy-success chars=" + text.length());
             toast("Copied visible terminal");
+        });
+    }
+
+    private void showSelectableTerminalTextSheet() {
+        getJson("/copy-visible", payload -> {
+            if (!payload.optBoolean("ok", false)) {
+                toast(payload.optString("error", "Copy failed"));
+                return;
+            }
+            String text = payload.optString("text", "");
+            if (text.isEmpty()) {
+                toast("Nothing visible to copy");
+                return;
+            }
+            ScrollView scrollView = new ScrollView(this);
+            LinearLayout content = new LinearLayout(this);
+            content.setOrientation(LinearLayout.VERTICAL);
+            content.setPadding(dp(8), dp(6), dp(8), dp(6));
+            scrollView.addView(content);
+            final AlertDialog[] dialogRef = new AlertDialog[1];
+
+            LinearLayout actions = new LinearLayout(this);
+            actions.setOrientation(LinearLayout.HORIZONTAL);
+            actions.setPadding(0, 0, 0, dp(10));
+            actions.addView(activeDialogActionButton("Close", v -> {
+                if (dialogRef[0] != null) {
+                    dialogRef[0].dismiss();
+                }
+            }));
+            content.addView(actions);
+
+            TextView terminalText = new TextView(this);
+            terminalText.setText(text);
+            terminalText.setTextIsSelectable(true);
+            terminalText.setFocusable(true);
+            terminalText.setFocusableInTouchMode(true);
+            terminalText.setContentDescription("Selectable terminal text");
+            terminalText.setTextSize(13);
+            terminalText.setTypeface(Typeface.MONOSPACE);
+            terminalText.setTextColor(Color.rgb(244, 246, 252));
+            terminalText.setPadding(dp(12), dp(10), dp(12), dp(10));
+            terminalText.setHorizontallyScrolling(false);
+            terminalText.setSingleLine(false);
+            setTouchableBackground(terminalText, Color.rgb(32, 35, 48), Color.rgb(137, 180, 250));
+            content.addView(terminalText, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+            ));
+
+            dialogRef[0] = new AlertDialog.Builder(this)
+                    .setView(premiumDialogShell("Terminal text", "", scrollView))
+                    .show();
+            // WHY: the sheet opens while the user's finger may still be down on
+            // the terminal. A release outside the new dialog must not dismiss the
+            // selectable text and fall through like a normal terminal tap.
+            dialogRef[0].setCanceledOnTouchOutside(false);
+            stylePremiumDialogWindow(dialogRef[0]);
+            Log.i(TERMINAL_COPY_LOG_TAG, "selectable-terminal-text chars=" + text.length());
+            terminalText.postDelayed(() -> {
+                terminalText.requestFocus();
+                terminalText.performLongClick();
+            }, 250);
         });
     }
 

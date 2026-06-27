@@ -1,0 +1,2 @@
+235:  mCurrentFocus=Window{32bcd42 u0 com.kaleeb.wezterm/com.kaleeb.wezterm.MainActivity}
+236:  mFocusedApp=ActivityRecord{221027843 u0 com.kaleeb.wezterm/.MainActivity t2312}

@@ -16,8 +16,8 @@ See [Apple User Support](docs/apple-users.md).
 
 - Opens as a real Android app named `WEzterm`, not a Chrome shortcut.
 - Connects to the desktop terminal over Tailscale.
-- Shows a bottom toolbar with the primary work controls: `Active`, `Old`,
-  `Workspace`, `New`, `Bottom`, `Copy/Paste`, `Upload`, `Tools`, `Close`,
+- Shows a bottom toolbar with the primary work controls: `New`, `Old`,
+  `Upload`, `Active`, `Bottom`, `Copy/Paste`, `Workspace`, `Tools`, `Close`,
   `Start`, and `Stop`.
 - Uses stable tmux window IDs for selecting and closing active sessions.
 - Orders the Active Sessions picker newest-first by tmux activity and snaps it to
@@ -33,7 +33,8 @@ See [Apple User Support](docs/apple-users.md).
   switching, so a bad gesture/read-mode state never traps typing.
 - Provides a visible `Copy/Paste` menu so phone clipboard text can be pasted
   into the active desktop pane and visible terminal text can be copied back to
-  the phone clipboard.
+  the phone clipboard; a terminal-body long press opens the same visible text
+  in a native selectable sheet for normal Android highlight/copy handles.
 - Lets the phone upload screenshots/media to the desktop over Tailscale through
   a direct `Upload` toolbar button, Android's file picker, or the system Share
   sheet, then copies the desktop path so it can be pasted into the active
@@ -91,7 +92,12 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=188`, `versionName=2.87`.
+- Built checkpoint: `versionCode=189`, `versionName=2.88`.
+- v2.88 keeps the v2.87 visual-only native shell contract, moves direct Upload
+  into Workspace's old top-row slot, keeps Workspace visible in Upload's old
+  second-row slot, and makes terminal-body long-press open a native selectable
+  terminal text sheet sourced from the existing Copy visible terminal path
+  without changing scroll, pinch, pan, or tap-to-type ownership.
 - v2.87 keeps the visual-only native shell contract and tightens the phone
   operator surfaces: the toolbar uses `New / Old / Workspace / Active / Bottom`
   so Active sits near the right thumb, Active Sessions sorts problem/waiting

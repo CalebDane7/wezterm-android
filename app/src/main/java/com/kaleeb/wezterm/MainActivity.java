@@ -124,7 +124,7 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
     private static final String PREF_PROMPT_DRAFT_PREFIX = "prompt_draft_";
-    private static final String APP_VERSION_NAME = "2.92";
+    private static final String APP_VERSION_NAME = "2.93";
     private static final int PREMIUM_CONTROL_CORNER_RADIUS_DP = 14;
     private static final int PREMIUM_DIALOG_CORNER_RADIUS_DP = 22;
     private static final int ACTIVE_SESSION_ROW_GAP_DP = 10;
@@ -175,6 +175,7 @@ public class MainActivity extends Activity {
     private static final int HISTORY_DRAG_FLING_MOVE_REPEATS = 10;
     private static final long TOUCH_SCROLL_RENDER_PULSE_MS = 16;
     private static final long TOUCH_SCROLL_RENDER_PULSE_WINDOW_MS = 850;
+    private static final long TOUCH_SCROLL_VISUAL_NUDGE_CLEAR_MS = 420;
     private static final float HISTORY_DRAG_RELEASE_MIN_LINES = 2f;
     private static final int TOUCH_SCROLL_LIVE_BOTTOM_SNAP_LINES = 3;
     private static final float HISTORY_DRAG_FAST_VELOCITY_PX_PER_SEC = 1200f;
@@ -291,6 +292,9 @@ public class MainActivity extends Activity {
     private long lastHistoryFlingAtMs = 0;
     private boolean touchScrollRenderPulseScheduled = false;
     private long touchScrollRenderPulseUntilMs = 0;
+    private boolean touchScrollVisualNudgeScheduled = false;
+    private float pendingTouchVisualNudgePx = 0f;
+    private long touchScrollVisualNudgeGeneration = 0;
     private long captureRendererScaleSyncGeneration = 0;
     private boolean captureRendererScaleSyncDeferredUntilTouchRelease = false;
     private String captureRendererScaleSyncDeferredReason = "scale-change";
@@ -1589,6 +1593,7 @@ public class MainActivity extends Activity {
                 terminalTouchReachedLiveBottom = false;
                 cancelHistoryMomentum();
                 clearPendingHistoryScroll();
+                clearCaptureRendererTouchNudge("multi-touch");
                 cancelViewerTypingPositionRetries("multi-touch");
                 cancelLiveInputVisibilityRetries("multi-touch");
             }
@@ -1634,6 +1639,7 @@ public class MainActivity extends Activity {
             terminalTouchReachedLiveBottom = false;
             terminalTouchStartedInHistoryViewport = terminalHistoryViewportActive || readModeSuppressesKeyboard;
             terminalTouchStableWindowId = visibleTerminalTargetKey();
+            clearCaptureRendererTouchNudge("touch-start");
             // WHY: touch-scroll HTTP responses can arrive after the finger has
             // already changed direction, released, or started a new gesture. Tagging
             // every request with this generation keeps stale server replies from
@@ -1692,6 +1698,7 @@ public class MainActivity extends Activity {
                 cancelPendingTerminalLongPressCopy("horizontal-pan");
                 cancelViewerTypingPositionRetries("horizontal-pan");
                 cancelLiveInputVisibilityRetries("horizontal-pan");
+                clearCaptureRendererTouchNudge("horizontal-pan");
                 panZoomedViewerHorizontally(event);
                 return forwardTouchToViewer(event);
             }
@@ -1731,6 +1738,7 @@ public class MainActivity extends Activity {
             if (action == MotionEvent.ACTION_UP && terminalHistoryDragActive) {
                 dispatchHistoryReleaseFling(event);
                 keepCaptureRendererPulsingDuringTouch("touch-scroll-release");
+                clearCaptureRendererTouchNudgeSoon("touch-scroll-release");
             }
             boolean shouldRestoreTyping = action == MotionEvent.ACTION_UP
                     && startedInHistoryViewport
@@ -1748,6 +1756,9 @@ public class MainActivity extends Activity {
             clearTerminalLongPressCopyState();
             if (wasMultiTouch || wasHorizontalPan) {
                 allowViewerPanBriefly();
+                clearCaptureRendererTouchNudge("viewer-owned-release");
+            } else if (consumed || action == MotionEvent.ACTION_CANCEL) {
+                clearCaptureRendererTouchNudgeSoon("touch-end");
             }
             if (wasMultiTouch) {
                 flushDeferredCaptureRendererScaleSync("multi-touch-release");
@@ -2074,6 +2085,7 @@ public class MainActivity extends Activity {
         if ("lineUp".equals(where)) {
             terminalTouchReachedLiveBottom = false;
         }
+        nudgeCaptureRendererForTouch(step);
         keepCaptureRendererPulsingDuringTouch("touch-scroll-move");
         scrollTerminalFromTouch(where, repeats);
     }
@@ -2440,6 +2452,86 @@ public class MainActivity extends Activity {
         }
         touchScrollRenderPulseScheduled = true;
         postCaptureRendererPulseFrame(reason);
+    }
+
+    private void nudgeCaptureRendererForTouch(float deltaY) {
+        if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT
+                || Math.abs(deltaY) < 0.5f) {
+            return;
+        }
+        // WHY: this does not change tmux scroll distance, ratio, or flick speed.
+        // It only moves the already-rendered capture layer by the physical finger
+        // delta for the current frame so the phone does not look frozen while the
+        // lightweight `/touch-scroll` command and `/terminal-frame` repaint catch up.
+        pendingTouchVisualNudgePx += deltaY;
+        if (touchScrollVisualNudgeScheduled) {
+            return;
+        }
+        touchScrollVisualNudgeScheduled = true;
+        long visualGeneration = touchScrollVisualNudgeGeneration;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            Choreographer.getInstance().postFrameCallback(frameTimeNanos ->
+                    runCaptureRendererTouchNudge(visualGeneration));
+        } else {
+            uiHandler.post(() -> runCaptureRendererTouchNudge(visualGeneration));
+        }
+    }
+
+    private void runCaptureRendererTouchNudge(long visualGeneration) {
+        touchScrollVisualNudgeScheduled = false;
+        if (visualGeneration != touchScrollVisualNudgeGeneration
+                || webView == null
+                || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            pendingTouchVisualNudgePx = 0f;
+            return;
+        }
+        float deltaY = pendingTouchVisualNudgePx;
+        pendingTouchVisualNudgePx = 0f;
+        if (Math.abs(deltaY) < 0.5f) {
+            return;
+        }
+        String deltaLiteral = String.format(Locale.US, "%.2f", deltaY);
+        webView.evaluateJavascript(
+                "(function(){"
+                        + "try{"
+                        + "var r=window.__mantisCaptureRenderer;"
+                        + "if(r&&typeof r.nudgeTouchScroll==='function'){return r.nudgeTouchScroll("
+                        + deltaLiteral
+                        + ")?'touch-nudge':'touch-nudge-skip';}"
+                        + "return 'touch-nudge-missing';"
+                        + "}catch(e){return 'touch-nudge-error';}"
+                + "})()",
+                null
+        );
+    }
+
+    private void clearCaptureRendererTouchNudgeSoon(String reason) {
+        long visualGeneration = ++touchScrollVisualNudgeGeneration;
+        pendingTouchVisualNudgePx = 0f;
+        uiHandler.postDelayed(() -> {
+            if (visualGeneration == touchScrollVisualNudgeGeneration) {
+                clearCaptureRendererTouchNudge(reason);
+            }
+        }, TOUCH_SCROLL_VISUAL_NUDGE_CLEAR_MS);
+    }
+
+    private void clearCaptureRendererTouchNudge(String reason) {
+        pendingTouchVisualNudgePx = 0f;
+        touchScrollVisualNudgeScheduled = false;
+        touchScrollVisualNudgeGeneration++;
+        if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            return;
+        }
+        webView.evaluateJavascript(
+                "(function(){"
+                        + "try{"
+                        + "var r=window.__mantisCaptureRenderer;"
+                        + "if(r&&typeof r.clearTouchScrollNudge==='function'){return r.clearTouchScrollNudge()?'touch-nudge-clear':'touch-nudge-clear-skip';}"
+                        + "return 'touch-nudge-clear-missing';"
+                        + "}catch(e){return 'touch-nudge-clear-error';}"
+                + "})()",
+                null
+        );
     }
 
     private void postCaptureRendererPulseFrame(String reason) {

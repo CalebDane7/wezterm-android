@@ -92,7 +92,12 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=193`, `versionName=2.92`.
+- Built checkpoint: `versionCode=194`, `versionName=2.93`.
+- v2.93 adds a visual-only one-finger touch-scroll nudge so the phone-visible
+  capture renderer follows slow finger movement immediately while tmux-owned
+  `/touch-scroll` and `/terminal-frame` catch up. It does not change scroll
+  ratios, flick speed, viewport modes, stable `@windowId`, pinch/pan, Upload,
+  Active/Old, or Bottom ownership.
 - v2.92 keeps Desktop as the protected default and changes Settings from a
   status-looking `Viewport mode: Mobile` row into an explicit
   `Switch to Desktop viewport` / `Switch to Mobile viewport` action, so Mobile

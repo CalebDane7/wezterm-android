@@ -59,13 +59,13 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="193"' "current APK version must be bumped for the v2.92 viewport switch-back contract"
-require "$MANIFEST" 'android:versionName="2.92"' "current APK version must be bumped for the v2.92 viewport switch-back contract"
+require "$MANIFEST" 'android:versionCode="194"' "current APK version must be bumped for the v2.93 scroll-latency contract"
+require "$MANIFEST" 'android:versionName="2.93"' "current APK version must be bumped for the v2.93 scroll-latency contract"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.92";' "client /config proof must report the same v2.92 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.93";' "client /config proof must report the same v2.93 APK contract as the manifest"
 require "$MAIN" 'MediaStore.ACTION_PICK_IMAGES' "Upload must use Android Photo Picker for one-selection screenshots/media on Android 13+"
 require "$MAIN" 'uploadDocumentPickerIntent' "Upload must keep ACTION_OPEN_DOCUMENT fallback for non-photo-picker/files path"
 require "$MAIN" 'uploadUrisFromResult' "Upload result must handle both data URI and ClipData instead of dropping picker returns"
@@ -175,7 +175,9 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=193`, `versionName=2.92`.' "README checkpoint must match the installed v2.92 APK"
+    require "$README" 'Built checkpoint: `versionCode=194`, `versionName=2.93`.' "README checkpoint must match the installed v2.93 APK"
+    require "$README" 'visual-only one-finger touch-scroll nudge' "README must document the v2.93 visual-only scroll-latency contract"
+    require "$README" 'does not change scroll' "README must document that v2.93 preserves ratio/flick/viewport ownership"
     require "$README" 'status-looking `Viewport mode: Mobile` row' "README must document the v2.92 viewport switch-back complaint"
     require "$README" 'Switch to Desktop viewport' "README must document the v2.92 explicit switch-back action"
     require "$README" 'red is reserved for Stop' "README must document the v2.91 close-neutral toolbar contract"
@@ -358,8 +360,8 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.92' "install page must advertise the current v2.92 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>193</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.93' "install page must advertise the current v2.93 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>194</code>' "install page versionCode must match the manifest"
     require "$INSTALL_PAGE" 'Workspace Save/Load/Close' "install page must mention the v2.62 workspace control fix"
     require "$INSTALL_PAGE" 'composer-above-buttons layout' "install page must mention the restored composer-above-buttons layout"
     require "$INSTALL_PAGE" 'compact v2.65 toolbar chrome' "install page must mention the compact bottom toolbar fix"
@@ -476,7 +478,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.92 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.93 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"
@@ -1476,6 +1478,7 @@ require "$MAIN" 'restoreTouchLiveBottomQuietly();' "near-bottom lineDown after f
 require "$MAIN" 'extra downward' "live-bottom edge WHY comment must prevent down-scroll bounce regressions"
 require "$MAIN" 'TOUCH_SCROLL_RENDER_PULSE_MS = 16' "APK touch-scroll repaint pulse cadence must stay frame-rate bounded"
 require "$MAIN" 'TOUCH_SCROLL_RENDER_PULSE_WINDOW_MS = 850' "APK touch-scroll repaint pulse window must stay bounded"
+require "$MAIN" 'TOUCH_SCROLL_VISUAL_NUDGE_CLEAR_MS = 420' "APK touch-scroll visual nudge must stay bounded and temporary"
 require "$MAIN" 'HISTORY_DRAG_LINE_THRESHOLD_DP = 5' "v2.77 slow one-finger drags must not wait for the old coarse movement threshold"
 require "$MAIN" 'HISTORY_DRAG_SLOW_PENDING_MAX_REPEATS = 6' "v2.77 slow drag coalescing must preserve bounded in-flight distance"
 require "$MAIN" 'HISTORY_DRAG_MOMENTUM_MAX_FRAMES = 24' "v2.77 fast flicks must keep enough cancellable inertia to cross long panes"
@@ -1494,6 +1497,10 @@ require "$MAIN" 'event.getHistoricalEventTime(i)' "APK one-finger scroll must pr
 require "$MAIN" 'Android may batch multiple MOVE coordinates' "historical-sample WHY comment must preserve the APK choppy-scroll root cause"
 require "$MAIN" 'Keep `/touch-scroll` itself lightweight' "frame-pulse WHY comment must preserve the separation between repaint cadence and tmux movement"
 require "$MAIN" 'frame-rate bounded repaint loop' "frame-pulse WHY comment must preserve that APK visual smoothness is a renderer cadence fix"
+require "$MAIN" 'nudgeCaptureRendererForTouch(step)' "APK one-finger scroll must visually track the physical finger delta before renderer fetches return"
+require "$MAIN" 'pendingTouchVisualNudgePx += deltaY' "APK touch-scroll visual nudge must coalesce deltas instead of stacking JS calls"
+require "$MAIN" 'this does not change tmux scroll distance, ratio, or flick speed' "visual nudge WHY comment must protect the user-requested ratio/flick-speed boundary"
+require "$MAIN" 'nudgeTouchScroll' "APK must call the capture-renderer touch nudge API during one-finger scroll"
 require "$MAIN" '"/touch-scroll?where="' "one-finger touch scroll must use the lightweight tmux-only endpoint"
 require "$MAIN" 'restoreTouchLiveBottomQuietly()' "finger-up at live bottom must quietly exit tmux copy-mode"
 require "$MAIN" 'appendStableWindowQuery("/touch-scroll?where=bottom&repeat=1", terminalTouchStableWindowId)' "finger-up bottom restore must use lightweight touch-scroll on the gesture target"

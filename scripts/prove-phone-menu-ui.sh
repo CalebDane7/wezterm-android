@@ -855,7 +855,7 @@ ensure_toolbar() {
         # toolbar before testing labels, otherwise a stale dialog/composer state can
         # either hide the buttons or falsely satisfy the check.
         if dump_has_button_text "Active" && dump_has_button_text "Old" \
-                && dump_has_button_text "Refresh" && dump_has_button_text "Close"; then
+                && dump_has_button_text "Tools" && dump_has_button_text "Close"; then
             return 0
         fi
         if dump_has_text "Active Sessions" \
@@ -977,7 +977,7 @@ terminal = None
 buttons = []
 nav_top = None
 screen_bottom = 0
-toolbar_labels = {"Active", "Old", "Workspace", "New", "Refresh", "Bottom", "Scroll", "Copy/Paste", "Upload", "Close", "Start", "Stop"}
+toolbar_labels = {"Active", "Old", "Workspace", "New", "Bottom", "Copy/Paste", "Upload", "Tools", "Close", "Start", "Stop"}
 composer_top = None
 composer_bottom = None
 
@@ -1713,7 +1713,7 @@ else:
 PY
 )"
     read -r x y <<<"$coords"
-    # WHY: Command Palette intentionally lives behind a Scroll long-press now.
+    # WHY: Command Palette intentionally lives behind a Tools long-press now.
     # A long `input swipe` with identical start/end coordinates is the standard
     # ADB way to synthesize a long press without using brittle absolute bounds.
     # On this Samsung phone, 900ms repeatedly returned to the toolbar instead of
@@ -1937,17 +1937,24 @@ open_scroll_menu() {
     for _ in $(seq 1 4); do
         ensure_plain_toolbar
         dump_ui
-        if ! dump_has_button_text "Scroll"; then
+        if ! dump_has_button_text "Tools"; then
             dismiss_native_composer_if_open
             sleep 0.25
             continue
         fi
-        # WHY: this helper is used immediately after reader-window creation and
-        # Android layout changes. Taking another blind dump inside tap_text can
-        # catch a transient composer/dialog frame and fail even though the real
-        # toolbar is visible. Tap the Scroll button from the dump we already
-        # validated, then retry from toolbar state if the menu animation misses.
-        tap_visible_text_from_current_dump "Scroll"
+        # WHY: v2.86 removed the rarely used Scroll button from prime toolbar
+        # space but kept the same recovery function behind Tools. Tap Tools from
+        # the validated toolbar dump, then tap Scroll from the visible Tools
+        # dialog; this proves the real user path without touching endpoints.
+        tap_visible_text_from_current_dump "Tools"
+        for ___ in $(seq 1 8); do
+            dump_ui
+            if dump_has_text "Tools" && dump_has_text "Scroll"; then
+                tap_visible_text_from_current_dump "Scroll"
+                break
+            fi
+            sleep 0.2
+        done
         for __ in $(seq 1 8); do
             dump_ui
             if dump_has_text "Read current session" && dump_has_text "Go to live bottom / type"; then
@@ -1963,7 +1970,7 @@ open_scroll_menu() {
         press_back
         dismiss_native_composer_if_open
     done
-    echo "phone menu UI proof failed: Scroll button did not open the scroll-only menu" >&2
+    echo "phone menu UI proof failed: Tools -> Scroll did not open the scroll-only menu" >&2
     echo "UI dump: $DUMP_LOCAL" >&2
     exit 1
 }
@@ -1971,7 +1978,7 @@ open_scroll_menu() {
 open_command_palette() {
     for _ in $(seq 1 4); do
         ensure_plain_toolbar
-        long_press_text "Scroll"
+        long_press_text "Tools"
         for __ in $(seq 1 8); do
             dump_ui
             if dump_has_text "Active Sessions" \
@@ -1989,7 +1996,7 @@ open_command_palette() {
         press_back
         dismiss_native_composer_if_open
     done
-    echo "phone menu UI proof failed: Scroll long-press did not open the command palette" >&2
+    echo "phone menu UI proof failed: Tools long-press did not open the command palette" >&2
     echo "UI dump: $DUMP_LOCAL" >&2
     exit 1
 }
@@ -2223,7 +2230,7 @@ ensure_toolbar
 ensure_plain_toolbar
 
 echo "phone menu UI proof: toolbar labels"
-for label in Active Old Workspace New Refresh Bottom Scroll "Copy/Paste" Upload Close Start Stop; do
+for label in Active Old Workspace New Bottom "Copy/Paste" Upload Tools Close Start Stop; do
     assert_toolbar_button_text "$label"
 done
 assert_absent "Tabs"
@@ -2384,18 +2391,20 @@ wait_for_capture_text "$proof_window" "$REFRESH_TOKEN"
 control_get "/touch-scroll?where=lineUp&repeat=3" | json_assert "pre-refresh enters copy mode" "p.get('ok') is True and p.get('paneMode') == 'copy-mode'"
 wait_for_pane_mode "1"
 ensure_toolbar
-tap_text "Refresh"
+tap_text "Tools"
+assert_text "Refresh"
+tap_visible_text_from_current_dump "Refresh"
 sleep 1.5
 if [ "$(tmux_active_window)" != "$proof_window" ]; then
     echo "phone menu UI proof failed: Refresh switched away from proof window" >&2
     exit 1
 fi
 wait_for_pane_mode "0"
-# WHY: explicit Refresh reloads/reconnects the WebView transport. On the real
+# WHY: explicit Tools -> Refresh reloads/reconnects the WebView transport. On the real
 # phone this can show a short black reconnect frame that becomes readable a few
 # seconds later. Keep Active-switch checks strict, but give the user-invoked
 # recovery path a longer settle window before failing the black-WebView guard.
-wait_for_terminal_screenshot_settled_without_dots /tmp/wezterm-v249-refresh-toolbar-proof.png "Refresh toolbar-only" 30 0.5
+wait_for_terminal_screenshot_settled_without_dots /tmp/wezterm-v249-refresh-toolbar-proof.png "Tools Refresh" 30 0.5
 echo "Refresh button restored live mode"
 
 echo "phone menu UI proof: Scroll menu buttons"
@@ -2416,6 +2425,8 @@ dump_ui
 # typing state hides the composer and IME. Exercise that through the visible
 # Scroll -> Page up path, then keep the separate slow/fast physical one-finger
 # swipe proof below for the terminal gesture subsystem.
+tap_visible_text_from_current_dump "Tools"
+assert_text "Scroll"
 tap_visible_text_from_current_dump "Scroll"
 assert_text "Scroll"
 assert_text "Page up"

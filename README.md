@@ -17,7 +17,7 @@ See [Apple User Support](docs/apple-users.md).
 - Opens as a real Android app named `WEzterm`, not a Chrome shortcut.
 - Connects to the desktop terminal over Tailscale.
 - Shows a bottom toolbar with the primary work controls: `Active`, `Old`,
-  `Workspace`, `New`, `Refresh`, `Scroll`, `Copy/Paste`, `Upload`, `Close`,
+  `Workspace`, `New`, `Bottom`, `Copy/Paste`, `Upload`, `Tools`, `Close`,
   `Start`, and `Stop`.
 - Uses stable tmux window IDs for selecting and closing active sessions.
 - Orders the Active Sessions picker newest-first by tmux activity and snaps it to
@@ -27,10 +27,9 @@ See [Apple User Support](docs/apple-users.md).
 - Shows `Active Sessions` for currently open desktop/phone sessions.
 - Shows `Old Sessions` as saved parent Codex sessions grouped by exact date,
   with subagent sessions filtered out so helper agents do not pollute the list.
-- Keeps `Refresh` visible so the current tmux window can reattach to ttyd after
-  upgrades or stale WebView state without closing the Android task or losing the
-  selected session.
-- Keeps live-bottom recovery visible under `Scroll` and automatic after tab
+- Keeps `Refresh` and `Scroll` recovery under `Tools`, so the rare repair paths
+  remain available without taking daily toolbar space.
+- Keeps live-bottom recovery visible as `Bottom` and automatic after tab
   switching, so a bad gesture/read-mode state never traps typing.
 - Provides a visible `Copy/Paste` menu so phone clipboard text can be pasted
   into the active desktop pane and visible terminal text can be copied back to
@@ -92,7 +91,17 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=186`, `versionName=2.85`.
+- Built checkpoint: `versionCode=187`, `versionName=2.86`.
+- v2.86 is a visual-only native shell polish: it keeps the v2.85 renderer,
+  Send, scroll, IME, Active/Old data, stable `@windowId`, Upload, and
+  Start/Stop/Close handlers intact while improving the Android chrome. The
+  toolbar removes always-visible `Refresh` and `Scroll` in favor of `Tools`,
+  keeps those recovery actions reachable, uses smoother 14dp controls and a
+  22dp Active Sessions shell, adds one-pixel borders plus native elevation for
+  separation/dimensionality, changes Stop/Close from bright red to a muted
+  destructive rose, raises status dots to 18sp, and renders Active Sessions
+  titles in high-contrast off-white with humanized labels such as `Main Phone`
+  instead of raw `main_phone`.
 - v2.85 keeps the v2.84 optimistic, draft-safe Send behavior and routes native
   APK submits through `/submit-text?resize=0` so tapping Send skips the legacy
   tmux resize/release branch. This preserves stable `@windowId` targeting,
@@ -1083,14 +1092,12 @@ Android users use the native APK.
   while the visible phone controls are on a newer active session.
 - Claude visual polish keeps toolbar actions color-coded without merging
   controls, so users can find the safe action quickly without slowing down to
-  read every label under pressure. `Start`/`Send` now use the green plate and
-  `Stop`/`Close` the red plate already used by the Resume/Close dialog buttons,
-  with dark text for AA contrast; neutral navigation stays slate. `Start` and
-  `Stop` remain separate buttons — color reinforces the split and never merges
-  them (v1.54). The label floor rises from 10-11sp to 12-13sp (the long
-  `Copy/Paste` keeps a one-notch step-down so it never clips), the button
-  min-height floor rises from 44dp to 48dp without growing the fixed toolbar,
-  and the always-visible status dot grows from 10sp to 14sp. The dot pulse
+  read every label under pressure. `Start`/`Send` use the green role, while
+  v2.86 moves `Stop`/`Close` to a calmer muted destructive role with readable
+  light text; neutral navigation stays slate. `Start` and `Stop` remain
+  separate buttons — color reinforces the split and never merges them (v1.54).
+  The label floor is now 11-13sp, the fixed toolbar keeps compact 42dp rows,
+  and the always-visible status dot grows from 10sp to 18sp. The dot pulse
   stays dot-only/lifecycle-scoped (`View.ALPHA`, cancel-on-detach/pause) per
   v1.93, and the navigation-bar inset already reserved below the toolbar is
   unchanged — the IME inset is never added to toolbar height (v1.65).

@@ -123,7 +123,12 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
     private static final String PREF_PROMPT_DRAFT_PREFIX = "prompt_draft_";
-    private static final String APP_VERSION_NAME = "2.85";
+    private static final String APP_VERSION_NAME = "2.86";
+    private static final int PREMIUM_CONTROL_CORNER_RADIUS_DP = 14;
+    private static final int PREMIUM_DIALOG_CORNER_RADIUS_DP = 22;
+    private static final int PREMIUM_STATUS_DOT_SP = 18;
+    private static final int PREMIUM_CONTROL_STROKE_COLOR = Color.rgb(78, 84, 108);
+    private static final int PREMIUM_BUTTON_ELEVATION_DP = 2;
     private static final String UPLOAD_LOG_TAG = "WEztermUpload";
     private static final String SEND_LOG_TAG = "WEztermSend";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
@@ -949,8 +954,9 @@ public class MainActivity extends Activity {
         title.setEllipsize(TextUtils.TruncateAt.END);
         title.setGravity(android.view.Gravity.CENTER);
         title.setTextSize(12);
-        title.setTextColor(Color.rgb(166, 173, 200));
-        title.setBackgroundColor(Color.rgb(24, 24, 37));
+        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        title.setTextColor(Color.rgb(224, 230, 247));
+        title.setBackgroundColor(Color.rgb(17, 18, 24));
         title.setPadding(dp(8), 0, dp(8), 0);
         title.setText("WEzTerm");
         title.setContentDescription("Active session title");
@@ -962,14 +968,14 @@ public class MainActivity extends Activity {
     private LinearLayout bottomBar() {
         LinearLayout toolbar = new LinearLayout(this);
         toolbar.setOrientation(LinearLayout.VERTICAL);
-        toolbar.setPadding(dp(5), dp(3), dp(5), dp(3));
+        toolbar.setPadding(dp(6), dp(5), dp(6), dp(5));
         toolbar.setMinimumHeight(dp(TOOLBAR_HEIGHT_DP));
-        toolbar.setBackgroundColor(Color.rgb(24, 24, 37));
+        toolbar.setBackgroundColor(Color.rgb(17, 18, 24));
         LinearLayout topRow = toolbarRow();
         LinearLayout bottomRow = toolbarRow();
         toolbarStatusDot = toolbarStatusDotView();
         topRow.addView(toolbarStatusDot, new LinearLayout.LayoutParams(
-                dp(18),
+                dp(24),
                 LinearLayout.LayoutParams.MATCH_PARENT
         ));
         topRow.addView(toolbarNavigationButton("Active", v -> showActiveSessions()));
@@ -977,34 +983,12 @@ public class MainActivity extends Activity {
         topRow.addView(toolbarNavigationButton("Workspace", v -> showWorkspaces()));
         topRow.addView(toolbarNavigationButton("New", v ->
                 controlAndSettleLiveBottom("/new?fast=1", "", "new-session")));
-        // WHY: during upgrades, the user should not have to close the Android
-        // task or hunt for the same tmux tab just to refresh the terminal
-        // transport. This button preserves the current tmux window, returns it
-        // to live bottom, reloads only the WebView/ttyd connection, and focuses
-        // xterm again.
-        topRow.addView(toolbarNavigationButton("Refresh", v -> refreshTerminalTransport()));
         // WHY: live-bottom is the user's most frequent recovery when one-finger
         // return-to-bottom still misses the final prompt line. Keep it as a one-tap
         // button on the right side of the top row instead of burying it in the
         // fallback Scroll dialog. This must call the fast `/live-bottom` path, not
         // the heavy proof `/scroll?where=bottom` path that caused refresh loops.
         topRow.addView(toolbarNavigationButton("Bottom", v -> goLiveBottom()));
-        // WHY: v1.33 removed visible Live/Read/View access and stranded the
-        // proven scrollback/top/reader recovery paths behind an uncalled method.
-        // Keep one plain Scroll entry on the main bar so one-finger gesture bugs,
-        // Codex transcript pager drift, or keyboard focus failures never leave
-        // the phone with no way back to history top, page movement, or reader mode.
-        Button scrollButton = toolbarNavigationButton("Scroll", v -> showViewControls());
-        scrollButton.setOnLongClickListener(v -> {
-            // WHY: Scroll must stay a small scroll-only fallback. The command
-            // palette remains available for less common actions, but hiding it
-            // behind long-press prevents the old giant "Terminal Controls" menu
-            // from returning when the user only wants live bottom/top/page moves.
-            hideDockedPromptComposerForNavigation("toolbar-scroll-long-press");
-            showCommandPalette();
-            return true;
-        });
-        bottomRow.addView(scrollButton);
         // WHY: phone paste must be a first-class action, not a keyboard long-press
         // trick. The button opens explicit copy/paste controls backed by Android
         // clipboard APIs and tmux paste buffers, so prompts can be moved between
@@ -1024,12 +1008,26 @@ public class MainActivity extends Activity {
         // avoids burying the fastest media path in a dialog while preserving every
         // existing toolbar control that prior plan receipts protect.
         bottomRow.addView(toolbarNavigationButton("Upload", v -> pickMediaForUpload()));
+        // WHY: the user does not use Refresh or Scroll as daily actions, but plan
+        // history protects both as recovery paths. Remove those two labels from
+        // prime toolbar space and keep the same handlers behind one secondary
+        // visual control so this remains a layout/presentation change only.
+        Button toolsButton = toolbarNavigationButton("Tools", v -> showToolbarTools());
+        toolsButton.setOnLongClickListener(v -> {
+            hideDockedPromptComposerForNavigation("toolbar-tools-long-press");
+            showCommandPalette();
+            return true;
+        });
+        bottomRow.addView(toolsButton);
         // WHY: Close kills the selected tmux window — the other destructive action,
         // so it shares Stop's red role. Construction still goes through the guarded
         // toolbarNavigationButton("Close", v -> confirmClose()) call; the button is
         // only tinted afterward.
         Button closeButton = toolbarNavigationButton("Close", v -> confirmClose());
-        applyToolbarActionRole(closeButton, Color.rgb(243, 139, 168), Color.rgb(245, 194, 231));
+        applyToolbarActionRole(closeButton,
+                Color.rgb(96, 54, 68),
+                Color.rgb(203, 95, 120),
+                Color.rgb(255, 228, 234));
         bottomRow.addView(closeButton);
         // WHY: the user reported that a single smart combined button was not
         // predictable under pressure. Keep the two thumb-side actions separate:
@@ -1047,7 +1045,10 @@ public class MainActivity extends Activity {
         // positive go action — tint it the green role plate. The Start<->Send toggle
         // only calls setText, never re-applies a background, so this single tint holds
         // for both labels.
-        applyToolbarActionRole(startToolbarButton, Color.rgb(166, 227, 161), Color.rgb(148, 226, 213));
+        applyToolbarActionRole(startToolbarButton,
+                Color.rgb(128, 217, 164),
+                Color.rgb(166, 227, 161),
+                Color.rgb(15, 38, 28));
         bottomRow.addView(startToolbarButton);
         Button stopButton = toolbarButton("Stop", v -> stopCurrentTask());
         stopButton.setOnLongClickListener(v -> {
@@ -1058,7 +1059,10 @@ public class MainActivity extends Activity {
         // WHY: Stop interrupts the running task (Escape) — tint it the red
         // destructive role so it reads as "stop/danger" at a glance, distinct from
         // the green Start beside it.
-        applyToolbarActionRole(stopButton, Color.rgb(243, 139, 168), Color.rgb(245, 194, 231));
+        applyToolbarActionRole(stopButton,
+                Color.rgb(96, 54, 68),
+                Color.rgb(203, 95, 120),
+                Color.rgb(255, 228, 234));
         bottomRow.addView(stopButton);
         toolbar.addView(topRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -1082,14 +1086,14 @@ public class MainActivity extends Activity {
 
     private Button toolbarButton(String label, View.OnClickListener listener) {
         Button button = button(label, listener);
-        if (!"Scroll".equals(label) && !"Copy/Paste".equals(label) && !"Start".equals(label)) {
+        if (!"Tools".equals(label) && !"Copy/Paste".equals(label) && !"Start".equals(label)) {
             installPlainToolbarTapHandler(button);
         }
         // WHY: 10-11sp toolbar labels were a logged "font too small" complaint on
         // QHD, but real v2.62 proof showed `Workspace` clipping at 12sp inside
         // the six-column toolbar. Keep short commands large and step long labels
         // down so the visible APK button still says Workspace, not Workspac.
-        button.setTextSize(label.length() >= 9 ? 10 : 13);
+        button.setTextSize(label.length() >= 9 ? 11 : 13);
         button.setSingleLine(true);
         button.setIncludeFontPadding(false);
         button.setMinWidth(0);
@@ -1106,7 +1110,7 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 1
         );
-        params.setMargins(dp(2), 0, dp(2), 0);
+        params.setMargins(dp(3), 0, dp(3), 0);
         button.setLayoutParams(params);
         return button;
     }
@@ -1118,32 +1122,24 @@ public class MainActivity extends Activity {
         });
     }
 
-    // WHY: v2.05 rendered all 11 toolbar buttons in identical slate chrome, so
-    // Start (send Enter), Stop (interrupt), and Close (kill the tmux window) looked
-    // exactly like neutral navigation and forced read-then-tap on the two most
-    // consequential one-handed controls. Color-code by action role using the SAME
-    // Catppuccin plates the Resume/Close dialog buttons already use — green for the
-    // go/Send action, red for destructive Stop/Close — so the operator recognizes
-    // intent by color, not by reading each label. Applied AFTER construction so the
-    // guarded toolbarButton()/toolbarNavigationButton() label strings, the ripple,
-    // flashTap press feedback, and the ACTION_DOWN tap handler are all preserved.
-    // Dark text Color.rgb(30,30,46) matches the dialogs and keeps AA contrast on the
-    // colored plates. Start and Stop stay separate buttons (v1.54) — color reinforces
-    // the split, it must never merge them into one smart button.
-    private void applyToolbarActionRole(Button button, int baseColor, int rippleColor) {
+    // WHY: v2.05 rendered all toolbar buttons in identical flat slate chrome, but
+    // the 2026-06-27 visual pass also found bright red Stop/Close too harsh. Keep
+    // action-role color for one-handed scanning while muting destructive controls
+    // and preserving the exact existing button handlers. Start and Stop stay
+    // separate buttons (v1.54); this helper is visual-only and must never merge
+    // them into one smart button.
+    private void applyToolbarActionRole(Button button, int baseColor, int rippleColor, int textColor) {
         setTouchableBackground(button, baseColor, rippleColor);
-        button.setTextColor(Color.rgb(30, 30, 46));
+        button.setTextColor(textColor);
     }
 
     private TextView toolbarStatusDotView() {
         TextView dot = new StatusDotTextView(this);
         dot.setText("●");
-        // WHY: the single always-visible status dot was a 10sp glyph — the app's only
-        // at-a-glance state channel but the smallest thing on the bar. Raised to 14sp
-        // for faster Working/Ready/Problem recognition. It still fits the fixed dp(18)
-        // status cell and the weighted top row, and the pulse stays dot-only/lifecycle-
-        // scoped (startStatusDotPulse animates View.ALPHA only) per v1.93.
-        dot.setTextSize(14);
+        // WHY: the always-visible status dot is the app's fastest state channel.
+        // The 2026-06-27 visual pass raised it again for phone readability, while
+        // preserving the dot-only/lifecycle-scoped alpha pulse from v1.93.
+        dot.setTextSize(PREMIUM_STATUS_DOT_SP);
         dot.setGravity(android.view.Gravity.CENTER);
         dot.setIncludeFontPadding(false);
         dot.setContentDescription("Session status");
@@ -1288,8 +1284,9 @@ public class MainActivity extends Activity {
         button.setText(label);
         button.setAllCaps(false);
         button.setTextSize(13);
-        button.setTextColor(Color.rgb(205, 214, 244));
-        setTouchableBackground(button, Color.rgb(49, 50, 68), Color.rgb(137, 180, 250));
+        button.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        button.setTextColor(Color.rgb(228, 233, 249));
+        setTouchableBackground(button, Color.rgb(38, 41, 55), Color.rgb(137, 180, 250));
         button.setPadding(dp(4), 0, dp(4), 0);
         button.setOnClickListener(v -> {
             flashTap(v);
@@ -1335,9 +1332,24 @@ public class MainActivity extends Activity {
     private void setTouchableBackground(View view, int baseColor, int rippleColor) {
         GradientDrawable base = new GradientDrawable();
         base.setColor(baseColor);
-        base.setCornerRadius(dp(6));
+        base.setCornerRadius(dp(PREMIUM_CONTROL_CORNER_RADIUS_DP));
+        // WHY: the APK visual shell should feel like native app chrome, not a
+        // flat debug panel. The stroke/elevation are visual-only and preserve the
+        // exact click handlers, endpoints, and tmux targets attached to each view.
+        base.setStroke(dp(1), PREMIUM_CONTROL_STROKE_COLOR);
         view.setBackground(new RippleDrawable(ColorStateList.valueOf(rippleColor), base, null));
         view.setHapticFeedbackEnabled(true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            view.setElevation(dp(PREMIUM_BUTTON_ELEVATION_DP));
+        }
+    }
+
+    private GradientDrawable roundedFill(int color, int radiusDp, int strokeColor) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(color);
+        drawable.setCornerRadius(dp(radiusDp));
+        drawable.setStroke(dp(1), strokeColor);
+        return drawable;
     }
 
     private void flashTap(View view) {
@@ -1366,7 +1378,7 @@ public class MainActivity extends Activity {
             // clickable toolbar, but painting it black made it read as a giant dead
             // gap under WEzTerm's buttons. Match the toolbar plate so the system
             // nav strip is visually attached instead of a separate black spacer.
-            window.setNavigationBarColor(Color.rgb(24, 24, 37));
+            window.setNavigationBarColor(Color.rgb(17, 18, 24));
         }
         hideNavigationDeadStrip("configure-window");
     }
@@ -3850,6 +3862,31 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void showToolbarTools() {
+        hideDockedPromptComposerForNavigation("toolbar-tools-dialog");
+        final String[] labels = {
+                "Refresh",
+                "Scroll",
+                "Option keys",
+                "Needs Attention"
+        };
+        new AlertDialog.Builder(this)
+                .setTitle("Tools")
+                .setItems(labels, (dialog, which) -> {
+                    if (which == 0) {
+                        refreshTerminalTransport();
+                    } else if (which == 1) {
+                        showViewControls();
+                    } else if (which == 2) {
+                        showKeyControls();
+                    } else if (which == 3) {
+                        showNeedsAttention();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
     private void showViewControls() {
         hideDockedPromptComposerForNavigation("scroll-dialog");
         String[] labels = new String[]{
@@ -5098,18 +5135,12 @@ public class MainActivity extends Activity {
         String viewSession = payload.optString("viewSession", "main_phone");
         ScrollView scrollView = new ScrollView(this);
         scrollView.setFocusable(false);
+        scrollView.setFillViewport(false);
         LinearLayout list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
         list.setFocusable(false);
-        list.setPadding(dp(8), dp(6), dp(8), dp(6));
+        list.setPadding(0, dp(6), 0, dp(2));
         scrollView.addView(list);
-
-        TextView header = new TextView(this);
-        header.setText("Active: " + viewSession + " (" + session + ")");
-        header.setTextSize(14);
-        header.setTextColor(Color.rgb(205, 214, 244));
-        header.setPadding(0, 0, 0, dp(8));
-        list.addView(header);
 
         final AlertDialog[] dialogRef = new AlertDialog[1];
         addActiveDialogActions(list, dialogRef);
@@ -5149,21 +5180,120 @@ public class MainActivity extends Activity {
             }
         }
 
+        String subtitle = humanizeSessionLabel(viewSession) + " · " + humanizeSessionLabel(session);
         AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle(title)
-                .setView(scrollView)
+                .setView(premiumDialogShell(title, subtitle, scrollView))
                 .show();
         dialogRef[0] = dialog;
+        stylePremiumDialogWindow(dialog);
         // WHY: Android AlertDialog can focus a child row or preserve a measured
         // scroll position, which made Active Sessions open in the middle. The phone picker
         // is always a "start from the newest/attention section" surface.
         scrollView.post(() -> scrollView.scrollTo(0, 0));
     }
 
+    private LinearLayout premiumDialogShell(String title, String subtitle, ScrollView scrollView) {
+        LinearLayout shell = new LinearLayout(this);
+        shell.setOrientation(LinearLayout.VERTICAL);
+        shell.setPadding(dp(16), dp(14), dp(16), dp(12));
+        shell.setBackground(roundedFill(
+                Color.rgb(18, 19, 26),
+                PREMIUM_DIALOG_CORNER_RADIUS_DP,
+                Color.rgb(76, 82, 106)
+        ));
+
+        TextView titleView = new TextView(this);
+        titleView.setText(title);
+        titleView.setTextSize(24);
+        titleView.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        titleView.setTextColor(Color.rgb(244, 246, 252));
+        titleView.setIncludeFontPadding(false);
+        titleView.setPadding(0, 0, 0, dp(5));
+        shell.addView(titleView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+
+        if (subtitle != null && !subtitle.trim().isEmpty()) {
+            TextView subtitleView = new TextView(this);
+            subtitleView.setText(subtitle);
+            subtitleView.setTextSize(12);
+            subtitleView.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
+            subtitleView.setTextColor(Color.rgb(174, 181, 205));
+            subtitleView.setIncludeFontPadding(false);
+            subtitleView.setPadding(0, 0, 0, dp(10));
+            shell.addView(subtitleView, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+            ));
+        }
+
+        shell.addView(scrollView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+        return shell;
+    }
+
+    private void stylePremiumDialogWindow(AlertDialog dialog) {
+        if (dialog == null || dialog.getWindow() == null) {
+            return;
+        }
+        // WHY: the old stock AlertDialog gray shell made the APK feel like a
+        // debug utility. Making the window transparent lets the app-owned rounded
+        // dark panel define the chrome without changing any session actions.
+        dialog.getWindow().setBackgroundDrawable(
+                new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
+        );
+    }
+
+    private String displaySessionTitle(String rawTitle) {
+        if (rawTitle == null) {
+            return "";
+        }
+        String trimmed = rawTitle.trim();
+        if (trimmed.isEmpty()) {
+            return "";
+        }
+        String lower = trimmed.toLowerCase(Locale.US);
+        if ((trimmed.contains("_") || "main".equals(lower) || "main_phone".equals(lower))
+                && trimmed.equals(lower)) {
+            return humanizeSessionLabel(trimmed);
+        }
+        return trimmed;
+    }
+
+    private String humanizeSessionLabel(String rawLabel) {
+        if (rawLabel == null) {
+            return "";
+        }
+        String normalized = rawLabel.trim().replace('_', ' ').replace('-', ' ');
+        if (normalized.isEmpty()) {
+            return "";
+        }
+        String[] parts = normalized.split("\\s+");
+        StringBuilder builder = new StringBuilder();
+        for (String part : parts) {
+            if (part.isEmpty()) {
+                continue;
+            }
+            if (builder.length() > 0) {
+                builder.append(' ');
+            }
+            if (part.length() == 1) {
+                builder.append(part.toUpperCase(Locale.US));
+            } else {
+                builder.append(part.substring(0, 1).toUpperCase(Locale.US));
+                builder.append(part.substring(1).toLowerCase(Locale.US));
+            }
+        }
+        return builder.length() == 0 ? rawLabel.trim() : builder.toString();
+    }
+
     private void addActiveDialogActions(LinearLayout list, AlertDialog[] dialogRef) {
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
-        actions.setPadding(0, 0, 0, dp(8));
+        actions.setPadding(0, 0, 0, dp(10));
         // WHY: the stock AlertDialog three-button footer can stack or disappear
         // below the phone viewport in Active Sessions, exactly as the user
         // reported. Keep these actions inside the scrollable dialog content as a
@@ -5195,20 +5325,21 @@ public class MainActivity extends Activity {
         action.setAllCaps(false);
         action.setTextSize(12);
         action.setSingleLine(true);
-        action.setTextColor(Color.rgb(205, 214, 244));
+        action.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        action.setTextColor(Color.rgb(228, 233, 249));
         action.setGravity(android.view.Gravity.CENTER);
         action.setPadding(dp(4), 0, dp(4), 0);
-        setTouchableBackground(action, Color.rgb(49, 50, 68), Color.rgb(137, 180, 250));
+        setTouchableBackground(action, Color.rgb(38, 41, 55), Color.rgb(137, 180, 250));
         action.setOnClickListener(v -> {
             flashTap(v);
             listener.onClick(v);
         });
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 0,
-                dp(48),
+                dp(44),
                 1
         );
-        params.setMargins(dp(2), 0, dp(2), 0);
+        params.setMargins(dp(3), 0, dp(3), 0);
         action.setLayoutParams(params);
         return action;
     }
@@ -5440,10 +5571,10 @@ public class MainActivity extends Activity {
     private void addSectionHeader(LinearLayout list, String label, int count) {
         TextView section = new TextView(this);
         section.setText(count > 0 ? label + " (" + count + ")" : label);
-        section.setTextSize(12);
-        section.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-        section.setTextColor(Color.rgb(249, 226, 175));
-        section.setPadding(0, dp(8), 0, dp(4));
+        section.setTextSize(13);
+        section.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        section.setTextColor(Color.rgb(186, 198, 235));
+        section.setPadding(0, dp(10), 0, dp(5));
         list.addView(section);
     }
 
@@ -5488,22 +5619,23 @@ public class MainActivity extends Activity {
         // display client. Do not summarize titles here or the phone APK will
         // drift from desktop tmux, web remote, and Old Sessions.
         String title = window.optString("title", window.optString("name", "shell"));
+        String visibleTitle = displaySessionTitle(title);
         String detail = tabDetail(window, session);
         String status = window.optString("status", "idle");
         String statusLabel = window.optString("statusLabel", "Done");
 
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(window.optBoolean("isChild", false) ? dp(18) : 0, dp(3), 0, dp(3));
+        row.setPadding(window.optBoolean("isChild", false) ? dp(18) : 0, dp(4), 0, dp(4));
 
         LinearLayout openPanel = new LinearLayout(this);
         openPanel.setOrientation(LinearLayout.VERTICAL);
         openPanel.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        openPanel.setPadding(dp(10), dp(6), dp(10), dp(6));
+        openPanel.setPadding(dp(12), dp(8), dp(12), dp(8));
         setTouchableBackground(openPanel,
                 window.optBoolean("active", false)
-                        ? Color.rgb(69, 71, 90)
-                        : Color.rgb(49, 50, 68),
+                        ? Color.rgb(51, 58, 78)
+                        : Color.rgb(32, 35, 48),
                 Color.rgb(137, 180, 250));
         View.OnClickListener openSessionClick = v -> {
             flashTap(v);
@@ -5518,17 +5650,17 @@ public class MainActivity extends Activity {
 
         TextView statusDot = new StatusDotTextView(this);
         statusDot.setText("●");
-        statusDot.setTextSize(14);
+        statusDot.setTextSize(PREMIUM_STATUS_DOT_SP);
         statusDot.setGravity(android.view.Gravity.CENTER);
         statusDot.setIncludeFontPadding(false);
         statusDot.setContentDescription(statusLabel);
         applySessionStatusDot(statusDot, status, window.optBoolean("needsAttention", false), statusLabel);
 
         TextView titleText = new TextView(this);
-        titleText.setText(title);
-        titleText.setTextSize(15);
-        titleText.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-        titleText.setTextColor(Color.rgb(255, 96, 112));
+        titleText.setText(visibleTitle);
+        titleText.setTextSize(16);
+        titleText.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        titleText.setTextColor(Color.rgb(244, 246, 252));
         titleText.setSingleLine(false);
         titleText.setMaxLines(Integer.MAX_VALUE);
         titleText.setEllipsize(null);
@@ -5555,8 +5687,8 @@ public class MainActivity extends Activity {
 
         TextView detailText = new TextView(this);
         detailText.setText(detail);
-        detailText.setTextSize(11);
-        detailText.setTextColor(Color.rgb(166, 173, 200));
+        detailText.setTextSize(12);
+        detailText.setTextColor(Color.rgb(178, 185, 207));
         detailText.setSingleLine(true);
         detailText.setEllipsize(TextUtils.TruncateAt.END);
         detailText.setIncludeFontPadding(false);
@@ -5568,7 +5700,7 @@ public class MainActivity extends Activity {
         // pane evidence, not by the mutable title string, so scanability improves
         // without changing the stable windowId close/select target.
         titleRow.addView(statusDot, new LinearLayout.LayoutParams(
-                dp(18),
+                dp(24),
                 LinearLayout.LayoutParams.MATCH_PARENT
         ));
         statusDot.setClickable(true);
@@ -5597,8 +5729,9 @@ public class MainActivity extends Activity {
         close.setText("Close");
         close.setAllCaps(false);
         close.setTextSize(12);
-        close.setTextColor(Color.rgb(30, 30, 46));
-        setTouchableBackground(close, Color.rgb(243, 139, 168), Color.rgb(245, 194, 231));
+        close.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        close.setTextColor(Color.rgb(255, 228, 234));
+        setTouchableBackground(close, Color.rgb(96, 54, 68), Color.rgb(203, 95, 120));
         close.setPadding(dp(3), 0, dp(3), 0);
         close.setOnClickListener(v -> {
             flashTap(v);
@@ -5614,11 +5747,11 @@ public class MainActivity extends Activity {
                 1
         ));
         LinearLayout.LayoutParams closeParams = new LinearLayout.LayoutParams(
-                dp(92),
+                dp(76),
                 LinearLayout.LayoutParams.WRAP_CONTENT
         );
-        close.setMinHeight(dp(72));
-        closeParams.setMargins(dp(6), 0, 0, 0);
+        close.setMinHeight(dp(56));
+        closeParams.setMargins(dp(8), 0, 0, 0);
         row.addView(close, closeParams);
         list.addView(row);
     }
@@ -5633,6 +5766,7 @@ public class MainActivity extends Activity {
         // Sessions, web remote, and tmux. The APK should never invent a second
         // naming table from raw prompts or process names.
         String title = session.optString("title", sessionId);
+        String visibleTitle = displaySessionTitle(title);
         String cwd = session.optString("cwd", "");
 
         LinearLayout row = new LinearLayout(this);
@@ -5642,8 +5776,8 @@ public class MainActivity extends Activity {
         LinearLayout openPanel = new LinearLayout(this);
         openPanel.setOrientation(LinearLayout.VERTICAL);
         openPanel.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        openPanel.setPadding(dp(10), dp(8), dp(10), dp(8));
-        setTouchableBackground(openPanel, Color.rgb(49, 50, 68), Color.rgb(137, 180, 250));
+        openPanel.setPadding(dp(12), dp(8), dp(12), dp(8));
+        setTouchableBackground(openPanel, Color.rgb(32, 35, 48), Color.rgb(137, 180, 250));
         openPanel.setClickable(true);
         openPanel.setOnClickListener(v -> {
             flashTap(v);
@@ -5654,10 +5788,10 @@ public class MainActivity extends Activity {
         });
 
         TextView titleText = new TextView(this);
-        titleText.setText(title);
-        titleText.setTextSize(15);
-        titleText.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-        titleText.setTextColor(Color.rgb(205, 214, 244));
+        titleText.setText(visibleTitle);
+        titleText.setTextSize(16);
+        titleText.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        titleText.setTextColor(Color.rgb(244, 246, 252));
         titleText.setSingleLine(false);
         titleText.setMaxLines(Integer.MAX_VALUE);
         titleText.setEllipsize(null);
@@ -5689,8 +5823,9 @@ public class MainActivity extends Activity {
         resume.setText("Resume");
         resume.setAllCaps(false);
         resume.setTextSize(12);
+        resume.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         resume.setTextColor(Color.rgb(30, 30, 46));
-        setTouchableBackground(resume, Color.rgb(166, 227, 161), Color.rgb(148, 226, 213));
+        setTouchableBackground(resume, Color.rgb(128, 217, 164), Color.rgb(166, 227, 161));
         resume.setPadding(dp(3), 0, dp(3), 0);
         resume.setOnClickListener(v -> {
             flashTap(v);
@@ -5706,11 +5841,11 @@ public class MainActivity extends Activity {
                 1
         ));
         LinearLayout.LayoutParams resumeParams = new LinearLayout.LayoutParams(
-                dp(92),
+                dp(82),
                 LinearLayout.LayoutParams.WRAP_CONTENT
         );
-        resume.setMinHeight(dp(72));
-        resumeParams.setMargins(dp(6), 0, 0, 0);
+        resume.setMinHeight(dp(56));
+        resumeParams.setMargins(dp(8), 0, 0, 0);
         row.addView(resume, resumeParams);
         list.addView(row);
     }
@@ -5731,8 +5866,8 @@ public class MainActivity extends Activity {
         LinearLayout openPanel = new LinearLayout(this);
         openPanel.setOrientation(LinearLayout.VERTICAL);
         openPanel.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        openPanel.setPadding(dp(10), dp(8), dp(10), dp(8));
-        setTouchableBackground(openPanel, Color.rgb(49, 50, 68), Color.rgb(137, 180, 250));
+        openPanel.setPadding(dp(12), dp(8), dp(12), dp(8));
+        setTouchableBackground(openPanel, Color.rgb(32, 35, 48), Color.rgb(137, 180, 250));
         openPanel.setClickable(true);
         openPanel.setOnClickListener(v -> {
             flashTap(v);
@@ -5741,11 +5876,11 @@ public class MainActivity extends Activity {
 
         TextView titleText = new TextView(this);
         titleText.setText(title);
-        titleText.setTextSize(15);
-        titleText.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        titleText.setTextSize(16);
+        titleText.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         titleText.setTextColor(snapshot.optBoolean("isRecommended", false)
                 ? Color.rgb(166, 227, 161)
-                : Color.rgb(205, 214, 244));
+                : Color.rgb(244, 246, 252));
         titleText.setSingleLine(false);
         titleText.setMaxLines(Integer.MAX_VALUE);
         titleText.setEllipsize(null);
@@ -5755,7 +5890,7 @@ public class MainActivity extends Activity {
         TextView detailText = new TextView(this);
         detailText.setText(detail);
         detailText.setTextSize(12);
-        detailText.setTextColor(Color.rgb(166, 173, 200));
+        detailText.setTextColor(Color.rgb(178, 185, 207));
         detailText.setSingleLine(false);
         detailText.setMaxLines(3);
         detailText.setIncludeFontPadding(false);
@@ -5773,8 +5908,9 @@ public class MainActivity extends Activity {
         load.setText("Load");
         load.setAllCaps(false);
         load.setTextSize(12);
+        load.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         load.setTextColor(Color.rgb(30, 30, 46));
-        setTouchableBackground(load, Color.rgb(166, 227, 161), Color.rgb(148, 226, 213));
+        setTouchableBackground(load, Color.rgb(128, 217, 164), Color.rgb(166, 227, 161));
         load.setPadding(dp(3), 0, dp(3), 0);
         load.setOnClickListener(v -> {
             flashTap(v);
@@ -5787,11 +5923,11 @@ public class MainActivity extends Activity {
                 1
         ));
         LinearLayout.LayoutParams loadParams = new LinearLayout.LayoutParams(
-                dp(92),
+                dp(82),
                 LinearLayout.LayoutParams.WRAP_CONTENT
         );
-        load.setMinHeight(dp(72));
-        loadParams.setMargins(dp(6), 0, 0, 0);
+        load.setMinHeight(dp(56));
+        loadParams.setMargins(dp(8), 0, 0, 0);
         row.addView(load, loadParams);
         list.addView(row);
     }
@@ -5803,6 +5939,7 @@ public class MainActivity extends Activity {
     ) {
         String sessionId = session.optString("id", "");
         String title = session.optString("title", sessionId);
+        String visibleTitle = displaySessionTitle(title);
         String cwd = session.optString("cwd", "");
         String detail = crashedSessionDetail(session);
 
@@ -5813,8 +5950,8 @@ public class MainActivity extends Activity {
         LinearLayout openPanel = new LinearLayout(this);
         openPanel.setOrientation(LinearLayout.VERTICAL);
         openPanel.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        openPanel.setPadding(dp(10), dp(8), dp(10), dp(8));
-        setTouchableBackground(openPanel, Color.rgb(49, 50, 68), Color.rgb(249, 226, 175));
+        openPanel.setPadding(dp(12), dp(8), dp(12), dp(8));
+        setTouchableBackground(openPanel, Color.rgb(32, 35, 48), Color.rgb(249, 226, 175));
         openPanel.setClickable(true);
         openPanel.setOnClickListener(v -> {
             flashTap(v);
@@ -5825,9 +5962,9 @@ public class MainActivity extends Activity {
         });
 
         TextView titleText = new TextView(this);
-        titleText.setText(title);
-        titleText.setTextSize(15);
-        titleText.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        titleText.setText(visibleTitle);
+        titleText.setTextSize(16);
+        titleText.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         titleText.setTextColor(Color.rgb(249, 226, 175));
         titleText.setSingleLine(false);
         titleText.setMaxLines(Integer.MAX_VALUE);
@@ -5849,7 +5986,7 @@ public class MainActivity extends Activity {
         TextView detailText = new TextView(this);
         detailText.setText(detail);
         detailText.setTextSize(12);
-        detailText.setTextColor(Color.rgb(166, 173, 200));
+        detailText.setTextColor(Color.rgb(178, 185, 207));
         detailText.setSingleLine(false);
         detailText.setMaxLines(3);
         detailText.setIncludeFontPadding(false);
@@ -5872,6 +6009,7 @@ public class MainActivity extends Activity {
         restore.setText("Restore");
         restore.setAllCaps(false);
         restore.setTextSize(12);
+        restore.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         restore.setTextColor(Color.rgb(30, 30, 46));
         setTouchableBackground(restore, Color.rgb(249, 226, 175), Color.rgb(148, 226, 213));
         restore.setPadding(dp(3), 0, dp(3), 0);
@@ -5889,11 +6027,11 @@ public class MainActivity extends Activity {
                 1
         ));
         LinearLayout.LayoutParams restoreParams = new LinearLayout.LayoutParams(
-                dp(92),
+                dp(82),
                 LinearLayout.LayoutParams.WRAP_CONTENT
         );
-        restore.setMinHeight(dp(72));
-        restoreParams.setMargins(dp(6), 0, 0, 0);
+        restore.setMinHeight(dp(56));
+        restoreParams.setMargins(dp(8), 0, 0, 0);
         row.addView(restore, restoreParams);
         list.addView(row);
     }
@@ -6298,11 +6436,11 @@ public class MainActivity extends Activity {
         String detail = window.optString("detail", window.optString("command", ""));
         String path = window.optString("shortPath", "");
         return status
-                + (attention.isEmpty() ? "" : " - " + attention)
-                + " - " + state
-                + (activity.isEmpty() ? "" : " - " + activity)
-                + " - " + detail
-                + (path.isEmpty() ? "" : " - " + path);
+                + (attention.isEmpty() ? "" : " · " + attention)
+                + " · " + state
+                + (activity.isEmpty() ? "" : " · " + activity)
+                + (detail.isEmpty() ? "" : " · " + detail)
+                + (path.isEmpty() ? "" : " · " + path);
     }
 
     private String urlEncode(String value) {

@@ -282,6 +282,8 @@ public class MainActivity extends Activity {
     private boolean touchScrollRenderPulseScheduled = false;
     private long touchScrollRenderPulseUntilMs = 0;
     private long captureRendererScaleSyncGeneration = 0;
+    private boolean captureRendererScaleSyncDeferredUntilTouchRelease = false;
+    private String captureRendererScaleSyncDeferredReason = "scale-change";
     private long terminalTouchGestureGeneration = 0;
     private long terminalLongPressCopyGeneration = 0;
     private String terminalTouchStableWindowId = "";
@@ -1735,6 +1737,9 @@ public class MainActivity extends Activity {
             clearTerminalLongPressCopyState();
             if (wasMultiTouch || wasHorizontalPan) {
                 allowViewerPanBriefly();
+            }
+            if (wasMultiTouch) {
+                flushDeferredCaptureRendererScaleSync("multi-touch-release");
             }
             recycleTerminalVelocityTracker();
             if (wasForwardingTouchToViewer) {
@@ -7777,6 +7782,25 @@ public class MainActivity extends Activity {
         }
         long generation = ++captureRendererScaleSyncGeneration;
         invalidateWebViewAfterViewerScale(reason);
+        if (terminalMultiTouchGesture) {
+            // WHY: a live two-finger pinch already gives WebView ownership of native
+            // scale and pan. Calling into JS to mutate capture-renderer geometry on
+            // every onScaleChanged tick fights Android's in-progress gesture and is
+            // perceived as jumpy/spazzing zoom. Keep compositor invalidation during
+            // the pinch, then do one geometry-only sync after release.
+            captureRendererScaleSyncDeferredUntilTouchRelease = true;
+            captureRendererScaleSyncDeferredReason = reason;
+            uiHandler.postDelayed(() -> {
+                if (generation != captureRendererScaleSyncGeneration
+                        || terminalMultiTouchGesture
+                        || webView == null
+                        || !captureRendererScaleSyncDeferredUntilTouchRelease) {
+                    return;
+                }
+                flushDeferredCaptureRendererScaleSync("scale-settle");
+            }, 180);
+            return;
+        }
         syncCaptureRendererViewportOnlyForScale(reason);
         uiHandler.postDelayed(() -> {
             if (generation != captureRendererScaleSyncGeneration || webView == null) {
@@ -7785,6 +7809,19 @@ public class MainActivity extends Activity {
             invalidateWebViewAfterViewerScale(reason + "-settle");
             syncCaptureRendererViewportOnlyForScale(reason + "-settle");
         }, 96);
+    }
+
+    private void flushDeferredCaptureRendererScaleSync(String reason) {
+        if (!captureRendererScaleSyncDeferredUntilTouchRelease || webView == null) {
+            return;
+        }
+        captureRendererScaleSyncDeferredUntilTouchRelease = false;
+        String deferredReason = captureRendererScaleSyncDeferredReason == null
+                || captureRendererScaleSyncDeferredReason.trim().isEmpty()
+                ? reason
+                : captureRendererScaleSyncDeferredReason;
+        invalidateWebViewAfterViewerScale(reason);
+        syncCaptureRendererViewportOnlyForScale(deferredReason + "-" + reason);
     }
 
     private void invalidateWebViewAfterViewerScale(String reason) {

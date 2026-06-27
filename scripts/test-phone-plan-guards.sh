@@ -1505,6 +1505,8 @@ require "$MAIN" 'syncCaptureRendererAfterViewerScaleChange("scale-change")' "Web
 require "$MAIN" 'captureRendererViewportOnlyScaleReturnScript' "APK scale repaint must use a capture-renderer geometry-only script"
 require "$MAIN" "r.syncViewportOnly('apk-scale-" "APK scale repaint must call the renderer viewport-only hook instead of fetching rows directly"
 require "$MAIN" 'postInvalidateOnAnimation' "APK scale repaint must invalidate the WebView compositor after zoom changes"
+require "$MAIN" 'DeferredUntilTouchRelease' "APK physical pinch must defer capture-renderer geometry sync until touch release to avoid jumpy zoom"
+require "$MAIN" 'perceived as jumpy/spazzing zoom' "APK two-finger smoothness WHY comment must preserve the live-pinch owner layer"
 require "$MANTIS_CONTROL_SERVER" 'syncViewportOnly,setWindowId' "Mantis capture renderer must expose geometry-only sync to the APK scale path"
 require "$MANTIS_CONTROL_SERVER" 'geometry-only hook from WebView.onScaleChanged' "Mantis capture renderer WHY comment must preserve the zoom-out black repaint owner"
 require "$MANTIS_CONTROL_SERVER" 'function zoomOutRowBufferRows' "Mantis capture renderer must keep a small row buffer for immediate zoom-out visibility"

@@ -124,7 +124,7 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
     private static final String PREF_PROMPT_DRAFT_PREFIX = "prompt_draft_";
-    private static final String APP_VERSION_NAME = "2.89";
+    private static final String APP_VERSION_NAME = "2.91";
     private static final int PREMIUM_CONTROL_CORNER_RADIUS_DP = 14;
     private static final int PREMIUM_DIALOG_CORNER_RADIUS_DP = 22;
     private static final int ACTIVE_SESSION_ROW_GAP_DP = 10;
@@ -1040,15 +1040,15 @@ public class MainActivity extends Activity {
             return true;
         });
         bottomRow.addView(settingsButton);
-        // WHY: Close kills the selected tmux window — the other destructive action,
-        // so it shares Stop's red role. Construction still goes through the guarded
-        // toolbarNavigationButton("Close", v -> confirmClose()) call; the button is
-        // only tinted afterward.
+        // WHY: Close kills the selected tmux window, but user proof showed red
+        // Close beside red Stop made the toolbar read like two identical danger
+        // controls. Keep the exact Close handler and stable target guard, while
+        // tinting Close as a neutral slate action so red means only Stop.
         Button closeButton = toolbarNavigationButton("Close", v -> confirmClose());
         applyToolbarActionRole(closeButton,
-                Color.rgb(96, 54, 68),
-                Color.rgb(203, 95, 120),
-                Color.rgb(255, 228, 234));
+                Color.rgb(48, 52, 70),
+                Color.rgb(137, 180, 250),
+                Color.rgb(232, 238, 255));
         bottomRow.addView(closeButton);
         // WHY: the user reported that a single smart combined button was not
         // predictable under pressure. Keep the two thumb-side actions separate:
@@ -6718,7 +6718,30 @@ public class MainActivity extends Activity {
         if (hasStableWindowId(currentPhoneWindowId)) {
             return currentPhoneWindowId.trim();
         }
+        String webViewWindowId = currentWebViewWindowIdTargetKey();
+        if (hasStableWindowId(webViewWindowId)) {
+            return webViewWindowId.trim();
+        }
         return "unknown:" + terminalModeGeneration;
+    }
+
+    private String currentWebViewWindowIdTargetKey() {
+        if (webView == null) {
+            return "";
+        }
+        String currentUrl = webView.getUrl();
+        if (currentUrl == null || currentUrl.trim().isEmpty()) {
+            return "";
+        }
+        try {
+            String windowId = Uri.parse(currentUrl).getQueryParameter("windowId");
+            if (hasStableWindowId(windowId)) {
+                return windowId.trim();
+            }
+        } catch (Exception ignored) {
+            return "";
+        }
+        return "";
     }
 
     private String promptComposerDraftSubmitTargetKey() {

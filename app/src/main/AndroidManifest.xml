@@ -1,7 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.kaleeb.wezterm"
-    android:versionCode="190"
-    android:versionName="2.89">
+    android:versionCode="192"
+    android:versionName="2.91">
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application

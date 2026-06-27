@@ -59,13 +59,13 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="190"' "current APK version must be bumped for the v2.89 zoom repaint contract"
-require "$MANIFEST" 'android:versionName="2.89"' "current APK version must be bumped for the v2.89 zoom repaint contract"
+require "$MANIFEST" 'android:versionCode="192"' "current APK version must be bumped for the v2.91 close-neutral visual contract"
+require "$MANIFEST" 'android:versionName="2.91"' "current APK version must be bumped for the v2.91 close-neutral visual contract"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.89";' "client /config proof must report the same v2.89 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.91";' "client /config proof must report the same v2.91 APK contract as the manifest"
 require "$MAIN" 'MediaStore.ACTION_PICK_IMAGES' "Upload must use Android Photo Picker for one-selection screenshots/media on Android 13+"
 require "$MAIN" 'uploadDocumentPickerIntent' "Upload must keep ACTION_OPEN_DOCUMENT fallback for non-photo-picker/files path"
 require "$MAIN" 'uploadUrisFromResult' "Upload result must handle both data URI and ClipData instead of dropping picker returns"
@@ -104,6 +104,8 @@ require "$MAIN" '? ""' "Mobile viewport mode must omit fixed cols so the capture
 require "$MAIN" '"&cols=" + APK_CAPTURE_RENDERER_COLS' "Desktop viewport mode must keep the protected 132-column capture renderer"
 require "$MAIN" '"&viewportMode=" + urlEncode(viewportMode)' "APK renderer URL must expose the selected viewport mode for proof and future server-side guards"
 require "$MAIN" 'wraps to the phone viewport without touching shared tmux' "viewport mode WHY comment must preserve the no-tmux-resize boundary"
+require "$MAIN" 'currentWebViewWindowIdTargetKey()' "viewport reloads must preserve the windowId already loaded in the WebView when in-memory state is empty"
+require "$MAIN" 'Uri.parse(currentUrl).getQueryParameter("windowId")' "viewport reload target fallback must read the visible WebView windowId query instead of falling back to active tmux"
 require "$MAIN" 'refreshCaptureRendererSoon' "APK scroll controls must repaint the capture renderer without reloading or resizing tmux"
 require "$MAIN" 'data-mantis-capture-renderer' "APK probes must recognize the capture renderer as a healthy terminal surface"
 require "$MAIN" 'customGlyphs=false' "APK terminal URL must disable xterm custom glyphs to stop blank-cell dot glyphs"
@@ -167,7 +169,9 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=190`, `versionName=2.89`.' "README checkpoint must match the installed v2.89 APK"
+    require "$README" 'Built checkpoint: `versionCode=192`, `versionName=2.91`.' "README checkpoint must match the installed v2.91 APK"
+    require "$README" 'red is reserved for Stop' "README must document the v2.91 close-neutral toolbar contract"
+    require "$README" 'reserved for Start/Send' "README must document the v2.91 close-neutral toolbar contract"
     require "$README" 'v2.89 keeps v2.88 toolbar/upload/copy behavior' "README must document the v2.89 zoom repaint contract"
     require "$README" 'v2.88 keeps the v2.87 visual-only native shell contract' "README must document the v2.88 upload/long-press-copy contract"
     require "$README" 'v2.87 keeps the visual-only native shell contract' "README must document the v2.87 active/workspace visual contract"
@@ -346,8 +350,8 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.89' "install page must advertise the current v2.89 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>190</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.91' "install page must advertise the current v2.91 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>192</code>' "install page versionCode must match the manifest"
     require "$INSTALL_PAGE" 'Workspace Save/Load/Close' "install page must mention the v2.62 workspace control fix"
     require "$INSTALL_PAGE" 'composer-above-buttons layout' "install page must mention the restored composer-above-buttons layout"
     require "$INSTALL_PAGE" 'compact v2.65 toolbar chrome' "install page must mention the compact bottom toolbar fix"
@@ -464,7 +468,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.89 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.91 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"
@@ -831,9 +835,11 @@ require "$MAIN" 'applyToolbarActionRole(' "toolbar visual role helper must keep 
 require "$MAIN" 'applyToolbarActionRole(startToolbarButton,' "Start/Send must keep the positive role"
 require "$MAIN" 'Color.rgb(128, 217, 164)' "Start/Send must keep the calmer green positive role"
 require "$MAIN" 'applyToolbarActionRole(stopButton,' "Stop must keep a destructive role"
-require "$MAIN" 'applyToolbarActionRole(closeButton,' "Close must keep a destructive role"
-require "$MAIN" 'Color.rgb(96, 54, 68)' "Stop/Close must use the muted v2.86 destructive role instead of the old bright red plate"
-require "$MAIN" 'Color.rgb(255, 228, 234)' "muted destructive toolbar buttons must keep readable light label text"
+require "$MAIN" 'applyToolbarActionRole(closeButton,' "Close must keep an explicit visual role instead of inheriting Stop styling"
+require "$MAIN" 'red means only Stop' "Close WHY comment must preserve the v2.91 no-two-red-controls complaint"
+require "$MAIN" 'Color.rgb(48, 52, 70)' "Close must use the neutral slate v2.91 role instead of sharing Stop red"
+require "$MAIN" 'Color.rgb(96, 54, 68)' "Stop must use the muted v2.86 destructive role instead of the old bright red plate"
+require "$MAIN" 'Color.rgb(255, 228, 234)' "Stop destructive toolbar button must keep readable light label text"
 require "$MAIN" 'button.setMinHeight(dp(42))' "toolbar buttons must keep the compact v2.65 touch target after the bottom-space complaint"
 require "$MAIN" 'button.setTextSize(label.length() >= 9 ? 11 : 13)' "toolbar labels must keep the v2.86 premium font sizing without clipping long labels"
 require "$MAIN" 'PREMIUM_CONTROL_CORNER_RADIUS_DP = 14' "controls must keep the smoother v2.86 corner radius"

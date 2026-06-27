@@ -92,7 +92,10 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=190`, `versionName=2.89`.
+- Built checkpoint: `versionCode=192`, `versionName=2.91`.
+- v2.91 keeps the integrated zoom/viewport/upload renderer work and makes the
+  bottom Close control neutral slate, so red is reserved for Stop and green is
+  reserved for Start/Send without changing any button handlers.
 - Unreleased viewport Settings slice keeps Desktop as the default fixed
   132-column renderer with existing zoom/pan behavior, and adds an optional
   Mobile viewport mode under `Settings` that omits the fixed `cols` query so

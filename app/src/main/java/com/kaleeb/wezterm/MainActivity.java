@@ -169,14 +169,17 @@ public class MainActivity extends Activity {
     private static final long HISTORY_DRAG_RELEASE_LONG_GESTURE_MS = 650;
     private static final long HISTORY_DRAG_REPEATED_FLING_WINDOW_MS = 700;
     private static final int HISTORY_DRAG_REPEATED_FLING_BOOST_REPEATS = 8;
+    private static final int HISTORY_DRAG_READING_MOVE_REPEATS = 1;
     private static final int HISTORY_DRAG_SLOW_MOVE_MAX_REPEATS = 3;
     private static final int HISTORY_DRAG_SLOW_PENDING_MAX_REPEATS = 6;
     private static final int HISTORY_DRAG_FAST_MOVE_REPEATS = 6;
     private static final int HISTORY_DRAG_FLING_MOVE_REPEATS = 10;
+    private static final long HISTORY_DRAG_RELEASE_FLICK_MAX_MS = 360;
     private static final long TOUCH_SCROLL_RENDER_PULSE_MS = 16;
     private static final long TOUCH_SCROLL_RENDER_PULSE_WINDOW_MS = 850;
     private static final long TOUCH_SCROLL_VISUAL_NUDGE_CLEAR_MS = 420;
     private static final float HISTORY_DRAG_RELEASE_MIN_LINES = 2f;
+    private static final float HISTORY_DRAG_DIRECTION_REVERSAL_MIN_LINES = 2f;
     private static final int TOUCH_SCROLL_LIVE_BOTTOM_SNAP_LINES = 3;
     private static final float HISTORY_DRAG_FAST_VELOCITY_PX_PER_SEC = 1200f;
     private static final float HISTORY_DRAG_FLING_VELOCITY_PX_PER_SEC = 2400f;
@@ -280,7 +283,10 @@ public class MainActivity extends Activity {
     private String pendingHistoryScrollWhere = "";
     private int pendingHistoryScrollRepeats = 0;
     private long pendingHistoryScrollGeneration = 0;
+    private long pendingHistoryScrollDirectionGeneration = 0;
     private String pendingHistoryScrollTargetKey = "";
+    private String terminalHistoryDragWhere = "";
+    private long terminalHistoryDragDirectionGeneration = 0;
     private boolean terminalHistoryMomentumActive = false;
     private boolean terminalHistoryMomentumFrameScheduled = false;
     private float terminalHistoryMomentumVelocityPxPerSec = 0f;
@@ -1645,6 +1651,8 @@ public class MainActivity extends Activity {
             // every request with this generation keeps stale server replies from
             // triggering the bottom restore/refresh jump on a later gesture.
             terminalTouchGestureGeneration++;
+            terminalHistoryDragWhere = "";
+            terminalHistoryDragDirectionGeneration++;
             scheduleTerminalLongPressCopy(event);
             cancelHistoryMomentum();
             clearPendingHistoryScroll();
@@ -2069,11 +2077,33 @@ public class MainActivity extends Activity {
                 || eventTimeMs - lastHistoryDragAtMs < HISTORY_DRAG_THROTTLE_MS) {
             return;
         }
+        String where = step > 0 ? "lineUp" : "lineDown";
+        if (!terminalHistoryDragWhere.isEmpty()
+                && !where.equals(terminalHistoryDragWhere)
+                && Math.abs(step) < lineThreshold * HISTORY_DRAG_DIRECTION_REVERSAL_MIN_LINES) {
+            // WHY: slow reading drags include small opposite-direction samples from
+            // finger jitter and Android MOVE batching. Dispatching or nudging those
+            // samples makes the phone visibly bounce backward while the laptop/tmux
+            // scroll stays smooth. Swallow only tiny reversals; a deliberate reverse
+            // over the line gate below changes direction immediately.
+            terminalLastHistoryDragY = y;
+            terminalLastHistoryDragEventAtMs = eventTimeMs;
+            lastHistoryDragAtMs = eventTimeMs;
+            return;
+        }
         int repeats = historyDragRepeats(step, lineThreshold, eventTimeMs);
         terminalLastHistoryDragY = y;
         terminalLastHistoryDragEventAtMs = eventTimeMs;
         lastHistoryDragAtMs = eventTimeMs;
-        String where = step > 0 ? "lineUp" : "lineDown";
+        if (!where.equals(terminalHistoryDragWhere)) {
+            boolean hadPriorDirection = !terminalHistoryDragWhere.isEmpty();
+            terminalHistoryDragWhere = where;
+            terminalHistoryDragDirectionGeneration++;
+            clearPendingHistoryScroll();
+            if (hadPriorDirection) {
+                clearCaptureRendererTouchNudge("touch-scroll-direction-change");
+            }
+        }
         if (terminalTouchReachedLiveBottom && "lineDown".equals(where)) {
             // WHY: once tmux has hit the live bottom, extra downward finger motion
             // has nowhere meaningful to go. Sending more lineDown requests would
@@ -2100,25 +2130,29 @@ public class MainActivity extends Activity {
         float segmentVelocity = Math.abs(step) * 1000f / eventDeltaMs;
         velocity = Math.max(velocity, segmentVelocity);
         float distanceLines = Math.abs(step) / Math.max(1f, lineThreshold);
-        // WHY: this intentionally behaves like normal phone scrolling. A slow
-        // drag should advance a few lines at a time so text remains readable,
-        // while a fast flick should batch more lines so the user can move
-        // through a long Codex/session history quickly. The cap prevents bad flicks
-        // from queuing huge delayed jumps that look like freezing or restarting.
+        // WHY: this intentionally separates a controlled reading drag from an
+        // explicit flick. Slow MOVE must stay one line-sized request at a time,
+        // even when Android batches samples after the control server is busy; only
+        // quick high-velocity gestures get acceleration while the finger is moving.
+        // The cap prevents bad flicks from queuing huge delayed jumps that look
+        // like freezing or restarting.
         // Android's VelocityTracker can under-report synthetic and WebView-routed
         // gestures, so this also checks the segment velocity since the last
         // dispatched history step. Distance alone must not promote a slow drag:
         // the latest P3 complaint was that slowed constants still felt jumpy
         // because backend cadence gaps turned one slow MOVE into a fast batch.
-        int repeats = HISTORY_DRAG_PAGES_PER_STEP;
+        long gestureWallMs = terminalTouchDownWallClockMs > 0
+                ? Math.max(1, System.currentTimeMillis() - terminalTouchDownWallClockMs)
+                : eventDeltaMs;
         boolean fastByVelocity = velocity >= HISTORY_DRAG_FAST_VELOCITY_PX_PER_SEC;
         boolean flingByVelocity = velocity >= HISTORY_DRAG_FLING_VELOCITY_PX_PER_SEC;
-        if (flingByVelocity && distanceLines >= HISTORY_DRAG_FLING_DISTANCE_LINES) {
-            repeats = HISTORY_DRAG_FLING_MOVE_REPEATS;
-        } else if (fastByVelocity && distanceLines >= HISTORY_DRAG_FAST_DISTANCE_LINES) {
-            repeats = HISTORY_DRAG_FAST_MOVE_REPEATS;
-        } else if (distanceLines >= 2f) {
-            repeats = HISTORY_DRAG_SLOW_MOVE_MAX_REPEATS;
+        int repeats = HISTORY_DRAG_READING_MOVE_REPEATS;
+        if (gestureWallMs <= HISTORY_DRAG_RELEASE_LONG_GESTURE_MS) {
+            if (flingByVelocity && distanceLines >= HISTORY_DRAG_FLING_DISTANCE_LINES) {
+                repeats = HISTORY_DRAG_FLING_MOVE_REPEATS;
+            } else if (fastByVelocity && distanceLines >= HISTORY_DRAG_FAST_DISTANCE_LINES) {
+                repeats = HISTORY_DRAG_FAST_MOVE_REPEATS;
+            }
         }
         return Math.max(1, Math.min(HISTORY_DRAG_MAX_PAGES_PER_STEP, repeats));
     }
@@ -2141,7 +2175,8 @@ public class MainActivity extends Activity {
         float releaseVelocity = Math.abs(signedReleaseVelocity);
         int lineThreshold = Math.max(terminalTouchSlop, dp(HISTORY_DRAG_LINE_THRESHOLD_DP));
         if (absDy < lineThreshold * HISTORY_DRAG_RELEASE_MIN_LINES
-                || releaseVelocity < HISTORY_DRAG_FAST_VELOCITY_PX_PER_SEC) {
+                || releaseVelocity < HISTORY_DRAG_FLING_VELOCITY_PX_PER_SEC
+                || wallDurationMs > HISTORY_DRAG_RELEASE_FLICK_MAX_MS) {
             return;
         }
         if (wallDurationMs > HISTORY_DRAG_RELEASE_LONG_GESTURE_MS) {
@@ -2283,6 +2318,7 @@ public class MainActivity extends Activity {
                 : HISTORY_DRAG_MAX_PAGES_PER_STEP;
         int boundedRepeats = Math.max(1, Math.min(maxRepeats, repeats));
         long gestureGeneration = terminalTouchGestureGeneration;
+        long directionGeneration = terminalHistoryDragDirectionGeneration;
         String stableTargetKey = targetKey == null || targetKey.trim().isEmpty()
                 ? terminalTouchStableWindowId
                 : targetKey.trim();
@@ -2295,13 +2331,19 @@ public class MainActivity extends Activity {
         if (historyScrollRequestInFlight) {
             if (where.equals(pendingHistoryScrollWhere)
                     && pendingHistoryScrollGeneration == gestureGeneration
+                    && pendingHistoryScrollDirectionGeneration == directionGeneration
                     && pendingHistoryScrollTargetKey.equals(stableTargetKey)) {
-                if ("lineDown".equals(where) || fromMomentum) {
-                    // WHY: returning toward live bottom needs real acceleration
-                    // too. Replacing every in-flight lineDown sample with the
-                    // newest tiny step made one-finger swipe-up stall far above
-                    // the prompt. Accumulate only inside the existing per-request
-                    // cap so this cannot replay an unbounded old gesture.
+                if (!fromMomentum && boundedRepeats <= HISTORY_DRAG_READING_MOVE_REPEATS) {
+                    // WHY: slow one-finger reading must stay monotonic and live with
+                    // the physical finger. While one `/touch-scroll` request is in
+                    // flight, keep only one same-direction slow step pending instead
+                    // of accumulating a delayed burst that later appears as a jump.
+                    pendingHistoryScrollRepeats = HISTORY_DRAG_READING_MOVE_REPEATS;
+                } else if ("lineDown".equals(where) || fromMomentum) {
+                    // WHY: deliberate flick/momentum return toward live bottom still
+                    // needs real acceleration. Accumulate only outside the slow-reading
+                    // path and inside the existing per-request cap so this cannot
+                    // replay an unbounded old gesture.
                     pendingHistoryScrollRepeats = Math.min(
                             maxRepeats,
                             pendingHistoryScrollRepeats + boundedRepeats
@@ -2330,14 +2372,15 @@ public class MainActivity extends Activity {
                 pendingHistoryScrollWhere = where;
                 pendingHistoryScrollRepeats = boundedRepeats;
                 pendingHistoryScrollGeneration = gestureGeneration;
+                pendingHistoryScrollDirectionGeneration = directionGeneration;
                 pendingHistoryScrollTargetKey = stableTargetKey;
             }
             return;
         }
-        sendHistoryScrollFromTouch(where, boundedRepeats, gestureGeneration, stableTargetKey);
+        sendHistoryScrollFromTouch(where, boundedRepeats, gestureGeneration, stableTargetKey, directionGeneration);
     }
 
-    private void sendHistoryScrollFromTouch(String where, int repeats, long gestureGeneration, String targetKey) {
+    private void sendHistoryScrollFromTouch(String where, int repeats, long gestureGeneration, String targetKey, long directionGeneration) {
         long readModeGeneration = terminalHistoryViewportActive
                 ? terminalModeGeneration
                 : enterReadMode();
@@ -2351,6 +2394,14 @@ public class MainActivity extends Activity {
                 // They may still be valid tmux commands, but they no longer describe
                 // the user's current finger gesture. Do not let them mark live-bottom
                 // or keep the terminal in read mode for a newer touch/zoom/tap.
+                drainPendingHistoryScroll();
+                return;
+            }
+            if (directionGeneration != terminalHistoryDragDirectionGeneration) {
+                // WHY: the user can reverse direction while the prior `/touch-scroll`
+                // response is still in flight. That old response may be a valid tmux
+                // command, but it must not repaint/refresh the phone as if it were
+                // the current slow-reading direction.
                 drainPendingHistoryScroll();
                 return;
             }
@@ -2424,12 +2475,14 @@ public class MainActivity extends Activity {
         String nextWhere = pendingHistoryScrollWhere;
         int nextRepeats = pendingHistoryScrollRepeats;
         long nextGeneration = pendingHistoryScrollGeneration;
+        long nextDirectionGeneration = pendingHistoryScrollDirectionGeneration;
         String nextTargetKey = pendingHistoryScrollTargetKey;
         clearPendingHistoryScroll();
-        if (nextGeneration != terminalTouchGestureGeneration) {
+        if (nextGeneration != terminalTouchGestureGeneration
+                || nextDirectionGeneration != terminalHistoryDragDirectionGeneration) {
             return;
         }
-        sendHistoryScrollFromTouch(nextWhere, Math.max(1, nextRepeats), nextGeneration, nextTargetKey);
+        sendHistoryScrollFromTouch(nextWhere, Math.max(1, nextRepeats), nextGeneration, nextTargetKey, nextDirectionGeneration);
     }
 
     private void keepCaptureRendererPulsingDuringTouch(String reason) {
@@ -2572,6 +2625,7 @@ public class MainActivity extends Activity {
         pendingHistoryScrollWhere = "";
         pendingHistoryScrollRepeats = 0;
         pendingHistoryScrollGeneration = 0;
+        pendingHistoryScrollDirectionGeneration = 0;
         pendingHistoryScrollTargetKey = "";
     }
 

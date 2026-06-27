@@ -1,0 +1,507 @@
+Activity Resolver Table:
+  Full MIME Types:
+      application/pdf:
+        ee6f911 com.kaleeb.wezterm/.MainActivity filter 12e7877
+          Action: "android.intent.action.SEND"
+          Category: "android.intent.category.DEFAULT"
+          StaticType: "image"
+          StaticType: "video"
+          StaticType: "application/pdf"
+          StaticType: "application/octet-stream"
+          mPriority=0, mOrder=0, mHasStaticPartialTypes=true, mHasDynamicPartialTypes=false
+        ee6f911 com.kaleeb.wezterm/.MainActivity filter c87bce4
+          Action: "android.intent.action.SEND_MULTIPLE"
+          Category: "android.intent.category.DEFAULT"
+          StaticType: "image"
+          StaticType: "video"
+          StaticType: "application/pdf"
+          StaticType: "application/octet-stream"
+          mPriority=0, mOrder=0, mHasStaticPartialTypes=true, mHasDynamicPartialTypes=false
+      video/*:
+        ee6f911 com.kaleeb.wezterm/.MainActivity filter 12e7877
+          Action: "android.intent.action.SEND"
+          Category: "android.intent.category.DEFAULT"
+          StaticType: "image"
+          StaticType: "video"
+          StaticType: "application/pdf"
+          StaticType: "application/octet-stream"
+          mPriority=0, mOrder=0, mHasStaticPartialTypes=true, mHasDynamicPartialTypes=false
+        ee6f911 com.kaleeb.wezterm/.MainActivity filter c87bce4
+          Action: "android.intent.action.SEND_MULTIPLE"
+          Category: "android.intent.category.DEFAULT"
+          StaticType: "image"
+          StaticType: "video"
+          StaticType: "application/pdf"
+          StaticType: "application/octet-stream"
+          mPriority=0, mOrder=0, mHasStaticPartialTypes=true, mHasDynamicPartialTypes=false
+      application/octet-stream:
+        ee6f911 com.kaleeb.wezterm/.MainActivity filter 12e7877
+          Action: "android.intent.action.SEND"
+          Category: "android.intent.category.DEFAULT"
+          StaticType: "image"
+          StaticType: "video"
+          StaticType: "application/pdf"
+          StaticType: "application/octet-stream"
+          mPriority=0, mOrder=0, mHasStaticPartialTypes=true, mHasDynamicPartialTypes=false
+        ee6f911 com.kaleeb.wezterm/.MainActivity filter c87bce4
+          Action: "android.intent.action.SEND_MULTIPLE"
+          Category: "android.intent.category.DEFAULT"
+          StaticType: "image"
+          StaticType: "video"
+          StaticType: "application/pdf"
+          StaticType: "application/octet-stream"
+          mPriority=0, mOrder=0, mHasStaticPartialTypes=true, mHasDynamicPartialTypes=false
+      image/*:
+        ee6f911 com.kaleeb.wezterm/.MainActivity filter 12e7877
+          Action: "android.intent.action.SEND"
+          Category: "android.intent.category.DEFAULT"
+          StaticType: "image"
+          StaticType: "video"
+          StaticType: "application/pdf"
+          StaticType: "application/octet-stream"
+          mPriority=0, mOrder=0, mHasStaticPartialTypes=true, mHasDynamicPartialTypes=false
+        ee6f911 com.kaleeb.wezterm/.MainActivity filter c87bce4
+          Action: "android.intent.action.SEND_MULTIPLE"
+          Category: "android.intent.category.DEFAULT"
+          StaticType: "image"
+          StaticType: "video"
+          StaticType: "application/pdf"
+          StaticType: "application/octet-stream"
+          mPriority=0, mOrder=0, mHasStaticPartialTypes=true, mHasDynamicPartialTypes=false
+
+  Base MIME Types:
+      application:
+        ee6f911 com.kaleeb.wezterm/.MainActivity filter 12e7877
+          Action: "android.intent.action.SEND"
+          Category: "android.intent.category.DEFAULT"
+          StaticType: "image"
+          StaticType: "video"
+          StaticType: "application/pdf"
+          StaticType: "application/octet-stream"
+          mPriority=0, mOrder=0, mHasStaticPartialTypes=true, mHasDynamicPartialTypes=false
+        ee6f911 com.kaleeb.wezterm/.MainActivity filter 12e7877
+          Action: "android.intent.action.SEND"
+          Category: "android.intent.category.DEFAULT"
+          StaticType: "image"
+          StaticType: "video"
+          StaticType: "application/pdf"
+          StaticType: "application/octet-stream"
+          mPriority=0, mOrder=0, mHasStaticPartialTypes=true, mHasDynamicPartialTypes=false
+        ee6f911 com.kaleeb.wezterm/.MainActivity filter c87bce4
+          Action: "android.intent.action.SEND_MULTIPLE"
+          Category: "android.intent.category.DEFAULT"
+          StaticType: "image"
+          StaticType: "video"
+          StaticType: "application/pdf"
+          StaticType: "application/octet-stream"
+          mPriority=0, mOrder=0, mHasStaticPartialTypes=true, mHasDynamicPartialTypes=false
+        ee6f911 com.kaleeb.wezterm/.MainActivity filter c87bce4
+          Action: "android.intent.action.SEND_MULTIPLE"
+          Category: "android.intent.category.DEFAULT"
+          StaticType: "image"
+          StaticType: "video"
+          StaticType: "application/pdf"
+          StaticType: "application/octet-stream"
+          mPriority=0, mOrder=0, mHasStaticPartialTypes=true, mHasDynamicPartialTypes=false
+
+  Wild MIME Types:
+      image:
+        ee6f911 com.kaleeb.wezterm/.MainActivity filter 12e7877
+          Action: "android.intent.action.SEND"
+          Category: "android.intent.category.DEFAULT"
+          StaticType: "image"
+          StaticType: "video"
+          StaticType: "application/pdf"
+          StaticType: "application/octet-stream"
+          mPriority=0, mOrder=0, mHasStaticPartialTypes=true, mHasDynamicPartialTypes=false
+        ee6f911 com.kaleeb.wezterm/.MainActivity filter c87bce4
+          Action: "android.intent.action.SEND_MULTIPLE"
+          Category: "android.intent.category.DEFAULT"
+          StaticType: "image"
+          StaticType: "video"
+          StaticType: "application/pdf"
+          StaticType: "application/octet-stream"
+          mPriority=0, mOrder=0, mHasStaticPartialTypes=true, mHasDynamicPartialTypes=false
+      video:
+        ee6f911 com.kaleeb.wezterm/.MainActivity filter 12e7877
+          Action: "android.intent.action.SEND"
+          Category: "android.intent.category.DEFAULT"
+          StaticType: "image"
+          StaticType: "video"
+          StaticType: "application/pdf"
+          StaticType: "application/octet-stream"
+          mPriority=0, mOrder=0, mHasStaticPartialTypes=true, mHasDynamicPartialTypes=false
+        ee6f911 com.kaleeb.wezterm/.MainActivity filter c87bce4
+          Action: "android.intent.action.SEND_MULTIPLE"
+          Category: "android.intent.category.DEFAULT"
+          StaticType: "image"
+          StaticType: "video"
+          StaticType: "application/pdf"
+          StaticType: "application/octet-stream"
+          mPriority=0, mOrder=0, mHasStaticPartialTypes=true, mHasDynamicPartialTypes=false
+
+  Non-Data Actions:
+      android.intent.action.MAIN:
+        ee6f911 com.kaleeb.wezterm/.MainActivity filter c616a76
+          Action: "android.intent.action.MAIN"
+          Category: "android.intent.category.LAUNCHER"
+
+  MIME Typed Actions:
+      android.intent.action.SEND:
+        ee6f911 com.kaleeb.wezterm/.MainActivity filter 12e7877
+          Action: "android.intent.action.SEND"
+          Category: "android.intent.category.DEFAULT"
+          StaticType: "image"
+          StaticType: "video"
+          StaticType: "application/pdf"
+          StaticType: "application/octet-stream"
+          mPriority=0, mOrder=0, mHasStaticPartialTypes=true, mHasDynamicPartialTypes=false
+      android.intent.action.SEND_MULTIPLE:
+        ee6f911 com.kaleeb.wezterm/.MainActivity filter c87bce4
+          Action: "android.intent.action.SEND_MULTIPLE"
+          Category: "android.intent.category.DEFAULT"
+          StaticType: "image"
+          StaticType: "video"
+          StaticType: "application/pdf"
+          StaticType: "application/octet-stream"
+          mPriority=0, mOrder=0, mHasStaticPartialTypes=true, mHasDynamicPartialTypes=false
+
+Domain verification status:
+
+Key Set Manager:
+  [com.kaleeb.wezterm]
+      Signing KeySets: 309
+
+Packages:
+  Package [com.kaleeb.wezterm] (36eb90a):
+    appId=10145
+    pkg=Package{7f3a306 com.kaleeb.wezterm}
+    codePath=/data/app/~~nlqszFIv2guBn3F9aWtcrg==/com.kaleeb.wezterm-ICNBIfSft9V6h7orGamUvQ==
+    resourcePath=/data/app/~~nlqszFIv2guBn3F9aWtcrg==/com.kaleeb.wezterm-ICNBIfSft9V6h7orGamUvQ==
+    legacyNativeLibraryDir=/data/app/~~nlqszFIv2guBn3F9aWtcrg==/com.kaleeb.wezterm-ICNBIfSft9V6h7orGamUvQ==/lib
+    extractNativeLibs=true
+    primaryCpuAbi=null
+    secondaryCpuAbi=null
+    cpuAbiOverride=null
+    versionCode=196 minSdk=26 targetSdk=35
+    minExtensionVersions=[]
+    versionName=2.95
+    hiddenApiEnforcementPolicy=2
+    usesNonSdkApi=false
+    splits=[base]
+    apkSigningVersion=4
+    flags=[ HAS_CODE ALLOW_CLEAR_USER_DATA ]
+    privateFlags=[ PRIVATE_FLAG_ACTIVITIES_RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION ALLOW_AUDIO_PLAYBACK_CAPTURE PRIVATE_FLAG_ALLOW_NATIVE_HEAP_POINTER_TAGGING ]
+    forceQueryable=false
+    pageSizeCompat=0
+    scannedAsStoppedSystemApp=false
+    supportsScreens=[small, medium, large, xlarge, resizeable, anyDensity]
+    timeStamp=2026-06-27 20:53:39
+    lastUpdateTime=2026-06-27 20:53:39
+    installerPackageName=null
+    installerPackageUid=-1
+    initiatingPackageName=com.android.shell
+    originatingPackageName=null
+    category=manifest: -1, override: -1, by user: -1
+    packageSource=1
+    loadingProgress=100%
+    loadingCompletedTime=1970-01-01 08:00:00
+    appMetadataFilePath=null
+    appMetadataSource=0
+    signatures=PackageSignatures{63cd992 version:4, signatures:[bae3b357], past signatures:[]}
+    installPermissionsFixed=false
+    pkgFlags=[ HAS_CODE ALLOW_CLEAR_USER_DATA ]
+    privatePkgFlags=[ PRIVATE_FLAG_ACTIVITIES_RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION ALLOW_AUDIO_PLAYBACK_CAPTURE PRIVATE_FLAG_ALLOW_NATIVE_HEAP_POINTER_TAGGING ]
+    apexModuleName=null
+    componentsDeclared=2
+    requested permissions:
+      android.permission.INTERNET
+    install permissions:
+      android.permission.INTERNET: granted=true
+    User 0: ceDataInode=1467440 deDataInode=1466857 installed=true hidden=false suspended=false distractionFlags=0 stopped=false notLaunched=false enabled=0 instant=false virtual=false quarantined=false
+      installReason=0
+      dataDir=/data/user/0/com.kaleeb.wezterm
+      firstInstallTime=2026-06-07 00:44:04
+      uninstallReason=0
+      overlay paths:
+        /product/overlay/NavigationBarMode3Button/NavigationBarMode3ButtonOverlay.apk
+      legacy overlay paths:
+        /product/overlay/NavigationBarMode3Button/NavigationBarMode3ButtonOverlay.apk
+      gids=[3003]
+      runtime permissions:
+    User 150: ceDataInode=0 deDataInode=0 installed=false hidden=false suspended=false distractionFlags=0 stopped=true notLaunched=true enabled=0 instant=false virtual=false quarantined=false
+      installReason=0
+      dataDir=null
+      firstInstallTime=2026-06-07 00:44:04
+      uninstallReason=0
+      gids=[3003]
+      runtime permissions:
+
+Queries:
+  system apps queryable: false
+  queries via forceQueryable:
+  queries via package name:
+  queries via component:
+    com.samsung.android.bixby.agent:
+      com.kaleeb.wezterm
+    com.microsoft.skydrive:
+      com.kaleeb.wezterm
+    com.android.settings.intelligence:
+      com.kaleeb.wezterm
+    com.google.android.apps.accessibility.voiceaccess:
+      com.kaleeb.wezterm
+    com.google.android.as:
+      com.kaleeb.wezterm
+    com.google.android.as.oss:
+      com.kaleeb.wezterm
+    com.google.android.apps.photos:
+      com.kaleeb.wezterm
+    com.google.android.apps.maps:
+      com.kaleeb.wezterm
+    com.agoda.mobile.consumer:
+      com.kaleeb.wezterm
+    ovo.id:
+      com.kaleeb.wezterm
+    com.traveloka.android:
+      com.kaleeb.wezterm
+    com.samsung.android.spay:
+      com.kaleeb.wezterm
+    com.ghisler.android.TotalCommander:
+      com.kaleeb.wezterm
+    com.facebook.katana:
+      com.kaleeb.wezterm
+    com.revolut.revolut:
+      com.kaleeb.wezterm
+    com.zhiliaoapp.musically:
+      com.kaleeb.wezterm
+    com.tradingview.tradingviewapp:
+      com.kaleeb.wezterm
+    com.amazon.mShop.android.shopping:
+      com.kaleeb.wezterm
+    com.samsung.android.mocca:
+      com.kaleeb.wezterm
+    com.facebook.orca:
+      com.kaleeb.wezterm
+    com.openai.chatgpt:
+      com.kaleeb.wezterm
+    com.aihamfell.techteleprompter:
+      com.kaleeb.wezterm
+    com.maxmpz.audioplayer:
+      com.kaleeb.wezterm
+    com.gemini.android.app:
+      com.kaleeb.wezterm
+    com.instagram.android:
+      com.kaleeb.wezterm
+    com.whatsapp:
+      com.kaleeb.wezterm
+    com.travelio.travelioapp:
+      com.kaleeb.wezterm
+    com.media.bestrecorder.audiorecorder:
+      com.kaleeb.wezterm
+    com.git.mami.kos:
+      com.kaleeb.wezterm
+    com.jaredco.screengrabber8:
+      com.kaleeb.wezterm
+    jp.naver.line.android:
+      com.kaleeb.wezterm
+    com.wallet.crypto.trustapp:
+      com.kaleeb.wezterm
+    com.canva.editor:
+      com.kaleeb.wezterm
+    app.phantom:
+      com.kaleeb.wezterm
+    com.bca:
+      com.kaleeb.wezterm
+    com.lazada.android:
+      com.kaleeb.wezterm
+    com.gojek.app:
+      com.kaleeb.wezterm
+    com.grabtaxi.passenger:
+      com.kaleeb.wezterm
+    com.airbnb.android:
+      com.kaleeb.wezterm
+    com.whatsapp.w4b:
+      com.kaleeb.wezterm
+    com.bitget.exchange:
+      com.kaleeb.wezterm
+    com.gojek.gopay:
+      com.kaleeb.wezterm
+    us.zoom.videomeetings:
+      com.kaleeb.wezterm
+    com.moonshot.kimichat:
+      com.kaleeb.wezterm
+  queryable via interaction:
+    User 0:
+      [com.samsung.sait.sohservice,com.sec.automation,com.samsung.android.app.omcagent,com.sec.android.app.uwbtest,com.samsung.accessibility,com.sec.sve,com.sec.android.diagmonagent,com.android.inputdevices,com.samsung.android.cameraxservice,com.samsung.android.app.dressroom,com.samsung.android.wifi.intelligence,com.android.providers.settings,com.sec.mhs.smarttethering,com.qti.snapdragon.qdcm_ff,com.samsung.android.smartface,com.samsung.android.messageguardsync,com.samsung.drm,com.samsung.android.bbc.bbcagent,com.sec.android.sdhms,com.samsung.android.knox.attestation,com.samsung.android.forest,com.wssyncmldm,com.samsung.SMT,com.samsung.gpuwatchapp,com.samsung.android.dck.timesync,com.samsung.android.themecenter,com.sec.android.smartfpsadjuster,com.samsung.android.aircommandmanager,com.samsung.android.dqagent,com.samsung.android.knox.mpos,com.qualcomm.qti.services.systemhelper,com.samsung.android.photoremasterservice,com.skms.android.agent,com.samsung.android.knox.zt.framework,com.samsung.android.motionphoto.app,com.sec.facatfunction,com.samsung.android.provider.filterprovider,com.sec.bcservice,com.samsung.android.wifi.ai,com.sec.usbsettings,com.samsung.aasaservice,com.samsung.unifiedtp,com.android.location.fused,com.samsung.android.ese,com.samsung.android.globalpostprocmgr,com.samsung.euicc,com.sec.android.app.factorykeystring,com.sec.imsservice,com.samsung.android.emergency,com.samsung.android.vexfwk.service,com.samsung.android.svcagent,com.samsung.android.bixby.wakeup,com.sec.epdg,com.android.localtransport,com.sec.android.CcInfo,com.sec.android.app.wlantest,com.sem.factoryapp,com.samsung.sdm,com.sec.android.app.personalization,com.sec.android.app.SecSetupWizard,com.sec.android.app.parser,com.android.keychain,com.samsung.android.brightnessbackupservice,com.sec.modem.settings,com.sec.app.RilErrorNotifier,com.sec.android.app.quicktool,com.samsung.android.smartswitchassistant,com.sec.android.emergencylauncher,com.sec.factory.camera,com.sec.android.app.servicemodeapp,com.sec.android.app.setupwizard,com.samsung.android.camerasdkservice,com.samsung.android.mdecservice,com.samsung.android.da.daagent,com.samsung.android.biometrics.app.setting,com.samsung.oda.service,com.samsung.android.providers.factory,com.sec.android.app.RilPhoneNumberService,com.samsung.android.stickercenter,com.sec.android.soagent,com.sec.android.iaft,com.samsung.oda.agent,com.sec.imslogger,com.samsung.android.sead,com.android.settings,com.android.dynsystem,com.samsung.android.qmdservice,android,com.samsung.android.vtcamerasettings,com.samsung.android.knox.pushmanager,com.sec.android.app.hwmoduletest,com.samsung.android.fmm,com.samsung.android.lool,com.android.server.telecom,com.samsung.ts43authservice,com.samsung.android.app.esimkeystring,com.samsung.android.hdmapp,com.samsung.InputEventApp]:
+        com.kaleeb.wezterm
+      com.kaleeb.wezterm:
+        com.google.android.webview
+      [com.google.android.gsf,com.google.android.gms]:
+        com.kaleeb.wezterm
+      com.google.android.inputmethod.latin:
+        com.kaleeb.wezterm
+      com.kaleeb.wezterm:
+        com.google.android.providers.media.module
+    User 150:
+  queryable via uses-library:
+
+Dexopt state:
+  [com.kaleeb.wezterm]
+    path: /data/app/~~nlqszFIv2guBn3F9aWtcrg==/com.kaleeb.wezterm-ICNBIfSft9V6h7orGamUvQ==/base.apk
+      arm64: [status=run-from-apk] [reason=unknown] [primary-abi]
+        [location is error]
+
+SPEG state:
+  Event #3: 27-06-2026 18:13:31.844 Success com.kaleeb.googlespeechproof took 2179 ms
+  Event #2: 07-06-2026 00:31:22.024 Success com.kaleeb.wezterm took 2154 ms
+  Event #1: 18-02-2026 18:31:00.734 Success org.chromium.webapk.afc4240d62d47ebda_v2 took 2163 ms
+  Event #0: 28-01-2026 16:49:01.084 Success org.chromium.webapk.a55bf2bbcc9ebd567_v2 took 2156 ms
+
+Profile utilization state:
+  Current state:
+    Version: 2.1.2
+    Start reason: boot-after-ota
+    Start time: Fri Jun 19 16:03:36 GMT+08:00 2026 ts=1781856216496
+    Finish time: Fri Jun 19 17:10:42 GMT+08:00 2026 ts=1781860242772
+    Took time 4026sec
+    PU_StatusWatcher:
+      Initial thermal status: 2
+      Thermal status: 0
+      Screen off: true
+      Low battery: false
+    PU_DexoptTrigger:
+      Dexopt concurrency: 4
+      Dexopting: false
+      Hot apps list:
+        com.whatsapp, w=12, s=OPTIMIZED, optTimeMs=1781860214967, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=4696, filter=speed-profile]
+        com.zhiliaoapp.musically, w=53, s=OPTIMIZED, optTimeMs=1781860231455, cancelCount=0, dexopt=PERFORMED, [dex2oatTimeMs=15537, filter=speed-profile], [dex2oatTimeMs=0, filter=verify], [dex2oatTimeMs=0, filter=verify], [dex2oatTimeMs=0, filter=verify]
+        com.instagram.barcelona, w=54, s=OPTIMIZED, optTimeMs=1781860214527, cancelCount=0, dexopt=PERFORMED, [dex2oatTimeMs=4255, filter=speed-profile]
+        org.thoughtcrime.securesms, w=61, s=OPTIMIZED, optTimeMs=1781860214352, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=4043, filter=speed-profile]
+        com.whatsapp.w4b, w=65, s=OPTIMIZED, optTimeMs=1781860223741, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=3836, filter=speed-profile]
+        com.grabtaxi.passenger, w=71, s=OPTIMIZED, optTimeMs=1781860230972, cancelCount=0, dexopt=PERFORMED, [dex2oatTimeMs=10653, filter=speed-profile], [primaryDex=false, reason=vdex, dex2oatTimeMs=0, filter=verify], [primaryDex=false, reason=profile-utilization, dex2oatTimeMs=105, filter=verify]
+        com.instagram.android, w=94, s=OPTIMIZED, optTimeMs=1781860230078, cancelCount=0, dexopt=PERFORMED, [dex2oatTimeMs=9502, filter=speed-profile]
+        com.sec.android.gallery3d, w=94, s=OPTIMIZED, optTimeMs=1781860223810, cancelCount=0, dexopt=SKIPPED, [primaryDex=true, reason=boot-after-ota, dex2oatTimeMs=0, filter=speed-profile]
+        com.sec.android.app.camera, w=101, s=OPTIMIZED, optTimeMs=1781860223869, cancelCount=0, dexopt=SKIPPED, [primaryDex=true, reason=boot-after-ota, dex2oatTimeMs=0, filter=speed-profile]
+        com.openai.chatgpt, w=105, s=OPTIMIZED, optTimeMs=1781860228479, cancelCount=0, dexopt=PERFORMED, [dex2oatTimeMs=4503, filter=speed-profile]
+        org.telegram.messenger, w=111, s=OPTIMIZED, optTimeMs=1781860229826, cancelCount=0, dexopt=PERFORMED, [dex2oatTimeMs=1227, filter=speed-profile]
+        com.samsung.android.calendar, w=112, s=OPTIMIZED, optTimeMs=1781860231258, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=1337, filter=speed-profile]
+        com.facebook.katana, w=123, s=OPTIMIZED, optTimeMs=1781860238207, cancelCount=0, dexopt=PERFORMED, [dex2oatTimeMs=7940, filter=speed-profile]
+        com.tailscale.ipn, w=134, s=OPTIMIZED, optTimeMs=1781860231912, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=874, filter=speed-profile]
+        com.tokopedia.tkpd, w=134, s=OPTIMIZED, optTimeMs=1781860239072, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=7655, filter=speed-profile]
+        com.microsoft.emmx, w=138, s=OPTIMIZED, optTimeMs=1781860232667, cancelCount=0, dexopt=PERFORMED, [dex2oatTimeMs=1046, filter=speed-profile], [dex2oatTimeMs=0, filter=verify], [dex2oatTimeMs=0, filter=verify]
+        com.samsung.android.app.notes, w=138, s=OPTIMIZED, optTimeMs=1781860237031, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=4958, filter=speed-profile]
+        com.traveloka.android, w=138, s=OPTIMIZED, optTimeMs=1781860241003, cancelCount=0, dexopt=PERFORMED, [dex2oatTimeMs=6152, filter=speed-profile], [dex2oatTimeMs=183, filter=speed-profile], [dex2oatTimeMs=172, filter=speed-profile], [dex2oatTimeMs=416, filter=speed-profile], [dex2oatTimeMs=198, filter=speed-profile], [dex2oatTimeMs=261, filter=speed-profile], [dex2oatTimeMs=0, filter=verify], [dex2oatTimeMs=241, filter=speed-profile], [primaryDex=false, reason=vdex, dex2oatTimeMs=0, filter=verify], [primaryDex=false, reason=vdex, dex2oatTimeMs=0, filter=verify]
+        com.sec.android.app.clockpackage, w=140, s=OPTIMIZED, optTimeMs=1781860238195, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=1072, filter=speed-profile]
+        com.shopee.id, w=143, s=OPTIMIZED, optTimeMs=1781860242767, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=3450, filter=speed-profile], [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=396, filter=speed-profile], [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=481, filter=speed-profile]
+        com.samsung.android.dialer, w=150, s=OPTIMIZED, optTimeMs=1781860238255, cancelCount=0, dexopt=SKIPPED, [primaryDex=true, reason=boot-after-ota, dex2oatTimeMs=0, filter=speed-profile]
+        com.google.android.gm, w=154, s=OPTIMIZED, optTimeMs=1781860242720, cancelCount=0, dexopt=PERFORMED, [dex2oatTimeMs=4348, filter=speed-profile]
+        com.samsung.android.samsungpass, w=157, s=OPTIMIZED, optTimeMs=1781860240455, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=1302, filter=speed-profile]
+    PU_Storage:
+      Stored apps:
+        com.whatsapp 12
+        com.zhiliaoapp.musically 53
+        com.instagram.barcelona 54
+        org.thoughtcrime.securesms 61
+        com.whatsapp.w4b 65
+        com.grabtaxi.passenger 71
+        com.instagram.android 94
+        com.sec.android.gallery3d 94
+        com.sec.android.app.camera 101
+        com.openai.chatgpt 105
+        org.telegram.messenger 111
+        com.samsung.android.calendar 112
+        com.facebook.katana 123
+        com.tailscale.ipn 134
+        com.tokopedia.tkpd 134
+        com.microsoft.emmx 138
+        com.samsung.android.app.notes 138
+        com.traveloka.android 138
+        com.sec.android.app.clockpackage 140
+        com.shopee.id 143
+        com.samsung.android.dialer 150
+        com.google.android.gm 154
+        com.samsung.android.samsungpass 157
+        com.google.android.inputmethod.latin 164
+        com.google.android.calendar 166
+        com.android.settings 169
+        com.google.android.apps.messaging 169
+        com.samsung.android.bixby.agent 169
+        com.samsung.android.app.reminder 173
+        com.samsung.android.app.contacts 174
+        com.android.vending 176
+        com.facebook.orca 185
+        com.google.android.googlequicksearchbox 185
+        com.tmobile.tuesdays 188
+        com.sec.android.easyMover 193
+        com.samsung.android.app.find 216
+    Stored PU state:
+      Service:
+        Version: 2.1.2
+        Start reason: boot-after-ota
+        Start time: Fri Jun 19 16:03:36 GMT+08:00 2026 ts=1781856216496
+        Finish time: Fri Jun 19 17:10:42 GMT+08:00 2026 ts=1781860242772
+        Took time 4026sec
+      Watcher:
+        Initial thermal status: 2
+        Thermal status: 0
+        Screen off: true
+        Low battery: false
+      Trigger:
+        Dexopt concurrency: 4
+        Dexopting: false
+        Hot apps list:
+          com.whatsapp, w=12, s=OPTIMIZED, optTimeMs=1781860214967, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=4696, filter=speed-profile]
+          com.zhiliaoapp.musically, w=53, s=OPTIMIZED, optTimeMs=1781860231455, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=15537, filter=speed-profile], [primaryDex=true, reason=vdex, dex2oatTimeMs=0, filter=verify], [primaryDex=true, reason=vdex, dex2oatTimeMs=0, filter=verify], [primaryDex=true, reason=vdex, dex2oatTimeMs=0, filter=verify]
+          com.instagram.barcelona, w=54, s=OPTIMIZED, optTimeMs=1781860214527, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=4255, filter=speed-profile]
+          org.thoughtcrime.securesms, w=61, s=OPTIMIZED, optTimeMs=1781860214352, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=4043, filter=speed-profile]
+          com.whatsapp.w4b, w=65, s=OPTIMIZED, optTimeMs=1781860223741, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=3836, filter=speed-profile]
+          com.grabtaxi.passenger, w=71, s=OPTIMIZED, optTimeMs=1781860230972, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=10653, filter=speed-profile], [primaryDex=false, reason=vdex, dex2oatTimeMs=0, filter=verify], [primaryDex=false, reason=profile-utilization, dex2oatTimeMs=105, filter=verify]
+          com.instagram.android, w=94, s=OPTIMIZED, optTimeMs=1781860230078, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=9502, filter=speed-profile]
+          com.sec.android.gallery3d, w=94, s=OPTIMIZED, optTimeMs=1781860223810, cancelCount=0, dexopt=SKIPPED, [primaryDex=true, reason=boot-after-ota, dex2oatTimeMs=0, filter=speed-profile]
+          com.sec.android.app.camera, w=101, s=OPTIMIZED, optTimeMs=1781860223869, cancelCount=0, dexopt=SKIPPED, [primaryDex=true, reason=boot-after-ota, dex2oatTimeMs=0, filter=speed-profile]
+          com.openai.chatgpt, w=105, s=OPTIMIZED, optTimeMs=1781860228479, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=4503, filter=speed-profile]
+          org.telegram.messenger, w=111, s=OPTIMIZED, optTimeMs=1781860229826, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=1227, filter=speed-profile]
+          com.samsung.android.calendar, w=112, s=OPTIMIZED, optTimeMs=1781860231258, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=1337, filter=speed-profile]
+          com.facebook.katana, w=123, s=OPTIMIZED, optTimeMs=1781860238207, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=7940, filter=speed-profile]
+          com.tailscale.ipn, w=134, s=OPTIMIZED, optTimeMs=1781860231912, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=874, filter=speed-profile]
+          com.tokopedia.tkpd, w=134, s=OPTIMIZED, optTimeMs=1781860239072, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=7655, filter=speed-profile]
+          com.microsoft.emmx, w=138, s=OPTIMIZED, optTimeMs=1781860232667, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=1046, filter=speed-profile], [primaryDex=true, reason=vdex-dm, dex2oatTimeMs=0, filter=verify], [primaryDex=true, reason=vdex-dm, dex2oatTimeMs=0, filter=verify]
+          com.samsung.android.app.notes, w=138, s=OPTIMIZED, optTimeMs=1781860237031, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=4958, filter=speed-profile]
+          com.traveloka.android, w=138, s=OPTIMIZED, optTimeMs=1781860241003, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=6152, filter=speed-profile], [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=183, filter=speed-profile], [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=172, filter=speed-profile], [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=416, filter=speed-profile], [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=198, filter=speed-profile], [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=261, filter=speed-profile], [primaryDex=true, reason=vdex-dm, dex2oatTimeMs=0, filter=verify], [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=241, filter=speed-profile], [primaryDex=false, reason=vdex, dex2oatTimeMs=0, filter=verify], [primaryDex=false, reason=vdex, dex2oatTimeMs=0, filter=verify]
+          com.sec.android.app.clockpackage, w=140, s=OPTIMIZED, optTimeMs=1781860238195, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=1072, filter=speed-profile]
+          com.shopee.id, w=143, s=OPTIMIZED, optTimeMs=1781860242767, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=3450, filter=speed-profile], [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=396, filter=speed-profile], [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=481, filter=speed-profile]
+          com.samsung.android.dialer, w=150, s=OPTIMIZED, optTimeMs=1781860238255, cancelCount=0, dexopt=SKIPPED, [primaryDex=true, reason=boot-after-ota, dex2oatTimeMs=0, filter=speed-profile]
+          com.google.android.gm, w=154, s=OPTIMIZED, optTimeMs=1781860242720, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=4348, filter=speed-profile]
+          com.samsung.android.samsungpass, w=157, s=OPTIMIZED, optTimeMs=1781860240455, cancelCount=0, dexopt=PERFORMED, [primaryDex=true, reason=profile-utilization, dex2oatTimeMs=1302, filter=speed-profile]
+    Stored SCPM state:
+      packages-9a07:
+        [                                            ]
+      disable-2bb4:
+        [                                            ]
+
+HeimdAllFS state:
+  [com.kaleeb.wezterm]
+    path: /data/app/~~nlqszFIv2guBn3F9aWtcrg==/com.kaleeb.wezterm-ICNBIfSft9V6h7orGamUvQ==/base.apk
+    Incremental Delivery APK: SKIP! : /data/app/~~nlqszFIv2guBn3F9aWtcrg==/com.kaleeb.wezterm-ICNBIfSft9V6h7orGamUvQ==/base.apk
+  [ Summary ]
+    # of packages: 1 / # of packages in DATA: 1 (1)
+    Compressed apks info - sum of orig size: 0 / sum of compr size : 0
+  [Lfo status]
+    packageName: com.samsung.android.offline.languagemodel
+    Path: /data/app/~~Z1WHTS--MlGczpuh4KNzoA==/com.samsung.android.offline.languagemodel-gjrmbzy4FN0Y9lShIiMheg==/base.apk
+    Fragmented: 1
+    Extent Count: 558
+    Version: 0
+    Flag: 0
+    Level: 0
+    Count: 0
+    
+    packageName: com.samsung.android.vision.model
+    Path: /data/app/~~jWkp3bL2008LM_9QfA6vZw==/com.samsung.android.vision.model-HQT9260u5zDLAh5UnKBm5Q==/base.apk
+    Fragmented: 1
+    Extent Count: 7909
+    Version: 0
+    Flag: 0
+    Level: 0
+    Count: 0
+    

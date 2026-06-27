@@ -59,13 +59,13 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="187"' "current APK version must be bumped for the v2.86 premium visual contract"
-require "$MANIFEST" 'android:versionName="2.86"' "current APK version must be bumped for the v2.86 premium visual contract"
+require "$MANIFEST" 'android:versionCode="188"' "current APK version must be bumped for the v2.87 active/workspace visual contract"
+require "$MANIFEST" 'android:versionName="2.87"' "current APK version must be bumped for the v2.87 active/workspace visual contract"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.86";' "client /config proof must report the same v2.86 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.87";' "client /config proof must report the same v2.87 APK contract as the manifest"
 require "$MAIN" 'MediaStore.ACTION_PICK_IMAGES' "Upload must use Android Photo Picker for one-selection screenshots/media on Android 13+"
 require "$MAIN" 'uploadDocumentPickerIntent' "Upload must keep ACTION_OPEN_DOCUMENT fallback for non-photo-picker/files path"
 require "$MAIN" 'uploadUrisFromResult' "Upload result must handle both data URI and ClipData instead of dropping picker returns"
@@ -158,8 +158,9 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=187`, `versionName=2.86`.' "README checkpoint must match the installed v2.86 APK"
-    require "$README" 'v2.86 is a visual-only native shell polish' "README must document the v2.86 visual-only native shell contract"
+    require "$README" 'Built checkpoint: `versionCode=188`, `versionName=2.87`.' "README checkpoint must match the installed v2.87 APK"
+    require "$README" 'v2.87 keeps the visual-only native shell contract' "README must document the v2.87 active/workspace visual contract"
+    require "$README" 'v2.86 is a visual-only native shell polish' "README must preserve the v2.86 visual-only native shell contract"
     require "$README" 'v2.85 keeps the v2.84 optimistic, draft-safe Send behavior' "README must document the v2.85 non-resizing native Send latency fix"
     require "$README" '/submit-text?resize=0' "README must document that native Send skips the legacy tmux resize branch"
     require "$README" 'v2.84 makes native composer Send draft-safe but locally immediate' "README must document the v2.84 Send latency root fix"
@@ -334,8 +335,8 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.86' "install page must advertise the current v2.86 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>187</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.87' "install page must advertise the current v2.87 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>188</code>' "install page versionCode must match the manifest"
     require "$INSTALL_PAGE" 'Workspace Save/Load/Close' "install page must mention the v2.62 workspace control fix"
     require "$INSTALL_PAGE" 'composer-above-buttons layout' "install page must mention the restored composer-above-buttons layout"
     require "$INSTALL_PAGE" 'compact v2.65 toolbar chrome' "install page must mention the compact bottom toolbar fix"
@@ -452,7 +453,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.86 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.87 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"
@@ -641,7 +642,7 @@ if [ -f "$MENU_UI_PROOF" ]; then
     require "$MENU_UI_PROOF" 'assert_installed_package_version' "menu UI proof must reject stale installed APKs before testing phone behavior"
     require "$MENU_UI_PROOF" 'versionCode=$EXPECTED_VERSION_CODE' "menu UI proof must compare the installed package versionCode to the source manifest"
     require "$MENU_UI_PROOF" 'versionName=$EXPECTED_VERSION_NAME' "menu UI proof must compare the installed package versionName to the source manifest"
-    require "$MENU_UI_PROOF" 'for label in Active Old Workspace New Bottom "Copy/Paste" Upload Tools Close Start Stop' "menu UI proof must check every visible toolbar label"
+    require "$MENU_UI_PROOF" 'for label in New Old Workspace Active Bottom "Copy/Paste" Upload Tools Close Start Stop' "menu UI proof must check every visible toolbar label in the v2.87 thumb-zone order"
     require "$MENU_UI_PROOF" 'tap_visible_text_from_current_dump "Old"' "menu UI proof must open Old Sessions from a stable toolbar dump"
     require "$MENU_UI_PROOF" 'wait_for_visible_text "Old Sessions" "Old Sessions"' "menu UI proof must wait for the Old Sessions dialog after tapping Old"
     require "$MENU_UI_PROOF" 'wait_for_visible_text "Resume" "Resume"' "menu UI proof must wait for old-session resume actions"
@@ -1123,8 +1124,8 @@ require "$MAIN" 'hideDockedPromptComposerForNavigation("scroll-dialog")' "Scroll
 require "$MAIN" 'picker/dialog actions are navigation or reading, not prompt' "navigation composer-hide WHY comment must stay"
 require "$MAIN" 'getJsonWithRetry(path, payload ->' "Active Sessions switching must retry safe control connection drops"
 require "$MAIN" 'titleText.setOnClickListener(openSessionClick)' "Active row title must switch sessions with one tap"
-require "$MAIN" 'detailText.setOnClickListener(openSessionClick)' "Active row detail must switch sessions with one tap"
 require "$MAIN" 'statusDot.setOnClickListener(openSessionClick)' "Active row status dot must switch sessions with one tap"
+require "$MAIN" 'titleRow.setOnClickListener(openSessionClick)' "Active row title/status area must switch sessions with one tap after the detail line was removed"
 require "$MAIN" 'installPlainToolbarTapHandler(button)' "plain toolbar buttons must use the deterministic in-bounds tap handler"
 require "$MAIN" 'Do not install this on Scroll' "toolbar tap WHY comment must preserve protected long-press buttons"
 require "$MAIN" 'active row stays in its state bucket without prefixing the visible title' "Active Sessions grouped mode must not pull Current above server action-state groups"
@@ -1183,11 +1184,22 @@ require "$MAIN" 'showDockedPromptComposer("tap-up")' "normal terminal-body taps 
 require "$MAIN" 'restoreDockedPromptComposerFocus("window-focus")' "window-focus must preserve visible native composer focus instead of stealing xterm focus"
 require "$MAIN" 'restoreDockedPromptComposerFocus("resume")' "resume must preserve visible native composer focus instead of stealing xterm focus"
 require "$MAIN" 'toolbarNavigationButton("Active"' "Active toolbar navigation must dismiss the native composer before opening sessions"
+require "$MAIN" "Active Sessions is the operator's most-used correction surface" "Active must stay near the right thumb instead of reverting behind New"
+require "$MAIN" 'sessionUrgencyRank' "Active Sessions must sort by user-action urgency before recency"
+require "$MAIN" 'red/problem sessions first' "Active Sessions urgency WHY comment must preserve red/yellow/green ordering"
+require_absent "$MAIN" 'Tap to open' "Active Sessions must not show distracting tap-to-open detail copy"
 require "$MAIN" 'toolbarNavigationButton("Old"' "Old Sessions toolbar navigation must dismiss the native composer before opening sessions"
 require "$MAIN" 'toolbarNavigationButton("Workspace", v -> showWorkspaces())' "Workspace toolbar navigation must expose the shared workspace picker"
 require "$MAIN" 'getJsonWithRetry("/workspace-list?limit=40"' "Workspace picker must use the shared server snapshot list"
 require "$MAIN" '"/workspace-restore?yes=1&path="' "Workspace Load must call the shared restore endpoint"
-require "$MAIN" '"/workspace-save"' "Workspace Save must call the shared save endpoint"
+require "$MAIN" 'Name & Save' "Workspace Save must be name-first instead of an anonymous manual save"
+require "$MAIN" 'showSaveWorkspaceNameDialog' "Workspace Save must prompt for a readable workspace name"
+require "$MAIN" '"/workspace-save?reason="' "Workspace Save must pass the readable name through the shared save endpoint"
+require "$MAIN" 'workspaceSnapshotDateLabel' "Workspace snapshots must be grouped by date"
+require "$MAIN" 'countWorkspaceSnapshotsForDate' "Workspace date groups must show accurate counts"
+require "$MAIN" 'oldSessionTimeLabel' "Old Sessions must preserve per-row date/time separation"
+require "$MANTIS_CONTROL_SERVER" 'reason = query.get("reason", query.get("name", ["manual"]))[0]' "control server workspace-save endpoint must accept APK workspace names"
+require "$MANTIS_CONTROL_SERVER" 'reason=reason or "manual"' "control server workspace-save endpoint must persist a non-empty save reason"
 require "$MAIN" '"/workspace-close-out?yes=1"' "Workspace Close out must call the shared close-out endpoint"
 require "$MAIN" 'reduced post-restart `last.json`' "Workspace WHY comment must preserve the reduced-last.json root cause"
 require "$MAIN" 'hideDockedPromptComposerForNavigation("toolbar-' "toolbar navigation must preserve drafts while dismissing the composer"

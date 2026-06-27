@@ -2230,7 +2230,7 @@ ensure_toolbar
 ensure_plain_toolbar
 
 echo "phone menu UI proof: toolbar labels"
-for label in Active Old Workspace New Bottom "Copy/Paste" Upload Tools Close Start Stop; do
+for label in New Old Workspace Active Bottom "Copy/Paste" Upload Tools Close Start Stop; do
     assert_toolbar_button_text "$label"
 done
 assert_absent "Tabs"

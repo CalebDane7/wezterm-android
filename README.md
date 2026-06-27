@@ -91,7 +91,14 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=187`, `versionName=2.86`.
+- Built checkpoint: `versionCode=188`, `versionName=2.87`.
+- v2.87 keeps the visual-only native shell contract and tightens the phone
+  operator surfaces: the toolbar uses `New / Old / Workspace / Active / Bottom`
+  so Active sits near the right thumb, Active Sessions sorts problem/waiting
+  sessions ahead of working rows and shows only title plus Close, Workspace
+  groups saved workspaces by date with a `Name & Save` flow, and Old Sessions
+  matches the Active row language while keeping date/time separation under each
+  session name.
 - v2.86 is a visual-only native shell polish: it keeps the v2.85 renderer,
   Send, scroll, IME, Active/Old data, stable `@windowId`, Upload, and
   Start/Stop/Close handlers intact while improving the Android chrome. The

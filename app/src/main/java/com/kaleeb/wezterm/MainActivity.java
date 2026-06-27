@@ -123,7 +123,7 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
     private static final String PREF_PROMPT_DRAFT_PREFIX = "prompt_draft_";
-    private static final String APP_VERSION_NAME = "2.86";
+    private static final String APP_VERSION_NAME = "2.87";
     private static final int PREMIUM_CONTROL_CORNER_RADIUS_DP = 14;
     private static final int PREMIUM_DIALOG_CORNER_RADIUS_DP = 22;
     private static final int PREMIUM_STATUS_DOT_SP = 18;
@@ -978,11 +978,14 @@ public class MainActivity extends Activity {
                 dp(24),
                 LinearLayout.LayoutParams.MATCH_PARENT
         ));
-        topRow.addView(toolbarNavigationButton("Active", v -> showActiveSessions()));
-        topRow.addView(toolbarNavigationButton("Old", v -> showOldSessions()));
-        topRow.addView(toolbarNavigationButton("Workspace", v -> showWorkspaces()));
+        // WHY: Active Sessions is the operator's most-used correction surface.
+        // Keep it near the right thumb while New stays available for explicit
+        // creation without changing either endpoint or click handler.
         topRow.addView(toolbarNavigationButton("New", v ->
                 controlAndSettleLiveBottom("/new?fast=1", "", "new-session")));
+        topRow.addView(toolbarNavigationButton("Old", v -> showOldSessions()));
+        topRow.addView(toolbarNavigationButton("Workspace", v -> showWorkspaces()));
+        topRow.addView(toolbarNavigationButton("Active", v -> showActiveSessions()));
         // WHY: live-bottom is the user's most frequent recovery when one-finger
         // return-to-bottom still misses the final prompt line. Keep it as a one-tap
         // button on the right side of the top row instead of burying it in the
@@ -5404,30 +5407,26 @@ public class MainActivity extends Activity {
         final AlertDialog[] dialogRef = new AlertDialog[1];
         addWorkspaceDialogActions(list, dialogRef);
 
-        String recommendedReason = payload.optString("recommendedReason", "");
-        if (!recommendedReason.trim().isEmpty()) {
-            TextView note = new TextView(this);
-            note.setText("Default restore: " + recommendedReason);
-            note.setTextSize(12);
-            note.setTextColor(Color.rgb(166, 173, 200));
-            note.setPadding(0, 0, 0, dp(8));
-            list.addView(note);
-        }
-
         if (snapshots == null || snapshots.length() == 0) {
             addSectionHeader(list, "No workspace snapshots found", 0);
         } else {
+            String currentDate = "";
             for (int i = 0; i < snapshots.length(); i++) {
-                addWorkspaceSnapshotRow(list, snapshots.getJSONObject(i), dialogRef);
+                JSONObject snapshot = snapshots.getJSONObject(i);
+                String dateLabel = workspaceSnapshotDateLabel(snapshot);
+                if (!dateLabel.equals(currentDate)) {
+                    currentDate = dateLabel;
+                    addSectionHeader(list, currentDate, countWorkspaceSnapshotsForDate(snapshots, currentDate));
+                }
+                addWorkspaceSnapshotRow(list, snapshot, dialogRef);
             }
         }
 
         AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("Workspace")
-                .setView(scrollView)
-                .setNegativeButton("Cancel", null)
+                .setView(premiumDialogShell("Workspace", "Saved workspaces by date", scrollView))
                 .show();
         dialogRef[0] = dialog;
+        stylePremiumDialogWindow(dialog);
         scrollView.post(() -> scrollView.scrollTo(0, 0));
     }
 
@@ -5435,7 +5434,7 @@ public class MainActivity extends Activity {
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setPadding(0, 0, 0, dp(8));
-        actions.addView(activeDialogActionButton("Save", v -> saveWorkspaceAndReopenDialog(dialogRef)));
+        actions.addView(activeDialogActionButton("Name & Save", v -> showSaveWorkspaceNameDialog(dialogRef)));
         actions.addView(activeDialogActionButton("Close out", v -> confirmCloseOutWorkspace(dialogRef)));
         actions.addView(activeDialogActionButton("Cancel", v -> {
             if (dialogRef[0] != null) {
@@ -5499,6 +5498,25 @@ public class MainActivity extends Activity {
         return count;
     }
 
+    private String oldSessionTimeLabel(JSONObject session) {
+        String dateLabel = session.optString("dateLabel", session.optString("updatedGroup", "Older"));
+        String timestamp = session.optString("updatedAt",
+                session.optString("startedAt", session.optString("createdAt", "")));
+        String time = shortClockTime(timestamp);
+        return time.isEmpty() ? dateLabel : dateLabel + " · " + time;
+    }
+
+    private int countWorkspaceSnapshotsForDate(JSONArray snapshots, String dateLabel) throws Exception {
+        int count = 0;
+        for (int i = 0; i < snapshots.length(); i++) {
+            JSONObject snapshot = snapshots.getJSONObject(i);
+            if (dateLabel.equals(workspaceSnapshotDateLabel(snapshot))) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     private int countCrashedSessionsForDate(JSONArray crashedSessions, String dateLabel) throws Exception {
         int count = 0;
         for (int i = 0; i < crashedSessions.length(); i++) {
@@ -5553,11 +5571,16 @@ public class MainActivity extends Activity {
             }
             sorted.add(window);
         }
-        // WHY: tmux window indexes are old-to-new and shift after closes. The
-        // phone picker should start with the work touched most recently. Use
-        // server-provided `window_activity`, then fall back to higher indexes
-        // only when tmux reports equal activity timestamps.
+        // WHY: the phone picker is an action queue, not a chronology wall. Show
+        // red/problem sessions first, yellow/waiting sessions next, then calm
+        // green working rows, while preserving recent activity inside each
+        // urgency group so the user sees the sessions that need action first.
         sorted.sort((left, right) -> {
+            int leftUrgency = sessionUrgencyRank(left);
+            int rightUrgency = sessionUrgencyRank(right);
+            if (leftUrgency != rightUrgency) {
+                return Integer.compare(leftUrgency, rightUrgency);
+            }
             long leftActivity = left.optLong("activityAt", 0);
             long rightActivity = right.optLong("activityAt", 0);
             if (leftActivity != rightActivity) {
@@ -5566,6 +5589,24 @@ public class MainActivity extends Activity {
             return Integer.compare(right.optInt("index", 0), left.optInt("index", 0));
         });
         return sorted;
+    }
+
+    private int sessionUrgencyRank(JSONObject window) {
+        String status = window.optString("status", "").toLowerCase(Locale.US);
+        String statusLabel = window.optString("statusLabel", "").toLowerCase(Locale.US);
+        if ("problem".equals(status)
+                || statusLabel.contains("problem")
+                || statusLabel.contains("crash")
+                || statusLabel.contains("error")) {
+            return 0;
+        }
+        if (window.optBoolean("needsAttention", false) || "waiting".equals(status)) {
+            return 1;
+        }
+        if ("running".equals(status) || "working".equals(statusLabel)) {
+            return 3;
+        }
+        return 2;
     }
 
     private void addSectionHeader(LinearLayout list, String label, int count) {
@@ -5620,7 +5661,6 @@ public class MainActivity extends Activity {
         // drift from desktop tmux, web remote, and Old Sessions.
         String title = window.optString("title", window.optString("name", "shell"));
         String visibleTitle = displaySessionTitle(title);
-        String detail = tabDetail(window, session);
         String status = window.optString("status", "idle");
         String statusLabel = window.optString("statusLabel", "Done");
 
@@ -5685,16 +5725,6 @@ public class MainActivity extends Activity {
             return true;
         });
 
-        TextView detailText = new TextView(this);
-        detailText.setText(detail);
-        detailText.setTextSize(12);
-        detailText.setTextColor(Color.rgb(178, 185, 207));
-        detailText.setSingleLine(true);
-        detailText.setEllipsize(TextUtils.TruncateAt.END);
-        detailText.setIncludeFontPadding(false);
-        detailText.setClickable(true);
-        detailText.setOnClickListener(openSessionClick);
-
         // WHY: users need to know whether a Codex tab is still actively working
         // before switching or closing it. The dot is driven by control-server
         // pane evidence, not by the mutable title string, so scanability improves
@@ -5717,10 +5747,6 @@ public class MainActivity extends Activity {
         // the phone. Let the title row and card grow vertically so the full title
         // is readable, while the dialog ScrollView absorbs the extra height.
         openPanel.addView(titleRow, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-        ));
-        openPanel.addView(detailText, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
         ));
@@ -5767,6 +5793,7 @@ public class MainActivity extends Activity {
         // naming table from raw prompts or process names.
         String title = session.optString("title", sessionId);
         String visibleTitle = displaySessionTitle(title);
+        String timeLabel = oldSessionTimeLabel(session);
         String cwd = session.optString("cwd", "");
 
         LinearLayout row = new LinearLayout(this);
@@ -5809,12 +5836,25 @@ public class MainActivity extends Activity {
             return true;
         });
 
-        // WHY: the user asked for old sessions "just by date and the name of
-        // each." Do not add process names, subagent labels, pane IDs, or tmux
-        // details here. The Resume button is the action; the row content stays
-        // the saved parent session name so the phone list reads like a normal
-        // recent-session picker.
+        TextView timeText = new TextView(this);
+        timeText.setText(timeLabel);
+        timeText.setTextSize(12);
+        timeText.setTextColor(Color.rgb(178, 185, 207));
+        timeText.setSingleLine(true);
+        timeText.setEllipsize(TextUtils.TruncateAt.END);
+        timeText.setIncludeFontPadding(false);
+
+        // WHY: the user asked for old sessions to keep the date/time
+        // separation while matching Active Sessions' row language. Do not add
+        // process names, subagent labels, pane IDs, or tmux details here. The
+        // Resume button is the action; the row content stays the saved parent
+        // session name so the phone list reads like a normal recent-session
+        // picker.
         openPanel.addView(titleText, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+        openPanel.addView(timeText, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
         ));
@@ -6105,15 +6145,35 @@ public class MainActivity extends Activity {
     }
 
     private String workspaceSnapshotTitle(JSONObject snapshot) {
-        return workspaceSnapshotTime(snapshot) + " · " + workspaceSnapshotLabel(snapshot);
+        return workspaceSnapshotLabel(snapshot);
     }
 
     private String workspaceSnapshotTime(JSONObject snapshot) {
         String createdAt = snapshot.optString("createdAt", "");
-        if (createdAt.trim().isEmpty()) {
-            return "unknown";
+        String time = shortClockTime(createdAt);
+        return time.isEmpty() ? "unknown" : time;
+    }
+
+    private String workspaceSnapshotDateLabel(JSONObject snapshot) {
+        String createdAt = snapshot.optString("createdAt", "");
+        if (createdAt.length() >= 10) {
+            return createdAt.substring(0, 10);
         }
-        return createdAt.replace("T", " ").substring(0, Math.min(19, createdAt.length()));
+        return snapshot.optBoolean("isLatest", false) ? "Latest" : "Older";
+    }
+
+    private String shortClockTime(String timestamp) {
+        if (timestamp == null) {
+            return "";
+        }
+        String trimmed = timestamp.trim();
+        if (trimmed.length() >= 16 && trimmed.charAt(10) == 'T') {
+            return trimmed.substring(11, 16);
+        }
+        if (trimmed.length() >= 16 && trimmed.charAt(10) == ' ') {
+            return trimmed.substring(11, 16);
+        }
+        return "";
     }
 
     private String workspaceSnapshotLabel(JSONObject snapshot) {
@@ -6131,18 +6191,82 @@ public class MainActivity extends Activity {
     }
 
     private String workspaceSnapshotDetail(JSONObject snapshot) {
-        return snapshot.optInt("windowCount", 0) + " windows · "
-                + snapshot.optInt("exactRestoreCount", 0) + " exact · "
-                + snapshot.optString("path", "");
+        String reason = snapshot.optString("saveReason", "").trim();
+        String label = workspaceSnapshotTime(snapshot) + " · "
+                + snapshot.optInt("windowCount", 0) + " windows · "
+                + snapshot.optInt("exactRestoreCount", 0) + " exact";
+        if (snapshot.optBoolean("isRecommended", false)) {
+            label += " · recommended";
+        } else if (!reason.isEmpty() && !"manual".equals(reason)) {
+            label += " · " + reason;
+        }
+        return label;
     }
 
     private void saveWorkspaceAndReopenDialog(AlertDialog[] dialogRef) {
+        saveWorkspaceAndReopenDialog(dialogRef, "manual");
+    }
+
+    private void saveWorkspaceAndReopenDialog(AlertDialog[] dialogRef, String name) {
         if (dialogRef[0] != null) {
             dialogRef[0].dismiss();
         }
-        getJsonWithRetry("/workspace-save", payload -> showWorkspaces(), exc ->
+        String cleanName = name == null ? "" : name.trim();
+        String reason = cleanName.isEmpty() ? "manual" : cleanName;
+        getJsonWithRetry("/workspace-save?reason=" + urlEncode(reason), payload -> showWorkspaces(), exc ->
                 toast("WEzterm control is not reachable")
         );
+    }
+
+    private void showSaveWorkspaceNameDialog(AlertDialog[] parentDialogRef) {
+        ScrollView scrollView = new ScrollView(this);
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(8), dp(6), dp(8), dp(6));
+        scrollView.addView(content);
+
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        input.setHint("Workspace name");
+        input.setTextColor(Color.rgb(244, 246, 252));
+        input.setHintTextColor(Color.rgb(132, 140, 168));
+        input.setTextSize(16);
+        input.setPadding(dp(12), dp(10), dp(12), dp(10));
+        setTouchableBackground(input, Color.rgb(32, 35, 48), Color.rgb(137, 180, 250));
+        content.addView(input, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+
+        final AlertDialog[] nameDialogRef = new AlertDialog[1];
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.setPadding(0, dp(8), 0, 0);
+        actions.addView(activeDialogActionButton("Save", v -> {
+            String value = input.getText() == null ? "" : input.getText().toString().trim();
+            if (value.isEmpty()) {
+                toast("Name the workspace first");
+                return;
+            }
+            if (nameDialogRef[0] != null) {
+                nameDialogRef[0].dismiss();
+            }
+            saveWorkspaceAndReopenDialog(parentDialogRef, value);
+        }));
+        actions.addView(activeDialogActionButton("Cancel", v -> {
+            if (nameDialogRef[0] != null) {
+                nameDialogRef[0].dismiss();
+            }
+        }));
+        content.addView(actions);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setView(premiumDialogShell("Name workspace", "Saved workspaces are grouped by date", scrollView))
+                .show();
+        nameDialogRef[0] = dialog;
+        stylePremiumDialogWindow(dialog);
+        input.requestFocus();
     }
 
     private void confirmCloseOutWorkspace(AlertDialog[] dialogRef) {
@@ -6429,7 +6553,6 @@ public class MainActivity extends Activity {
     }
 
     private String tabDetail(JSONObject window, String session) throws Exception {
-        String state = window.getBoolean("active") ? "Current session" : "Tap to open";
         String status = window.optString("statusLabel", "Done");
         String attention = window.optString("attentionReason", "");
         String activity = window.optString("activityGroup", "");
@@ -6437,7 +6560,6 @@ public class MainActivity extends Activity {
         String path = window.optString("shortPath", "");
         return status
                 + (attention.isEmpty() ? "" : " · " + attention)
-                + " · " + state
                 + (activity.isEmpty() ? "" : " · " + activity)
                 + (detail.isEmpty() ? "" : " · " + detail)
                 + (path.isEmpty() ? "" : " · " + path);

@@ -59,13 +59,13 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="195"' "current APK version must be bumped for the v2.94 zoom layout-coverage contract"
-require "$MANIFEST" 'android:versionName="2.94"' "current APK version must be bumped for the v2.94 zoom layout-coverage contract"
+require "$MANIFEST" 'android:versionCode="196"' "current APK version must be bumped for the v2.95 slow reading scroll contract"
+require "$MANIFEST" 'android:versionName="2.95"' "current APK version must be bumped for the v2.95 slow reading scroll contract"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.94";' "client /config proof must report the same v2.94 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.95";' "client /config proof must report the same v2.95 APK contract as the manifest"
 require "$MAIN" 'MediaStore.ACTION_PICK_IMAGES' "Upload must use Android Photo Picker for one-selection screenshots/media on Android 13+"
 require "$MAIN" 'uploadDocumentPickerIntent' "Upload must keep ACTION_OPEN_DOCUMENT fallback for non-photo-picker/files path"
 require "$MAIN" 'uploadUrisFromResult' "Upload result must handle both data URI and ClipData instead of dropping picker returns"
@@ -175,7 +175,9 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=195`, `versionName=2.94`.' "README checkpoint must match the installed v2.94 APK"
+    require "$README" 'Built checkpoint: `versionCode=196`, `versionName=2.95`.' "README checkpoint must match the installed v2.95 APK"
+    require "$README" 'slow one-finger reading drags monotonic and line-sized' "README must document the v2.95 slow reading drag contract"
+    require "$README" 'momentum is limited to quick high-velocity flicks' "README must document the v2.95 slow-release no-momentum contract"
     require "$README" 'larger Android layout viewport' "README must document the v2.94 zoom-out layout-coverage contract"
     require "$README" 'does not fetch rows mid-pinch' "README must document that v2.94 preserves no row fetches during pinch"
     require "$README" 'visual-only one-finger touch-scroll nudge' "README must document the v2.93 visual-only scroll-latency contract"
@@ -362,8 +364,9 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.94' "install page must advertise the current v2.94 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>195</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.95' "install page must advertise the current v2.95 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>196</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'monotonic slow one-finger reading drag' "install page must mention the v2.95 slow reading drag fix"
     require "$INSTALL_PAGE" 'layout viewport zoom-out row coverage' "install page must mention the v2.94 zoom layout-coverage fix"
     require "$INSTALL_PAGE" 'visual-only one-finger touch-scroll nudge' "install page must mention the v2.93 scroll-latency fix"
     require "$INSTALL_PAGE" 'Workspace Save/Load/Close' "install page must mention the v2.62 workspace control fix"
@@ -482,7 +485,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.94 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.95 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"
@@ -1421,9 +1424,15 @@ require "$MAIN" 'HISTORY_DRAG_FLING_DISTANCE_LINES = 7f' "fling distance gate mu
 require "$MAIN" 'TOUCH_SCROLL_LIVE_BOTTOM_SNAP_LINES = 3' "near-bottom lineDown must use a conservative edge band so it cannot snap early"
 require "$MAIN" 'HISTORY_DRAG_FAST_VELOCITY_PX_PER_SEC = 1200f' "slow deliberate read drags must not be promoted into fast batches"
 require "$MAIN" 'HISTORY_DRAG_FLING_VELOCITY_PX_PER_SEC = 2400f' "true flick momentum must require an explicit high-velocity gate"
+require "$MAIN" 'HISTORY_DRAG_READING_MOVE_REPEATS = 1' "slow one-finger reading drags must remain line-sized"
+require "$MAIN" 'HISTORY_DRAG_RELEASE_FLICK_MAX_MS = 360' "release momentum must stay limited to quick flicks"
+require "$MAIN" 'HISTORY_DRAG_DIRECTION_REVERSAL_MIN_LINES = 2f' "slow drag jitter must not flip direction on tiny opposite samples"
 require "$MAIN" 'terminalTouchGestureGeneration' "touch scrolling must generation-cancel stale delayed responses"
 require "$MAIN" 'pendingHistoryScrollGeneration' "pending touch scrolls must belong to the current gesture"
-require "$MAIN" 'sendHistoryScrollFromTouch(where, boundedRepeats, gestureGeneration, stableTargetKey)' "touch scrolling must batch through bounded generation-tagged server repeats and a stable visible target"
+require "$MAIN" 'pendingHistoryScrollDirectionGeneration' "pending touch scrolls must belong to the current drag direction"
+require "$MAIN" 'terminalHistoryDragDirectionGeneration' "touch scroll replies must ignore stale opposite-direction responses"
+require "$MAIN" 'sendHistoryScrollFromTouch(where, boundedRepeats, gestureGeneration, stableTargetKey, directionGeneration)' "touch scrolling must batch through bounded generation-tagged server repeats and a stable visible target"
+require_absent "$MAIN" 'distanceLines >= 2f' "slow MOVE distance alone must not promote reading drags into multi-repeat jumps"
 require "$MAIN" 'String path = appendStableWindowQuery("/touch-scroll?where=" + urlEncode(where)' "touch scrolling must target the stable phone windowId instead of whichever tmux window is selected"
 require "$MAIN" 'getJson(appendStableWindowQuery("/touch-scroll?where=bottom&repeat=1", terminalTouchStableWindowId)' "quiet touch-bottom restore must target the stable phone windowId"
 require "$MAIN" 'String where = step > 0 ? "lineUp" : "lineDown"' "touch scroll must use line-sized server movement, not page jumps"
@@ -1441,8 +1450,8 @@ require "$MAIN" 'HISTORY_DRAG_MOMENTUM_DECAY = 0.87f' "momentum must decay gradu
 require "$MAIN" 'HISTORY_DRAG_MOMENTUM_STOP_VELOCITY_PX_PER_SEC' "momentum must stop from velocity instead of running forever"
 require "$MAIN" 'HISTORY_DRAG_MOMENTUM_UP_MAX_REPEATS = 16' "upward momentum must stay faster than slow drag but bounded"
 require "$MAIN" 'HISTORY_DRAG_MOMENTUM_DOWN_MAX_REPEATS = 6' "downward momentum must return toward live bottom without the old tiny cap"
-require "$MAIN" 'HISTORY_DRAG_RELEASE_LONG_GESTURE_MS = 650' "slow deliberate drags must not start inertia from average velocity alone"
-require "$MAIN" 'wallDurationMs > HISTORY_DRAG_RELEASE_LONG_GESTURE_MS' "long deliberate drags must never start post-release inertia"
+require "$MAIN" 'HISTORY_DRAG_RELEASE_LONG_GESTURE_MS = 650' "slow deliberate drags must not promote MOVE acceleration after the fast gesture window"
+require "$MAIN" 'wallDurationMs > HISTORY_DRAG_RELEASE_FLICK_MAX_MS' "slow deliberate drags must never start post-release inertia"
 require "$MAIN" 'MotionEvent downTime' "release classification WHY comment must preserve synthetic/WebView-routed event timing"
 require "$MAIN" 'bogus high tracker velocity' "release classification WHY comment must preserve slow-drag no-inertia behavior"
 require "$MAIN" 'startHistoryMomentum' "release fling must start a cancellable post-release momentum loop"
@@ -1462,7 +1471,7 @@ require "$MAIN" 'terminalTouchStableWindowId = visibleTerminalTargetKey();' "tou
 require "$MAIN" 'private long terminalTouchDownWallClockMs = 0;' "release classification must track app-observed ACTION_DOWN time"
 require "$MAIN" 'terminalTouchDownWallClockMs = System.currentTimeMillis();' "release classification must not depend only on MotionEvent downTime"
 require "$MAIN" 'pendingHistoryScrollTargetKey' "pending touch-scroll batches must preserve the same stable target"
-require "$MAIN" 'sendHistoryScrollFromTouch(where, boundedRepeats, gestureGeneration, stableTargetKey);' "MOVE touch-scroll sends must use the gesture-captured target"
+require "$MAIN" 'sendHistoryScrollFromTouch(where, boundedRepeats, gestureGeneration, stableTargetKey, directionGeneration);' "MOVE touch-scroll sends must use the gesture-captured target"
 require "$MAIN" 'appendStableWindowQuery("/touch-scroll?where="' "touch-scroll endpoint must remain stable-window routed"
 require "$MAIN" 'visibleTerminalTargetKey()' "visible terminal scroll target helper must exist"
 require "$MAIN" 'Prefer the selected/visible window for' "visible target WHY comment must preserve the target-drift root cause"

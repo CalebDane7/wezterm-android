@@ -124,7 +124,7 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
     private static final String PREF_PROMPT_DRAFT_PREFIX = "prompt_draft_";
-    private static final String APP_VERSION_NAME = "2.94";
+    private static final String APP_VERSION_NAME = "2.95";
     private static final int PREMIUM_CONTROL_CORNER_RADIUS_DP = 14;
     private static final int PREMIUM_DIALOG_CORNER_RADIUS_DP = 22;
     private static final int ACTIVE_SESSION_ROW_GAP_DP = 10;
@@ -2175,16 +2175,16 @@ public class MainActivity extends Activity {
         float releaseVelocity = Math.abs(signedReleaseVelocity);
         int lineThreshold = Math.max(terminalTouchSlop, dp(HISTORY_DRAG_LINE_THRESHOLD_DP));
         if (absDy < lineThreshold * HISTORY_DRAG_RELEASE_MIN_LINES
-                || releaseVelocity < HISTORY_DRAG_FLING_VELOCITY_PX_PER_SEC
-                || wallDurationMs > HISTORY_DRAG_RELEASE_FLICK_MAX_MS) {
+                || releaseVelocity < HISTORY_DRAG_FLING_VELOCITY_PX_PER_SEC) {
             return;
         }
-        if (wallDurationMs > HISTORY_DRAG_RELEASE_LONG_GESTURE_MS) {
-            // WHY: a long deliberate read-drag can cover enough distance to look
-            // fast by average velocity, but it must stop when the finger stops. Only
-            // quick flicks should start inertia; synthetic/WebView-routed UP events
-            // can reset MotionEvent downTime or report a bogus high tracker velocity
-            // at the end of slow movement, so use the app-observed ACTION_DOWN clock.
+        if (wallDurationMs > HISTORY_DRAG_RELEASE_FLICK_MAX_MS) {
+            // WHY: slow deliberate read-drags can cover enough distance to look fast
+            // by average velocity, but they must stop when the finger stops. Only a
+            // quick high-velocity release is a flick; synthetic/WebView-routed UP
+            // events can reset MotionEvent downTime or report a bogus high tracker velocity
+            // at the end of slow movement, so use the app-observed
+            // ACTION_DOWN clock.
             return;
         }
         String where = signedReleaseVelocity > 0 ? "lineUp" : "lineDown";

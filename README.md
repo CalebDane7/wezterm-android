@@ -92,7 +92,12 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=195`, `versionName=2.94`.
+- Built checkpoint: `versionCode=196`, `versionName=2.95`.
+- v2.95 keeps slow one-finger reading drags monotonic and line-sized: slow MOVE
+  no longer promotes by raw distance, same-direction slow pending work stays to
+  one step, direction changes clear stale opposite-direction work, and release
+  momentum is limited to quick high-velocity flicks. Fast flick acceleration and
+  cancellable momentum remain on the existing flick path.
 - v2.94 prepaints zoom-out row coverage from the larger Android layout viewport
   during normal settled renderer refreshes, so a physical two-finger zoom-out
   can reveal already-rendered terminal rows instead of waiting on a post-pinch

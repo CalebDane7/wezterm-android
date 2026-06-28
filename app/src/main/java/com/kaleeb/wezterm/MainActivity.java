@@ -180,6 +180,7 @@ public class MainActivity extends Activity {
     private static final int HISTORY_DRAG_FAST_MOVE_REPEATS = 6;
     private static final int HISTORY_DRAG_FLING_MOVE_REPEATS = 10;
     private static final long HISTORY_DRAG_RELEASE_FLICK_MAX_MS = 360;
+    private static final boolean HISTORY_DRAG_RELEASE_MOMENTUM_ENABLED = false;
     private static final long TOUCH_SCROLL_RENDER_PULSE_MS = 16;
     private static final long HISTORY_DRAG_SLOW_ROW_COMMIT_MS = TOUCH_SCROLL_RENDER_PULSE_MS * 6;
     private static final long TOUCH_SCROLL_RENDER_PULSE_WINDOW_MS = 850;
@@ -1815,8 +1816,11 @@ public class MainActivity extends Activity {
                     // WHY: a slow reading drag ends at ACTION_UP. Do not let a
                     // stale in-flight `/touch-scroll` response drain one more row
                     // or trigger a bottom/top-edge refresh after the finger lifts;
-                    // that is the user-visible random release jump. True flicks
-                    // keep the current generation so bounded momentum can run.
+                    // that is the user-visible random release jump. Phone
+                    // finger-up is now a hard stop: fast movement may accelerate
+                    // while the finger is down, but release must cancel stale
+                    // replies instead of preserving the generation for inertial
+                    // replay.
                     cancelHistoryMomentum();
                     terminalTouchGestureGeneration++;
                 }
@@ -2316,6 +2320,16 @@ public class MainActivity extends Activity {
     }
 
     private boolean dispatchHistoryReleaseFling(MotionEvent event) {
+        if (!historyDragReleaseMomentumEnabled()) {
+            // WHY: APK-SCROLL-POST-RELEASE-SNAP-2346 changed the accepted phone
+            // contract after real-device proof showed the release/momentum branch
+            // continuing `/touch-scroll` work from scrollPosition 5 to 111 after
+            // finger-up. Keep the old implementation below as a documented,
+            // opt-in future path, but the installed one-finger APK path must stop
+            // exactly where ACTION_UP lands unless a new plan row explicitly
+            // re-accepts inertial phone scrolling and proves it on the real phone.
+            return false;
+        }
         float totalDy = event.getY() - terminalTouchStartY;
         float absDy = Math.abs(totalDy);
         long durationMs = Math.max(1, event.getEventTime() - event.getDownTime());
@@ -2394,6 +2408,10 @@ public class MainActivity extends Activity {
         scrollTerminalFromTouch(where, repeats, true, targetKey);
         startHistoryMomentum(where, releaseVelocity * HISTORY_DRAG_MOMENTUM_DECAY, flingGeneration, targetKey);
         return true;
+    }
+
+    private boolean historyDragReleaseMomentumEnabled() {
+        return HISTORY_DRAG_RELEASE_MOMENTUM_ENABLED;
     }
 
     private void startHistoryMomentum(String where, float velocityPxPerSec, long gestureGeneration, String targetKey) {
@@ -2728,8 +2746,10 @@ public class MainActivity extends Activity {
         // scroll smoothly on the laptop while the APK looks choppy if the renderer
         // waits for the 550 ms poll or a single delayed refresh. Keep `/touch-scroll` itself lightweight,
         // but run a frame-rate bounded repaint loop during an
-        // active finger gesture so slow drags show intermediate rows and fast flicks
-        // still use the existing VelocityTracker/release-burst path.
+        // active finger gesture so slow drags show intermediate rows and fast
+        // movement still accelerates while the finger is physically down. Do not
+        // use this pulse train as permission for post-release inertia; the phone
+        // contract now treats ACTION_UP as a hard stop.
         long now = System.currentTimeMillis();
         touchScrollRenderPulseUntilMs = Math.max(
                 touchScrollRenderPulseUntilMs,

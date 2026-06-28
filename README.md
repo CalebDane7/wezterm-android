@@ -93,10 +93,12 @@ Android users use the native APK.
 ## Current Checkpoint
 
 - Built checkpoint: `versionCode=197`, `versionName=2.96`.
-- v2.96 stops slow one-finger reading drags at finger-up by generation-canceling
-  stale post-lift `/touch-scroll` replies, while preserving quick-flick
-  momentum. It also treats tmux `scroll_position >= history_size` as the real
-  history-top edge so repeated lineUp gestures cannot hang at the top range.
+- v2.96 stops one-finger reading drags at finger-up by generation-canceling
+  stale post-lift `/touch-scroll` replies and disabling post-release momentum.
+  Fast movement may still accelerate while the finger is down; ACTION_UP is a hard stop
+  so the viewport does not keep drifting after lift-off. It also
+  treats tmux `scroll_position >= history_size` as the real history-top edge so
+  repeated lineUp gestures cannot hang at the top range.
 - v2.96 also clamps the first live-bottom `lineDown` sample when a drag starts
   from live mode, so movement stops at the bottom edge instead of applying a
   visual nudge into black space and snapping back after the server reports
@@ -105,8 +107,9 @@ Android users use the native APK.
 - v2.95 keeps slow one-finger reading drags monotonic and line-sized: slow MOVE
   no longer promotes by raw distance, same-direction slow pending work stays to
   one step, direction changes clear stale opposite-direction work, and release
-  momentum is limited to quick high-velocity flicks. Fast flick acceleration and
-  cancellable momentum remain on the existing flick path.
+  momentum is limited to quick high-velocity flicks. v2.96 supersedes that
+  post-release behavior for phone one-finger scroll; fast movement now belongs
+  only to the finger-down path.
 - v2.94 prepaints zoom-out row coverage from the larger Android layout viewport
   during normal settled renderer refreshes, so a physical two-finger zoom-out
   can reveal already-rendered terminal rows instead of waiting on a post-pinch

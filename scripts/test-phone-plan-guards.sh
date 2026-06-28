@@ -997,6 +997,8 @@ if [ -f "$MANTIS_CONTROL_SERVER" ]; then
     require "$MANTIS_CONTROL_SERVER" 'run_tmux_optional("resize-window", "-t", target, "-x", str(width), "-y", str(height))' "Mantis select-live must force the selected linked window to phone dimensions"
     require "$MANTIS_CONTROL_SERVER" 'old 180x38 desktop size' "Mantis resize WHY comment must preserve the linked-window row-count root cause"
     require "$MANTIS_CONTROL_SERVER" 'active_window(self, read_only=False)' "Mantis active status must keep APK resize default while allowing web read-only polling"
+    require "$MANTIS_CONTROL_SERVER" 'if argv and argv[0] == "prompt-close-window"' "Mantis tmux status X confirmation prompt must remain owned by the active control-server CLI"
+    require "$MANTIS_CONTROL_SERVER" 'delegating to the same clean-close `close-window` owner' "Mantis tmux status X prompt path must delegate to the clean-close owner after user confirmation"
     require "$MANTIS_CONTROL_SERVER" 'small/wide viewport sizes' "Mantis phone-size helper must preserve the web-client resize regression guard"
     require "$MANTIS_CONTROL_SERVER" 'direct `/live-bottom?windowId=@id`' "Mantis Bottom-core must resize stable live-bottom targets, not only select-live"
     require "$MANTIS_CONTROL_SERVER" 'Bottom-core owns the final viewport' "Mantis live-bottom resize WHY comment must preserve the toolbar Bottom dotted-tail root cause"
@@ -1975,8 +1977,6 @@ if [ -f "$CONTROL_SERVER" ]; then
     require "$CONTROL_SERVER" 'def crashed_sessions(self, limit=30):' "server must expose crash-only restore payloads"
     require "$CONTROL_SERVER" 'elif parsed.path == "/crashed-sessions":' "GET /crashed-sessions route must remain"
     require "$CONTROL_SERVER" 'record-clean-close' "tmux status X must be able to mark a clean close through the control-server CLI"
-    require "$CONTROL_SERVER" 'if argv and argv[0] == "prompt-close-window"' "tmux status X confirmation prompt must remain owned by the control-server CLI"
-    require "$CONTROL_SERVER" 'delegating to the same clean-close `close-window` owner' "tmux status X prompt path must delegate to the clean-close owner after user confirmation"
     require "$CONTROL_SERVER" 'seen-live-codex' "crash restore must have a durable was-live marker"
     require "$CONTROL_SERVER" 'clean-close' "crash restore must have a durable approved-close marker"
     require "$CONTROL_SERVER" 'live_codex_thread_ids' "crash restore must not offer sessions that are still live"
@@ -2076,8 +2076,8 @@ if [ -f "$TMUX_CONF" ]; then
     require "$TMUX_CONF" 'range=user|x#{window_id}' "tmux status close target must remain a user mouse range on stable @window ids"
     require "$TMUX_CONF" 'run-shell -b' "tmux close confirmation must capture the clicked @window before y/n confirmation"
     require "$TMUX_CONF" 'mantis-phone-control-server prompt-close-window' "tmux status X must route clicked stable @window ids through the control-server confirmation prompt"
-    require "$TMUX_CONF" 'delegates the final approved close back to the control-server' "tmux status X WHY comment must preserve the prompt-then-clean-close owner split"
-    require "$TMUX_CONF" 'records the clean-close' "tmux status X must preserve clean-close ledger intent before kill-window"
+    require "$TMUX_CONF" 'must still delegate to the clean-close CLI' "tmux status X WHY comment must preserve the prompt-then-clean-close owner split"
+    require "$TMUX_CONF" 'clean-close ledger row' "tmux status X must preserve clean-close ledger intent before kill-window"
     require "$TMUX_CONF" 'contract: useful title, stable status color, and a padded `[x]` close' "tmux close WHY comment must document the padded [x] status-contract regression"
 fi
 

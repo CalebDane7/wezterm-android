@@ -225,7 +225,7 @@ require "$MAIN" 'toolbarNavigationButton("Bottom"' "APK toolbar must still expos
 require "$MAIN" 'toolbarNavigationButton("Settings"' "APK toolbar must expose Settings for secondary recovery actions and viewport mode"
 require "$MAIN" 'refreshTerminalTransport();' "APK Settings must keep Refresh reachable"
 require "$MAIN" 'showViewControls();' "APK Settings must keep Scroll reachable"
-require "$MAIN" 'showViewportModeSettings();' "APK Settings must keep the Desktop/Mobile viewport selector reachable"
+require_absent "$MAIN" '"Viewport mode choices"' "APK Settings must keep viewport mode on the single top switch row"
 require "$MAIN" 'Switch to Desktop viewport' "APK Settings must expose an obvious Mobile-to-Desktop viewport switch"
 require "$MAIN" 'toolbarNavigationButton("Copy/Paste"' "APK toolbar must still expose Copy/Paste"
 require "$MAIN" 'toolbarNavigationButton("Upload"' "APK toolbar must still expose Upload"

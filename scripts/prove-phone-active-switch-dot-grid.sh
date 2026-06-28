@@ -20,6 +20,7 @@ WORK_DIR="${WEZTERM_PROOF_WORK_DIR:-/tmp}"
 SCREENSHOT="${WEZTERM_DOT_GRID_SCREENSHOT:-$WORK_DIR/wezterm-active-switch-dot-grid-target.png}"
 IMMEDIATE_SCREENSHOT="${WEZTERM_DOT_GRID_IMMEDIATE_SCREENSHOT:-$WORK_DIR/wezterm-active-switch-dot-grid-immediate.png}"
 READABLE_SCREENSHOT="${WEZTERM_DOT_GRID_READABLE_SCREENSHOT:-$WORK_DIR/wezterm-active-switch-dot-grid-readable.png}"
+CONTROL_LOG="${WEZTERM_DOT_GRID_CONTROL_LOG:-$WORK_DIR/wezterm-active-switch-dot-grid-control.log}"
 PROOF_ID="${WEZTERM_DOT_GRID_PROOF_ID:-$$}"
 ADB_SCREENSHOT_TIMEOUT_SECONDS="${ADB_SCREENSHOT_TIMEOUT_SECONDS:-20}"
 ADB_UI_DUMP_TIMEOUT_SECONDS="${ADB_UI_DUMP_TIMEOUT_SECONDS:-8}"
@@ -158,6 +159,19 @@ assert_no_ime_visible() {
         adb_cmd shell dumpsys input_method | tail -80 >&2 || true
         fail "Android IME/keyboard visible after passive Active Sessions switch"
     fi
+}
+
+clear_control_logcat() {
+    adb_cmd logcat -c >/dev/null 2>&1 || true
+}
+
+capture_and_assert_control_log() {
+    adb_cmd logcat -d -s WEztermControl > "$CONTROL_LOG" 2>/dev/null || true
+    [ -s "$CONTROL_LOG" ] || fail "missing WEztermControl logcat proof"
+    grep -F 'endpoint=/select-live' "$CONTROL_LOG" | grep -F "windowId=$TARGET_WINDOW_ID" >/dev/null \
+        || fail "WEztermControl log did not prove /select-live for $TARGET_WINDOW_ID"
+    grep -F 'stage=capture-target endpoint=renderer' "$CONTROL_LOG" | grep -F "windowId=$TARGET_WINDOW_ID" >/dev/null \
+        || fail "WEztermControl log did not prove renderer capture target for $TARGET_WINDOW_ID"
 }
 
 has_window_focus() {
@@ -784,9 +798,11 @@ main() {
     sleep 1.0
     wait_for_focus
     ensure_plain_toolbar
+    clear_control_logcat
     select_active_target
     STRICT_POST_SWITCH_FOCUS=1
     assert_selected_target_is_active
+    capture_and_assert_control_log
     # WHY: the user-visible regression is the entry moment after tapping an
     # Active Sessions row, not only the eventual settled state. v2.22 keeps the
     # native full-frame shield below a visible-black threshold; the immediate
@@ -815,6 +831,7 @@ main() {
     echo "immediate screenshot: $IMMEDIATE_SCREENSHOT"
     echo "readable-shortly-after-switch screenshot: $READABLE_SCREENSHOT"
     echo "screenshot: $SCREENSHOT"
+    echo "control log: $CONTROL_LOG"
 }
 
 main "$@"

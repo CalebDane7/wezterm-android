@@ -131,12 +131,17 @@ public class MainActivity extends Activity {
     private static final int ACTIVE_SESSION_CARD_VERTICAL_PADDING_DP = 11;
     private static final int ACTIVE_SESSION_TITLE_LINE_SPACING_DP = 3;
     private static final int ACTIVE_SESSION_SCROLL_BOTTOM_INSET_DP = 18;
+    private static final int ACTIVE_SESSION_CLOSE_BUTTON_WIDTH_DP = 56;
+    private static final int ACTIVE_SESSION_CLOSE_BUTTON_MIN_HEIGHT_DP = 56;
+    private static final int ACTIVE_SESSION_CLOSE_BUTTON_GAP_DP = 6;
     private static final int PREMIUM_STATUS_DOT_SP = 18;
     private static final int PREMIUM_CONTROL_STROKE_COLOR = Color.rgb(78, 84, 108);
     private static final int PREMIUM_BUTTON_ELEVATION_DP = 2;
     private static final String UPLOAD_LOG_TAG = "WEztermUpload";
     private static final String SEND_LOG_TAG = "WEztermSend";
     private static final String TERMINAL_COPY_LOG_TAG = "WEztermCopy";
+    private static final String CONTROL_LOG_TAG = "WEztermControl";
+    private static final String CONTROL_CLIENT_VALUE = "wezterm-android";
     private static final int TERMINAL_INPUT_TYPE = InputType.TYPE_CLASS_TEXT
             | InputType.TYPE_TEXT_VARIATION_NORMAL
             | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
@@ -149,7 +154,8 @@ public class MainActivity extends Activity {
     private static final String VIEWPORT_MODE_DESKTOP = "desktop";
     private static final String VIEWPORT_MODE_MOBILE = "mobile";
     private static final int TOOLBAR_HEIGHT_DP = 92;
-    private static final int TITLE_STRIP_HEIGHT_DP = 18;
+    private static final int TITLE_STRIP_MIN_HEIGHT_DP = 18;
+    private static final int TITLE_STRIP_LINE_SPACING_DP = 2;
     private static final int PROMPT_COMPOSER_INPUT_HEIGHT_DP = 44;
     private static final int PROMPT_COMPOSER_VERTICAL_PADDING_DP = 4;
     private static final long HISTORY_DRAG_THROTTLE_MS = 16;
@@ -171,13 +177,15 @@ public class MainActivity extends Activity {
     private static final int HISTORY_DRAG_REPEATED_FLING_BOOST_REPEATS = 8;
     private static final int HISTORY_DRAG_READING_MOVE_REPEATS = 1;
     private static final int HISTORY_DRAG_SLOW_MOVE_MAX_REPEATS = 3;
-    private static final int HISTORY_DRAG_SLOW_PENDING_MAX_REPEATS = 6;
     private static final int HISTORY_DRAG_FAST_MOVE_REPEATS = 6;
     private static final int HISTORY_DRAG_FLING_MOVE_REPEATS = 10;
     private static final long HISTORY_DRAG_RELEASE_FLICK_MAX_MS = 360;
     private static final long TOUCH_SCROLL_RENDER_PULSE_MS = 16;
+    private static final long HISTORY_DRAG_SLOW_ROW_COMMIT_MS = TOUCH_SCROLL_RENDER_PULSE_MS * 6;
     private static final long TOUCH_SCROLL_RENDER_PULSE_WINDOW_MS = 850;
     private static final long TOUCH_SCROLL_VISUAL_NUDGE_CLEAR_MS = 420;
+    private static final int HISTORY_DRAG_LONG_PRESS_CANCEL_DP = 2;
+    private static final int HISTORY_DRAG_VISUAL_REVERSAL_SLOP_DP = 2;
     private static final float HISTORY_DRAG_RELEASE_MIN_LINES = 2f;
     private static final float HISTORY_DRAG_DIRECTION_REVERSAL_MIN_LINES = 2f;
     private static final int TOUCH_SCROLL_LIVE_BOTTOM_SNAP_LINES = 3;
@@ -269,6 +277,7 @@ public class MainActivity extends Activity {
     private float terminalTouchStartX = 0;
     private float terminalTouchStartY = 0;
     private float terminalLastHistoryDragY = 0;
+    private float terminalLastTouchVisualNudgeY = 0;
     private float terminalLastViewerPanX = 0;
     private boolean terminalHistoryDragActive = false;
     private boolean terminalMultiTouchGesture = false;
@@ -287,6 +296,8 @@ public class MainActivity extends Activity {
     private String pendingHistoryScrollTargetKey = "";
     private String terminalHistoryDragWhere = "";
     private long terminalHistoryDragDirectionGeneration = 0;
+    private long historyScrollRequestSerial = 0;
+    private long activeHistoryScrollRequestSerial = 0;
     private boolean terminalHistoryMomentumActive = false;
     private boolean terminalHistoryMomentumFrameScheduled = false;
     private float terminalHistoryMomentumVelocityPxPerSec = 0f;
@@ -326,6 +337,8 @@ public class MainActivity extends Activity {
     private String selectedPhoneWindowTitle = "";
     private long selectedPhoneWindowUpdatedAtMs = 0;
     private String currentPhoneWindowId = "";
+    private String readerSourcePhoneWindowId = "";
+    private String readerSourcePhoneWindowTitle = "";
     private boolean activityResumed = false;
     private boolean promptComposerProgrammaticTextChange = false;
     private String promptComposerDraftTargetKey = "";
@@ -358,6 +371,28 @@ public class MainActivity extends Activity {
                     : filename.trim();
             this.bytes = bytes;
             this.updatedAtMs = updatedAtMs;
+        }
+    }
+
+    private static final class ActiveCloseTarget {
+        final int index;
+        final String windowId;
+        final String title;
+        final String statusLabel;
+        final boolean safeToClose;
+
+        ActiveCloseTarget(
+                int index,
+                String windowId,
+                String title,
+                String statusLabel,
+                boolean safeToClose
+        ) {
+            this.index = index;
+            this.windowId = windowId == null ? "" : windowId.trim();
+            this.title = title == null ? "" : title.trim();
+            this.statusLabel = statusLabel == null ? "" : statusLabel.trim();
+            this.safeToClose = safeToClose;
         }
     }
     private boolean optionKeyDispatchInFlight = false;
@@ -589,7 +624,7 @@ public class MainActivity extends Activity {
         ));
         root.addView(sessionTitleStrip, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(TITLE_STRIP_HEIGHT_DP)
+                LinearLayout.LayoutParams.WRAP_CONTENT
         ));
         // WHY: the native composer must remain above the APK controls. A rejected
         // v2.63 attempt moved it below the toolbar, which made the expected phone
@@ -977,16 +1012,23 @@ public class MainActivity extends Activity {
     private TextView buildSessionTitleStrip() {
         TextView title = new TextView(this);
         // WHY: phone users lose the desktop tmux title bar but still need a
-        // constant target check before typing/sending. Keep this native, compact,
-        // and read-only so it cannot resize tmux or steal WebView focus.
-        title.setSingleLine(true);
-        title.setEllipsize(TextUtils.TruncateAt.END);
+        // constant target check before typing/sending. The selected-session title
+        // must wrap here instead of disappearing behind an ellipsis, because the
+        // title is the user's last chance to catch wrong-session input before
+        // Send/Close. Keep the strip native and read-only so it cannot resize tmux
+        // or steal WebView focus; only the Android chrome grows to fit the label.
+        title.setSingleLine(false);
+        title.setMaxLines(Integer.MAX_VALUE);
+        title.setEllipsize(null);
+        title.setHorizontallyScrolling(false);
+        title.setMinHeight(dp(TITLE_STRIP_MIN_HEIGHT_DP));
+        title.setLineSpacing(dp(TITLE_STRIP_LINE_SPACING_DP), 1.0f);
         title.setGravity(android.view.Gravity.CENTER);
         title.setTextSize(12);
         title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         title.setTextColor(Color.rgb(224, 230, 247));
         title.setBackgroundColor(Color.rgb(17, 18, 24));
-        title.setPadding(dp(8), 0, dp(8), 0);
+        title.setPadding(dp(8), dp(2), dp(8), dp(2));
         title.setText("WEzTerm");
         title.setContentDescription("Active session title");
         title.setOnClickListener(view -> showRememberedUploadForCurrentWindow());
@@ -1630,6 +1672,7 @@ public class MainActivity extends Activity {
             terminalTouchStartX = event.getX();
             terminalTouchStartY = event.getY();
             terminalLastHistoryDragY = terminalTouchStartY;
+            terminalLastTouchVisualNudgeY = terminalTouchStartY;
             terminalLastViewerPanX = terminalTouchStartX;
             terminalLastHistoryDragEventAtMs = event.getEventTime();
             terminalTouchDownWallClockMs = System.currentTimeMillis();
@@ -1689,6 +1732,15 @@ public class MainActivity extends Activity {
             float dy = event.getY() - terminalTouchStartY;
             float absDx = Math.abs(dx);
             float absDy = Math.abs(dy);
+            if (!terminalTouchExceededTapSlop
+                    && (absDx >= dp(HISTORY_DRAG_LONG_PRESS_CANCEL_DP)
+                    || absDy >= dp(HISTORY_DRAG_LONG_PRESS_CANCEL_DP))) {
+                // WHY: a very slow reading drag can move less than Android's full
+                // tap slop for longer than the long-press timeout. That is still a
+                // moving finger, not a stationary copy gesture; otherwise the text
+                // selection sheet opens before the scroll owner can engage.
+                cancelPendingTerminalLongPressCopy("move-intent-before-slop");
+            }
             if (absDx > terminalTouchSlop || absDy > terminalTouchSlop) {
                 terminalTouchExceededTapSlop = true;
                 cancelPendingTerminalLongPressCopy("move-past-slop");
@@ -1725,6 +1777,7 @@ public class MainActivity extends Activity {
                 cancelPendingTerminalLongPressCopy("history-drag-start");
                 terminalHistoryDragActive = true;
                 terminalLastHistoryDragY = terminalTouchStartY;
+                terminalLastTouchVisualNudgeY = terminalLastHistoryDragY;
                 enterReadMode();
                 keepCaptureRendererPulsingDuringTouch("touch-scroll-start");
             }
@@ -2066,18 +2119,20 @@ public class MainActivity extends Activity {
     }
 
     private void processHistoryDragSample(float y, long eventTimeMs) {
-        float step = y - terminalLastHistoryDragY;
         // WHY: v1.42 used page-sized HTTP scrolls. That could not paint
         // continuously under a finger, so the screen appeared frozen and then
         // jumped to a random-looking page. Use line-sized tmux copy-mode movement
         // for drag; the explicit Scroll menu still owns jump-to-top, page-up/down,
         // reader, and live-bottom recovery.
         int lineThreshold = Math.max(terminalTouchSlop, dp(HISTORY_DRAG_LINE_THRESHOLD_DP));
-        if (Math.abs(step) < lineThreshold
-                || eventTimeMs - lastHistoryDragAtMs < HISTORY_DRAG_THROTTLE_MS) {
+        nudgeCaptureRendererForHistorySample(y, lineThreshold);
+        float step = y - terminalLastHistoryDragY;
+        if (Math.abs(step) < lineThreshold) {
             return;
         }
         String where = step > 0 ? "lineUp" : "lineDown";
+        boolean directionChanged = !terminalHistoryDragWhere.isEmpty()
+                && !where.equals(terminalHistoryDragWhere);
         if (!terminalHistoryDragWhere.isEmpty()
                 && !where.equals(terminalHistoryDragWhere)
                 && Math.abs(step) < lineThreshold * HISTORY_DRAG_DIRECTION_REVERSAL_MIN_LINES) {
@@ -2086,12 +2141,22 @@ public class MainActivity extends Activity {
             // samples makes the phone visibly bounce backward while the laptop/tmux
             // scroll stays smooth. Swallow only tiny reversals; a deliberate reverse
             // over the line gate below changes direction immediately.
-            terminalLastHistoryDragY = y;
-            terminalLastHistoryDragEventAtMs = eventTimeMs;
-            lastHistoryDragAtMs = eventTimeMs;
+            // Do not advance the row baseline or throttle clock here. Consuming every
+            // small reverse sample made a real slow direction change restart from zero
+            // repeatedly, which felt like a two-second dead zone while old rows drained.
             return;
         }
         int repeats = historyDragRepeats(step, lineThreshold, eventTimeMs);
+        long minDispatchMs = repeats <= HISTORY_DRAG_SLOW_MOVE_MAX_REPEATS
+                ? HISTORY_DRAG_SLOW_ROW_COMMIT_MS
+                : HISTORY_DRAG_THROTTLE_MS;
+        if (!directionChanged && eventTimeMs - lastHistoryDragAtMs < minDispatchMs) {
+            // WHY: slow drag keeps visual-continuous motion through the capture
+            // renderer nudge. Tmux row commits are background catch-up work; sending
+            // a row command every frame makes the visible phone surface step line by
+            // line even though each command is only repeat=1.
+            return;
+        }
         terminalLastHistoryDragY = y;
         terminalLastHistoryDragEventAtMs = eventTimeMs;
         lastHistoryDragAtMs = eventTimeMs;
@@ -2101,7 +2166,13 @@ public class MainActivity extends Activity {
             terminalHistoryDragDirectionGeneration++;
             clearPendingHistoryScroll();
             if (hadPriorDirection) {
-                clearCaptureRendererTouchNudge("touch-scroll-direction-change");
+                supersedeHistoryScrollInFlightForDirectionChange();
+                cancelHistoryMomentum();
+                // WHY: the capture-renderer transform is the only pixel-continuous
+                // thing under the finger. Clearing it on reversal snaps the text back
+                // to the last committed tmux row exactly when the user expects the
+                // content to reverse with their finger.
+                repeats = HISTORY_DRAG_READING_MOVE_REPEATS;
             }
         }
         if (terminalTouchReachedLiveBottom && "lineDown".equals(where)) {
@@ -2115,9 +2186,46 @@ public class MainActivity extends Activity {
         if ("lineUp".equals(where)) {
             terminalTouchReachedLiveBottom = false;
         }
-        nudgeCaptureRendererForTouch(step);
         keepCaptureRendererPulsingDuringTouch("touch-scroll-move");
         scrollTerminalFromTouch(where, repeats);
+    }
+
+    private void nudgeCaptureRendererForHistorySample(float y, int lineThreshold) {
+        float visualStep = y - terminalLastTouchVisualNudgeY;
+        if (Math.abs(visualStep) < 0.5f) {
+            return;
+        }
+        String visualWhere = visualStep > 0 ? "lineUp" : "lineDown";
+        if (!terminalHistoryDragWhere.isEmpty()
+                && !visualWhere.equals(terminalHistoryDragWhere)
+                && Math.abs(y - terminalLastHistoryDragY)
+                < lineThreshold * HISTORY_DRAG_DIRECTION_REVERSAL_MIN_LINES) {
+            int visualReversalSlop = Math.max(1, Math.min(
+                    lineThreshold,
+                    dp(HISTORY_DRAG_VISUAL_REVERSAL_SLOP_DP)
+            ));
+            if (Math.abs(y - terminalLastTouchVisualNudgeY) < visualReversalSlop) {
+                return;
+            }
+            // WHY: sub-threshold visual nudges must follow real finger movement,
+            // but tiny opposite-direction MOVE samples are Android jitter, not a
+            // deliberate reverse. Hold only a couple pixels without consuming the
+            // baseline; once the finger clearly reverses, apply the accumulated
+            // visual residual immediately while tmux row dispatch remains line-gated.
+        }
+        if (terminalTouchReachedLiveBottom && "lineDown".equals(visualWhere)) {
+            // WHY: a visual-only latency nudge has no row coverage below the live
+            // bottom. Continuing to move it downward exposes the black WebView
+            // background near the toolbar before tmux can report another bottom
+            // response, which is the current slow-scroll screenshot regression.
+            terminalLastTouchVisualNudgeY = y;
+            return;
+        }
+        if ("lineUp".equals(visualWhere)) {
+            terminalTouchReachedLiveBottom = false;
+        }
+        nudgeCaptureRendererForTouch(visualStep);
+        terminalLastTouchVisualNudgeY = y;
     }
 
     private int historyDragRepeats(float step, int lineThreshold, long eventTimeMs) {
@@ -2153,6 +2261,18 @@ public class MainActivity extends Activity {
             } else if (fastByVelocity && distanceLines >= HISTORY_DRAG_FAST_DISTANCE_LINES) {
                 repeats = HISTORY_DRAG_FAST_MOVE_REPEATS;
             }
+        }
+        int physicalLineRepeats = Math.max(1, Math.min(
+                HISTORY_DRAG_MAX_PAGES_PER_STEP,
+                (int) Math.floor(distanceLines)
+        ));
+        if (repeats > HISTORY_DRAG_READING_MOVE_REPEATS) {
+            // WHY: Android can report a tiny physical slow-drag segment with a
+            // high instantaneous velocity when MOVE samples are batched. Velocity
+            // may choose the fast path, but it must not multiply the first
+            // copy-mode step beyond the line distance the finger actually moved,
+            // or a hundredth-inch drag jumps rows before the user can read them.
+            repeats = Math.min(repeats, physicalLineRepeats);
         }
         return Math.max(1, Math.min(HISTORY_DRAG_MAX_PAGES_PER_STEP, repeats));
     }
@@ -2349,15 +2469,14 @@ public class MainActivity extends Activity {
                             pendingHistoryScrollRepeats + boundedRepeats
                     );
                 } else if (boundedRepeats <= HISTORY_DRAG_SLOW_MOVE_MAX_REPEATS) {
-                    // WHY: slow upward reading movement must track the finger even
-                    // when `/touch-scroll` is still in flight. Accumulate a small,
-                    // explicit slow cap instead of every MOVE; this fixes the
-                    // low-speed "finger moves but rows barely move" regression
-                    // without reviving the v1.42 page-sized delayed jump.
-                    pendingHistoryScrollRepeats = Math.min(
-                            HISTORY_DRAG_SLOW_PENDING_MAX_REPEATS,
-                            pendingHistoryScrollRepeats + boundedRepeats
-                    );
+                    // WHY: slow reading now uses the visual residual as the latency
+                    // bridge. Queueing even a "small" upward burst while a frame is
+                    // in flight was enough to make a tiny live-bottom drag replay
+                    // rows after the finger barely moved. The earlier low-speed
+                    // "finger moves but rows barely move" failure is handled by
+                    // sub-line visual nudges and frame-paced repaint, not by
+                    // accumulating slow pending rows.
+                    pendingHistoryScrollRepeats = HISTORY_DRAG_READING_MOVE_REPEATS;
                 } else {
                     // WHY: fast upward movement is a deliberate history flick, not
                     // slow reading. Keep bounded accumulation here so the latest
@@ -2385,10 +2504,29 @@ public class MainActivity extends Activity {
                 ? terminalModeGeneration
                 : enterReadMode();
         historyScrollRequestInFlight = true;
+        final long requestSerial = ++historyScrollRequestSerial;
+        activeHistoryScrollRequestSerial = requestSerial;
         String path = appendStableWindowQuery("/touch-scroll?where=" + urlEncode(where)
                 + "&repeat=" + Math.max(1, repeats), targetKey);
+        Log.i(CONTROL_LOG_TAG,
+                "stage=touch-scroll-dispatch endpoint=/touch-scroll"
+                        + " windowId=" + safeWindowIdForControlLog(targetKey)
+                        + " where=" + safeLogToken(where)
+                        + " repeats=" + Math.max(1, repeats)
+                        + " gesture=" + gestureGeneration
+                        + " direction=" + directionGeneration);
         getJson(path, payload -> {
+            if (requestSerial != activeHistoryScrollRequestSerial) {
+                return;
+            }
             historyScrollRequestInFlight = false;
+            Log.i(CONTROL_LOG_TAG,
+                    "stage=touch-scroll-response endpoint=/touch-scroll"
+                            + " windowId=" + safeWindowIdForControlLog(targetKey)
+                            + " where=" + safeLogToken(where)
+                            + " repeats=" + Math.max(1, repeats)
+                            + " atLiveBottom=" + payload.optBoolean("atLiveBottom", false)
+                            + " paneMode=" + safeLogToken(payload.optString("paneMode", "")));
             if (gestureGeneration != terminalTouchGestureGeneration) {
                 // WHY: delayed `/scroll` responses are expected on a mobile network.
                 // They may still be valid tmux commands, but they no longer describe
@@ -2426,16 +2564,31 @@ public class MainActivity extends Activity {
                 if (readModeGeneration == terminalModeGeneration) {
                     keepReadModeIfCurrent(readModeGeneration);
                 }
+                if (terminalHistoryDragActive) {
+                    drainPendingHistoryScroll();
+                    return;
+                }
                 refreshCaptureRendererSoon("touch-scroll-bottom-edge");
                 return;
             }
             if (readModeGeneration == terminalModeGeneration) {
                 keepReadModeIfCurrent(readModeGeneration);
             }
+            if (terminalHistoryDragActive) {
+                // WHY: while the finger is down, the capture renderer's transform
+                // is the visible scroll. Committing every `/terminal-frame` row as
+                // soon as tmux replies makes the phone move in row steps and makes
+                // direction reversals feel like stale commands are draining.
+                drainPendingHistoryScroll();
+                return;
+            }
             refreshCaptureRendererSoon("touch-scroll");
             keepCaptureRendererPulsingDuringTouch("touch-scroll-response");
             drainPendingHistoryScroll();
         }, exc -> {
+            if (requestSerial != activeHistoryScrollRequestSerial) {
+                return;
+            }
             historyScrollRequestInFlight = false;
             toast("WEzterm control is not reachable");
             drainPendingHistoryScroll();
@@ -2554,7 +2707,10 @@ public class MainActivity extends Activity {
                         + "return 'touch-nudge-missing';"
                         + "}catch(e){return 'touch-nudge-error';}"
                 + "})()",
-                null
+                result -> Log.i(CONTROL_LOG_TAG,
+                        "stage=touch-nudge endpoint=renderer"
+                                + " deltaPx=" + safeLogToken(deltaLiteral)
+                                + " result=" + safeLogToken(String.valueOf(result)))
         );
     }
 
@@ -2629,8 +2785,30 @@ public class MainActivity extends Activity {
         pendingHistoryScrollTargetKey = "";
     }
 
+    private void supersedeHistoryScrollInFlightForDirectionChange() {
+        if (!historyScrollRequestInFlight) {
+            return;
+        }
+        // WHY: HTTP cannot recall the tmux command that is already in flight, but
+        // a deliberate finger reversal must not wait for that old direction to
+        // repaint or drain its pending queue. Mark the old response as superseded
+        // and allow the reverse direction to dispatch immediately.
+        historyScrollRequestInFlight = false;
+        activeHistoryScrollRequestSerial = -1;
+    }
+
     private void refreshCaptureRendererPulse(String reason) {
         if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            return;
+        }
+        if (terminalHistoryDragActive
+                && reason != null
+                && reason.startsWith("touch-scroll")
+                && !reason.contains("release")) {
+            // WHY: slow drag is visual-continuous while the finger is down. A
+            // frame-pulse fetch during that interval turns tmux's line commits into
+            // visible row-step motion. Release/bottom/control paths still refresh
+            // explicitly after the finger stops.
             return;
         }
         // WHY: one-finger touch-scroll can pulse once per display frame while
@@ -2858,8 +3036,10 @@ public class MainActivity extends Activity {
         // WHY: the user needs the true beginning of a Codex session, not just
         // whatever tmux scrollback retained. The server opens a generated
         // read-only transcript tab from Codex's persisted JSONL and places it
-        // at the top, while Live returns to the original running tab.
-        control("/read-session", "Session reader", false);
+        // at the top, while Live returns to the original running tab. Include
+        // the stable visible window id so delayed reader requests cannot follow
+        // a different tmux focus after Active/Old switching.
+        control(appendStableWindowQuery("/read-session", visibleTerminalTargetKey()), "Session reader", false);
     }
 
     private void goLiveBottom() {
@@ -3834,6 +4014,7 @@ public class MainActivity extends Activity {
             if (message != null && !message.isEmpty()) {
                 toast(message);
             }
+            rememberReaderReturnFromPayload(payload, reason);
             pinTerminalViewportLocal();
             boolean explicitBottomView = reason != null && reason.startsWith("live-bottom-view");
             if (explicitBottomView) {
@@ -4122,10 +4303,10 @@ public class MainActivity extends Activity {
         boolean mobileViewport = VIEWPORT_MODE_MOBILE.equals(currentViewportMode());
         final String[] labels = {
                 mobileViewport ? "Switch to Desktop viewport" : "Switch to Mobile viewport",
-                "Viewport mode choices",
                 "Refresh",
                 "Scroll",
                 "Option keys",
+                "Codex account",
                 "Needs Attention"
         };
         new AlertDialog.Builder(this)
@@ -4139,34 +4320,16 @@ public class MainActivity extends Activity {
                         // Desktop without resizing tmux or using Active.
                         setViewportMode(mobileViewport ? VIEWPORT_MODE_DESKTOP : VIEWPORT_MODE_MOBILE);
                     } else if (which == 1) {
-                        showViewportModeSettings();
-                    } else if (which == 2) {
                         refreshTerminalTransport();
-                    } else if (which == 3) {
+                    } else if (which == 2) {
                         showViewControls();
-                    } else if (which == 4) {
+                    } else if (which == 3) {
                         showKeyControls();
+                    } else if (which == 4) {
+                        showCodexAccountSettings();
                     } else if (which == 5) {
                         showNeedsAttention();
                     }
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
-
-    private void showViewportModeSettings() {
-        hideDockedPromptComposerForNavigation("viewport-mode-settings");
-        final String[] labels = {
-                "Use Desktop: fixed 132-column zoom/pan",
-                "Use Mobile: fit phone width"
-        };
-        int checked = VIEWPORT_MODE_MOBILE.equals(currentViewportMode()) ? 1 : 0;
-        new AlertDialog.Builder(this)
-                .setTitle("Viewport mode")
-                .setSingleChoiceItems(labels, checked, (dialog, which) -> {
-                    String nextMode = which == 1 ? VIEWPORT_MODE_MOBILE : VIEWPORT_MODE_DESKTOP;
-                    setViewportMode(nextMode);
-                    dialog.dismiss();
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
@@ -4210,8 +4373,7 @@ public class MainActivity extends Activity {
                         // the terminal bottom/prompt on Android; errors still toast.
                         scrollTerminal("top", "", false);
                     } else if (which == 2) {
-                        enterReadMode();
-                        control("/read-session", "Session reader", false);
+                        openFullSessionReader();
                     } else if (which == 3) {
                         showLocalHistoryViewer();
                     } else if (which == 4) {
@@ -5535,6 +5697,270 @@ public class MainActivity extends Activity {
         getJsonWithRetry("/needs-attention", payload -> showActiveSessionsDialog(payload, "Needs Attention", false));
     }
 
+    private void showCodexAccountSettings() {
+        hideDockedPromptComposerForNavigation("codex-account-dialog");
+        getJsonWithRetry("/account-switch-status", payload -> {
+            try {
+                showCodexAccountDialog(payload);
+            } catch (Exception exc) {
+                toast("Codex account failed: " + exc.getMessage());
+            }
+        }, exc -> toast("WEzterm control is not reachable"));
+    }
+
+    private void showCodexAccountDialog(JSONObject payload) throws Exception {
+        ScrollView scrollView = new ScrollView(this);
+        scrollView.setFocusable(false);
+        scrollView.setFillViewport(false);
+
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        list.setFocusable(false);
+        list.setPadding(dp(8), dp(6), dp(8), dp(10));
+        scrollView.addView(list);
+
+        final AlertDialog[] dialogRef = new AlertDialog[1];
+        addSectionHeader(list, "Current Codex account", 0);
+        list.addView(codexAccountText(codexAccountStatusText(payload), 13, Color.rgb(224, 230, 246)));
+
+        JSONObject device = codexDevice(payload);
+        if (device.length() > 0) {
+            addSectionHeader(list, "Device sign-in", 0);
+            String code = device.optString("code", "");
+            String expiresAt = device.optString("expiresAt", "");
+            StringBuilder codeText = new StringBuilder();
+            codeText.append(code.isEmpty() ? "Open the sign-in page and finish the prompt on the phone." : "Code: " + code);
+            if (!expiresAt.isEmpty()) {
+                codeText.append("\nExpires: ").append(expiresAt);
+            }
+            // WHY: the one-time code is volatile UI only. It is shown here and may
+            // be copied to Android's clipboard, but this APK never writes it to
+            // SharedPreferences, logs, plan receipts, or account presets.
+            list.addView(codexAccountText(codeText.toString(), 16, Color.rgb(246, 230, 181)));
+            if (!device.optString("url", "").isEmpty()) {
+                list.addView(codexAccountActionButton("Open sign-in page", view -> openCodexDeviceAuth(device)));
+            }
+            if (!code.isEmpty()) {
+                list.addView(codexAccountActionButton("Copy one-time code", view -> copyCodexDeviceCode(device)));
+            }
+        }
+
+        JSONArray hints = payload.optJSONArray("accountHints");
+        int hintCount = hints == null ? 0 : hints.length();
+        addSectionHeader(list, "Saved accounts", hintCount);
+        if (hintCount == 0) {
+            list.addView(codexAccountText("No account aliases are configured on this host. You can still sign in with any Codex account.", 13, Color.rgb(174, 181, 205)));
+        } else {
+            for (int index = 0; index < hintCount; index++) {
+                JSONObject hint = hints.optJSONObject(index);
+                if (hint == null) {
+                    continue;
+                }
+                String label = codexDisplayText(hint.optString("label", ""), hint.optString("email", ""));
+                String email = hint.optString("email", "");
+                list.addView(codexAccountActionButton(
+                        "Switch to " + label,
+                        view -> startCodexAccountSwitch(email, label, dialogRef)
+                ));
+            }
+        }
+
+        addSectionHeader(list, "Actions", 0);
+        list.addView(codexAccountActionButton(
+                codexCurrentAuthenticated(payload) ? "Sign in with another account" : "Sign in to Codex",
+                view -> startCodexAccountSwitch("", "", dialogRef)
+        ));
+        list.addView(codexAccountActionButton("Refresh status", view -> refreshCodexAccountDialog(dialogRef)));
+        list.addView(codexAccountActionButton("Repair signed-in sessions", view -> repairCodexAccountSwitch(dialogRef)));
+        if (payload.optBoolean("running", false)) {
+            list.addView(codexAccountActionButton("Cancel switch", view -> cancelCodexAccountSwitch(dialogRef)));
+        }
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setView(premiumDialogShell("Codex account", payload.optString("state", "idle"), scrollView))
+                .show();
+        dialogRef[0] = dialog;
+        stylePremiumDialogWindow(dialog);
+        scrollView.post(() -> scrollView.scrollTo(0, 0));
+    }
+
+    private TextView codexAccountText(String text, int sizeSp, int color) {
+        TextView view = new TextView(this);
+        view.setText(text);
+        view.setTextSize(sizeSp);
+        view.setTextColor(color);
+        view.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
+        view.setSingleLine(false);
+        view.setIncludeFontPadding(true);
+        view.setPadding(dp(10), dp(8), dp(10), dp(8));
+        view.setBackground(roundedFill(Color.rgb(28, 31, 42), 6, Color.rgb(62, 68, 91)));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        params.setMargins(0, dp(3), 0, dp(8));
+        view.setLayoutParams(params);
+        return view;
+    }
+
+    private Button codexAccountActionButton(String label, View.OnClickListener listener) {
+        Button action = new Button(this);
+        action.setText(label);
+        action.setAllCaps(false);
+        action.setTextSize(13);
+        action.setSingleLine(false);
+        action.setMaxLines(3);
+        action.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        action.setTextColor(Color.rgb(228, 233, 249));
+        action.setGravity(android.view.Gravity.CENTER);
+        action.setPadding(dp(8), 0, dp(8), 0);
+        setTouchableBackground(action, Color.rgb(38, 41, 55), Color.rgb(137, 180, 250));
+        action.setOnClickListener(v -> {
+            flashTap(v);
+            listener.onClick(v);
+        });
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(50)
+        );
+        params.setMargins(0, dp(3), 0, dp(6));
+        action.setLayoutParams(params);
+        return action;
+    }
+
+    private String codexAccountStatusText(JSONObject payload) {
+        JSONObject current = payload.optJSONObject("currentAccount");
+        String state = payload.optString("state", "idle");
+        String message = payload.optString("message", "");
+        String target = codexDisplayText(payload.optString("targetLabel", ""), payload.optString("targetEmail", ""));
+        StringBuilder builder = new StringBuilder();
+        builder.append("Current: ").append(codexCurrentAccountLine(current));
+        builder.append("\nSwitch state: ").append(state);
+        if (!target.isEmpty()) {
+            builder.append("\nTarget: ").append(target);
+        }
+        if (!message.isEmpty()) {
+            builder.append("\n").append(message);
+        }
+        return builder.toString();
+    }
+
+    private String codexCurrentAccountLine(JSONObject current) {
+        if (current == null || !current.optBoolean("authenticated", false)) {
+            return "not signed in";
+        }
+        return codexDisplayText(current.optString("name", ""), current.optString("email", ""));
+    }
+
+    private boolean codexCurrentAuthenticated(JSONObject payload) {
+        JSONObject current = payload == null ? null : payload.optJSONObject("currentAccount");
+        return current != null && current.optBoolean("authenticated", false);
+    }
+
+    private String codexDisplayText(String label, String email) {
+        String cleanLabel = label == null ? "" : label.trim();
+        String cleanEmail = email == null ? "" : email.trim();
+        if (!cleanLabel.isEmpty() && !cleanEmail.isEmpty() && !cleanLabel.equals(cleanEmail)) {
+            return cleanLabel + " (" + cleanEmail + ")";
+        }
+        if (!cleanLabel.isEmpty()) {
+            return cleanLabel;
+        }
+        return cleanEmail;
+    }
+
+    private JSONObject codexDevice(JSONObject payload) {
+        JSONObject device = payload.optJSONObject("device");
+        return device == null ? new JSONObject() : device;
+    }
+
+    private void startCodexAccountSwitch(String email, String label, AlertDialog[] dialogRef) {
+        confirmCodexAccountSwitch(email, label, dialogRef);
+    }
+
+    private void confirmCodexAccountSwitch(String email, String label, AlertDialog[] dialogRef) {
+        String display = codexDisplayText(label, email);
+        if (display.isEmpty()) {
+            display = "Codex";
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Start Codex sign-in?")
+                .setMessage(
+                        "This can trigger Google or OpenAI verification for " + display + ". "
+                                + "Current sessions stay visible, but any stale signed-in panes must be repaired after the new login completes."
+                )
+                .setPositiveButton("Start switch", (dialog, which) -> startCodexAccountSwitchConfirmed(email, label, dialogRef))
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void startCodexAccountSwitchConfirmed(String email, String label, AlertDialog[] dialogRef) {
+        String path = "/account-switch-start?targetEmail=" + urlEncode(email)
+                + "&targetLabel=" + urlEncode(label);
+        getJsonWithRetry(path, payload -> {
+            if (dialogRef[0] != null) {
+                dialogRef[0].dismiss();
+            }
+            showCodexAccountDialog(payload);
+        }, exc -> toast("WEzterm control is not reachable"));
+    }
+
+    private void refreshCodexAccountDialog(AlertDialog[] dialogRef) {
+        getJsonWithRetry("/account-switch-status", payload -> {
+            if (dialogRef[0] != null) {
+                dialogRef[0].dismiss();
+            }
+            showCodexAccountDialog(payload);
+        }, exc -> toast("WEzterm control is not reachable"));
+    }
+
+    private void cancelCodexAccountSwitch(AlertDialog[] dialogRef) {
+        getJsonWithRetry("/account-switch-cancel", payload -> {
+            if (dialogRef[0] != null) {
+                dialogRef[0].dismiss();
+            }
+            showCodexAccountDialog(payload);
+        }, exc -> toast("WEzterm control is not reachable"));
+    }
+
+    private void repairCodexAccountSwitch(AlertDialog[] dialogRef) {
+        getJsonWithRetry("/account-switch-repair-auth?yes=1", payload -> {
+            if (!payload.optBoolean("ok", false)) {
+                toast(payload.optString("error", "Auth repair did not complete"));
+            }
+            refreshCodexAccountDialog(dialogRef);
+        }, exc -> toast("WEzterm control is not reachable"));
+    }
+
+    private void openCodexDeviceAuth(JSONObject payload) {
+        String url = payload.optString("url", "");
+        if (url.isEmpty()) {
+            toast("No sign-in page yet");
+            return;
+        }
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+        } catch (Exception exc) {
+            toast("Could not open sign-in page");
+        }
+    }
+
+    private void copyCodexDeviceCode(JSONObject payload) {
+        String code = payload.optString("code", "");
+        if (code.isEmpty()) {
+            toast("No code yet");
+            return;
+        }
+        ClipboardManager clipboardManager =
+                (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboardManager == null) {
+            toast("Phone clipboard is not available");
+            return;
+        }
+        clipboardManager.setPrimaryClip(ClipData.newPlainText("Codex one-time code", code));
+        toast("Code copied");
+    }
+
     private void showActiveSessionsDialog(JSONObject payload, String title, boolean preferGroups) throws Exception {
         String session = payload.optString("session", "main");
         String viewSession = payload.optString("viewSession", "main_phone");
@@ -5555,7 +5981,8 @@ public class MainActivity extends Activity {
         scrollView.addView(list);
 
         final AlertDialog[] dialogRef = new AlertDialog[1];
-        addActiveDialogActions(list, dialogRef);
+        final List<ActiveCloseTarget> selectedCloseTargets = new ArrayList<>();
+        addActiveDialogActions(list, dialogRef, selectedCloseTargets);
         JSONObject activeWindow = activeWindowFromPayload(payload);
         JSONArray groups = payload.optJSONArray("groups");
         if (preferGroups && groups != null && groups.length() > 0) {
@@ -5574,7 +6001,7 @@ public class MainActivity extends Activity {
                     continue;
                 }
                 addSectionHeader(list, group.optString("label", "Sessions"), groupRows.size());
-                addTabRows(list, groupRows, session, dialogRef, null, false);
+                addTabRows(list, groupRows, session, dialogRef, selectedCloseTargets, null, false);
             }
         } else {
             JSONArray windows = payload.optJSONArray("displayWindows");
@@ -5588,7 +6015,7 @@ public class MainActivity extends Activity {
             if (rows.isEmpty()) {
                 addSectionHeader(list, "Nothing needs attention", 0);
             } else {
-                addTabRows(list, rows, session, dialogRef, null, !preferGroups);
+                addTabRows(list, rows, session, dialogRef, selectedCloseTargets, null, !preferGroups);
             }
         }
 
@@ -5702,7 +6129,11 @@ public class MainActivity extends Activity {
         return builder.length() == 0 ? rawLabel.trim() : builder.toString();
     }
 
-    private void addActiveDialogActions(LinearLayout list, AlertDialog[] dialogRef) {
+    private void addActiveDialogActions(
+            LinearLayout list,
+            AlertDialog[] dialogRef,
+            List<ActiveCloseTarget> selectedCloseTargets
+    ) {
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setPadding(0, 0, 0, dp(10));
@@ -5723,6 +6154,8 @@ public class MainActivity extends Activity {
             }
             showRenameCurrentTab();
         }));
+        actions.addView(activeDialogActionButton("Close selected", v ->
+                confirmBulkClose(selectedCloseTargets, dialogRef)));
         actions.addView(activeDialogActionButton("Cancel", v -> {
             if (dialogRef[0] != null) {
                 dialogRef[0].dismiss();
@@ -5735,7 +6168,7 @@ public class MainActivity extends Activity {
         Button action = new Button(this);
         action.setText(label);
         action.setAllCaps(false);
-        action.setTextSize(12);
+        action.setTextSize(label != null && label.length() > 8 ? 10 : 12);
         action.setSingleLine(true);
         action.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         action.setTextColor(Color.rgb(228, 233, 249));
@@ -6033,12 +6466,13 @@ public class MainActivity extends Activity {
             List<JSONObject> windows,
             String session,
             AlertDialog[] dialogRef,
+            List<ActiveCloseTarget> selectedCloseTargets,
             JSONObject skipWindow,
             boolean includeChildRows
     ) throws Exception {
         for (int i = 0; i < windows.size(); i++) {
             JSONObject window = windows.get(i);
-            addTabRow(list, window, session, dialogRef);
+            addTabRow(list, window, session, dialogRef, selectedCloseTargets);
             // WHY: `/tabs` keeps child metadata so the parent row can say
             // "1 child lane" and diagnostics can inspect workers. The phone's
             // visible Active Sessions list is operator-facing, so child/proof
@@ -6052,7 +6486,7 @@ public class MainActivity extends Activity {
             }
             List<JSONObject> childRows = sortedWindows(children, skipWindow);
             for (int childIndex = 0; childIndex < childRows.size(); childIndex++) {
-                addTabRow(list, childRows.get(childIndex), session, dialogRef);
+                addTabRow(list, childRows.get(childIndex), session, dialogRef, selectedCloseTargets);
             }
         }
     }
@@ -6061,7 +6495,8 @@ public class MainActivity extends Activity {
             LinearLayout list,
             JSONObject window,
             String session,
-            AlertDialog[] dialogRef
+            AlertDialog[] dialogRef,
+            List<ActiveCloseTarget> selectedCloseTargets
     ) throws Exception {
         int index = window.getInt("index");
         String windowId = window.optString("windowId", "");
@@ -6083,6 +6518,7 @@ public class MainActivity extends Activity {
         openPanel.setOrientation(LinearLayout.VERTICAL);
         openPanel.setGravity(android.view.Gravity.CENTER_VERTICAL);
         openPanel.setClipToPadding(false);
+        openPanel.setMinimumWidth(0);
         openPanel.setPadding(
                 dp(12),
                 dp(ACTIVE_SESSION_CARD_VERTICAL_PADDING_DP),
@@ -6106,6 +6542,7 @@ public class MainActivity extends Activity {
         titleRow.setGravity(android.view.Gravity.TOP);
         titleRow.setBaselineAligned(false);
         titleRow.setClipToPadding(false);
+        titleRow.setMinimumWidth(0);
 
         TextView statusDot = new StatusDotTextView(this);
         statusDot.setText("●");
@@ -6127,6 +6564,12 @@ public class MainActivity extends Activity {
         titleText.setHorizontallyScrolling(false);
         titleText.setLineSpacing(dp(ACTIVE_SESSION_TITLE_LINE_SPACING_DP), 1.0f);
         titleText.setPadding(0, 0, 0, dp(1));
+        titleText.setMinWidth(0);
+        // WHY: Active Sessions title cutoff keeps recurring when row chrome is
+        // changed without preserving the owner boundary. The server owns the
+        // title text; Android owns wrapping and width allocation. Keep this
+        // TextView unlimited, non-ellipsized, and zero-min-width so the weighted
+        // title card wraps instead of being starved by the Close action column.
         // WHY: the full session title is now a long-press copy target. Android
         // child views with long-click listeners can intercept taps instead of
         // letting the parent card open the session, which made Active switching
@@ -6179,15 +6622,47 @@ public class MainActivity extends Activity {
         close.setAllCaps(false);
         close.setTextSize(12);
         close.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        close.setTextColor(Color.rgb(255, 228, 234));
-        setTouchableBackground(close, Color.rgb(96, 54, 68), Color.rgb(203, 95, 120));
         close.setPadding(dp(3), 0, dp(3), 0);
+        close.setMinWidth(0);
+        close.setMinimumWidth(0);
+        close.setMinHeight(dp(ACTIVE_SESSION_CLOSE_BUTTON_MIN_HEIGHT_DP));
+        close.setSingleLine(true);
+        close.setIncludeFontPadding(false);
+        applyActiveBulkCloseSelectionStyle(
+                close,
+                openPanel,
+                false,
+                window.optBoolean("active", false)
+        );
         close.setOnClickListener(v -> {
             flashTap(v);
-            if (dialogRef[0] != null) {
-                dialogRef[0].dismiss();
+            if (!hasStableWindowId(windowId)) {
+                toast("Cannot select close target without a stable window id");
+                return;
             }
-            confirmClose(index, windowId, title);
+            // WHY: row Close is now a batch-selection preview, not the
+            // destructive action. The user explicitly wants to inspect multiple
+            // selected sessions in one confirmation before anything is closed;
+            // dismissing here would recreate the old one-at-a-time close flow.
+            ActiveCloseTarget target = new ActiveCloseTarget(
+                    index,
+                    windowId,
+                    title,
+                    statusLabel,
+                    window.optBoolean("safeToClose", false)
+            );
+            boolean selected = toggleActiveBulkCloseTarget(selectedCloseTargets, target);
+            logActiveBulkCloseTarget(
+                    selected ? "bulk-close-select" : "bulk-close-unselect",
+                    target,
+                    selectedCloseTargets.size()
+            );
+            applyActiveBulkCloseSelectionStyle(
+                    close,
+                    openPanel,
+                    selected,
+                    window.optBoolean("active", false)
+            );
         });
 
         row.addView(openPanel, new LinearLayout.LayoutParams(
@@ -6195,12 +6670,15 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 1
         ));
+        // WHY: the row Close control must not steal fixed-width space from long
+        // session titles. A prior 72dp button plus 10dp gap made the title card
+        // collapse into clipped fragments; use a compact action column and let
+        // row height grow when a title needs more lines.
         LinearLayout.LayoutParams closeParams = new LinearLayout.LayoutParams(
-                dp(72),
+                dp(ACTIVE_SESSION_CLOSE_BUTTON_WIDTH_DP),
                 LinearLayout.LayoutParams.WRAP_CONTENT
         );
-        close.setMinHeight(dp(60));
-        closeParams.setMargins(dp(10), dp(4), 0, dp(4));
+        closeParams.setMargins(dp(ACTIVE_SESSION_CLOSE_BUTTON_GAP_DP), dp(4), 0, dp(4));
         row.addView(close, closeParams);
         LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -6208,6 +6686,62 @@ public class MainActivity extends Activity {
         );
         rowParams.setMargins(0, dp(4), 0, dp(ACTIVE_SESSION_ROW_GAP_DP));
         list.addView(row, rowParams);
+    }
+
+    private boolean toggleActiveBulkCloseTarget(
+            List<ActiveCloseTarget> selectedCloseTargets,
+            ActiveCloseTarget target
+    ) {
+        ActiveCloseTarget existing = activeBulkCloseTargetForWindow(
+                selectedCloseTargets,
+                target.windowId
+        );
+        if (existing != null) {
+            selectedCloseTargets.remove(existing);
+            return false;
+        }
+        selectedCloseTargets.add(target);
+        return true;
+    }
+
+    private ActiveCloseTarget activeBulkCloseTargetForWindow(
+            List<ActiveCloseTarget> selectedCloseTargets,
+            String windowId
+    ) {
+        if (!hasStableWindowId(windowId)) {
+            return null;
+        }
+        String stableWindowId = windowId.trim();
+        for (int i = 0; i < selectedCloseTargets.size(); i++) {
+            ActiveCloseTarget target = selectedCloseTargets.get(i);
+            if (stableWindowId.equals(target.windowId)) {
+                return target;
+            }
+        }
+        return null;
+    }
+
+    private void applyActiveBulkCloseSelectionStyle(
+            Button close,
+            LinearLayout openPanel,
+            boolean selected,
+            boolean active
+    ) {
+        if (selected) {
+            close.setText("Selected");
+            close.setTextColor(Color.rgb(30, 30, 46));
+            setTouchableBackground(close, Color.rgb(249, 226, 175), Color.rgb(250, 179, 135));
+            setTouchableBackground(openPanel, Color.rgb(62, 55, 38), Color.rgb(249, 226, 175));
+            return;
+        }
+        close.setText("Close");
+        close.setTextColor(Color.rgb(255, 228, 234));
+        setTouchableBackground(close, Color.rgb(96, 54, 68), Color.rgb(203, 95, 120));
+        setTouchableBackground(openPanel,
+                active
+                        ? Color.rgb(51, 58, 78)
+                        : Color.rgb(32, 35, 48),
+                Color.rgb(137, 180, 250));
     }
 
     private void addOldSessionRow(
@@ -6787,6 +7321,212 @@ public class MainActivity extends Activity {
                 .show();
     }
 
+    private void confirmBulkClose(
+            List<ActiveCloseTarget> selectedCloseTargets,
+            AlertDialog[] dialogRef
+    ) {
+        if (selectedCloseTargets.isEmpty()) {
+            toast("Select sessions to close first");
+            return;
+        }
+        // WHY: tmux indexes shift after the first window closes, and the 2026-06-28
+        // wrong-session regression proved that title/id drift needs a second
+        // safety gate. Snapshot the selected stable `@windowId`s here, re-read
+        // `/tabs?light=1` after the user confirms, and refuse the whole batch if
+        // any selected title no longer matches its stable id.
+        List<ActiveCloseTarget> targets = new ArrayList<>(selectedCloseTargets);
+        logActiveBulkCloseTargets("bulk-close-preview", targets);
+        new AlertDialog.Builder(this)
+                .setTitle("Close " + targets.size() + " sessions?")
+                .setMessage(bulkCloseConfirmationMessage(targets))
+                .setPositiveButton("Close", (dialog, which) -> {
+                    logActiveBulkCloseTargets("bulk-close-confirm", targets);
+                    validateAndDispatchBulkCloseTargets(targets, dialogRef);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private String bulkCloseConfirmationMessage(List<ActiveCloseTarget> targets) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("This closes the selected active sessions and whatever is running inside them.");
+        for (int i = 0; i < targets.size(); i++) {
+            ActiveCloseTarget target = targets.get(i);
+            builder.append("\n\n")
+                    .append(i + 1)
+                    .append(". ")
+                    .append(bulkCloseTargetLabel(target));
+        }
+        return builder.toString();
+    }
+
+    private String bulkCloseTargetLabel(ActiveCloseTarget target) {
+        String safeTitle = target.title == null || target.title.trim().isEmpty()
+                ? target.windowId
+                : displaySessionTitle(target.title);
+        StringBuilder detail = new StringBuilder(target.windowId);
+        if (!target.statusLabel.isEmpty()) {
+            detail.append(" · ").append(target.statusLabel);
+        }
+        if (!target.safeToClose) {
+            detail.append(" · protected");
+        }
+        return safeTitle + " (" + detail + ")";
+    }
+
+    private void validateAndDispatchBulkCloseTargets(
+            List<ActiveCloseTarget> targets,
+            AlertDialog[] dialogRef
+    ) {
+        getJsonWithRetry("/tabs?light=1&includeChildren=1", payload -> {
+            List<String> failures = bulkCloseTargetValidationFailures(payload, targets);
+            if (!failures.isEmpty()) {
+                finishBulkCloseTargets(targets.size(), 0, failures);
+                return;
+            }
+            logActiveBulkCloseTargets("bulk-close-validated", targets);
+            if (dialogRef[0] != null) {
+                dialogRef[0].dismiss();
+            }
+            dispatchBulkCloseTargets(targets, 0, 0, new ArrayList<>());
+        }, exc -> {
+            List<String> failures = new ArrayList<>();
+            failures.add("Could not re-check selected sessions before close");
+            finishBulkCloseTargets(targets.size(), 0, failures);
+        });
+    }
+
+    private List<String> bulkCloseTargetValidationFailures(
+            JSONObject payload,
+            List<ActiveCloseTarget> targets
+    ) throws Exception {
+        List<String> failures = new ArrayList<>();
+        for (int i = 0; i < targets.size(); i++) {
+            ActiveCloseTarget target = targets.get(i);
+            JSONObject current = bulkCloseWindowForTarget(payload, target.windowId);
+            if (current == null) {
+                failures.add(bulkCloseTargetLabel(target) + ": target disappeared before close");
+                continue;
+            }
+            String currentTitle = current.optString("title", current.optString("name", ""));
+            if (!bulkCloseTitlesMatch(target.title, currentTitle)) {
+                failures.add(bulkCloseTargetLabel(target) + ": title changed before close");
+            }
+        }
+        return failures;
+    }
+
+    private boolean bulkCloseTitlesMatch(String selectedTitle, String currentTitle) {
+        String selected = displaySessionTitle(selectedTitle);
+        String current = displaySessionTitle(currentTitle);
+        return selected.equals(current);
+    }
+
+    private JSONObject bulkCloseWindowForTarget(JSONObject payload, String windowId) throws Exception {
+        if (!hasStableWindowId(windowId) || payload == null) {
+            return null;
+        }
+        JSONObject found = bulkCloseWindowForTarget(payload.optJSONArray("windows"), windowId);
+        if (found != null) {
+            return found;
+        }
+        JSONArray groups = payload.optJSONArray("groups");
+        if (groups == null) {
+            return null;
+        }
+        for (int i = 0; i < groups.length(); i++) {
+            found = bulkCloseWindowForTarget(groups.getJSONObject(i).optJSONArray("windows"), windowId);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    private JSONObject bulkCloseWindowForTarget(JSONArray windows, String windowId) throws Exception {
+        if (windows == null || !hasStableWindowId(windowId)) {
+            return null;
+        }
+        String stableWindowId = windowId.trim();
+        for (int i = 0; i < windows.length(); i++) {
+            JSONObject window = windows.getJSONObject(i);
+            if (stableWindowId.equals(window.optString("windowId", "").trim())) {
+                return window;
+            }
+            JSONObject child = bulkCloseWindowForTarget(window.optJSONArray("children"), stableWindowId);
+            if (child != null) {
+                return child;
+            }
+        }
+        return null;
+    }
+
+    private void logActiveBulkCloseTargets(String stage, List<ActiveCloseTarget> targets) {
+        for (int i = 0; i < targets.size(); i++) {
+            logActiveBulkCloseTarget(stage, targets.get(i), targets.size());
+        }
+    }
+
+    private void logActiveBulkCloseTarget(String stage, ActiveCloseTarget target, int selectedCount) {
+        if (target == null) {
+            return;
+        }
+        Log.i(CONTROL_LOG_TAG,
+                "stage=" + safeLogToken(stage)
+                        + " endpoint=/close"
+                        + " windowId=" + safeWindowIdForControlLog(target.windowId)
+                        + " index=" + target.index
+                        + " selectedCount=" + selectedCount
+                        + " safeToClose=" + target.safeToClose
+                        + " title=" + safeLogToken(displaySessionTitle(target.title)));
+    }
+
+    private void dispatchBulkCloseTargets(
+            List<ActiveCloseTarget> targets,
+            int offset,
+            int closedCount,
+            List<String> failures
+    ) {
+        if (offset >= targets.size() || !failures.isEmpty()) {
+            finishBulkCloseTargets(targets.size(), closedCount, failures);
+            return;
+        }
+        ActiveCloseTarget target = targets.get(offset);
+        String path = "/close?fast=1&windowId=" + urlEncode(target.windowId);
+        logActiveBulkCloseTarget("bulk-close-dispatch", target, targets.size());
+        getJsonWithRetry(path, payload -> {
+            if (!payload.optBoolean("ok", false)) {
+                failures.add(bulkCloseTargetLabel(target) + ": "
+                        + payload.optString("error", "Close failed"));
+                finishBulkCloseTargets(targets.size(), closedCount, failures);
+                return;
+            }
+            clearBulkCloseLocalState(target.windowId);
+            dispatchBulkCloseTargets(targets, offset + 1, closedCount + 1, failures);
+        }, exc -> {
+            failures.add(bulkCloseTargetLabel(target) + ": WEzterm control is not reachable");
+            finishBulkCloseTargets(targets.size(), closedCount, failures);
+        });
+    }
+
+    private void clearBulkCloseLocalState(String stableWindowId) {
+        clearRememberedUploadForWindow(stableWindowId, "bulk-close-dispatched");
+        forgetPromptComposerDraft(stableWindowId);
+        if (stableWindowId.equals(selectedPhoneWindowId)) {
+            clearRememberedCloseTarget("bulk-close-dispatched");
+        }
+    }
+
+    private void finishBulkCloseTargets(int totalCount, int closedCount, List<String> failures) {
+        refreshCaptureRendererSoon("bulk-close");
+        scheduleToolbarStatusDotRefresh(0);
+        if (failures.isEmpty()) {
+            toast("Closed " + closedCount + " session" + (closedCount == 1 ? "" : "s"));
+            return;
+        }
+        toast("Closed " + closedCount + " of " + totalCount + ": " + failures.get(0));
+    }
+
     private boolean hasStableWindowId(String windowId) {
         return windowId != null && windowId.trim().startsWith("@");
     }
@@ -6859,6 +7599,51 @@ public class MainActivity extends Activity {
             return selectedPhoneWindowId.trim();
         }
         return "unknown:" + terminalModeGeneration;
+    }
+
+    private void rememberReaderSourceWindow(String sourceWindowId, String sourceTitle, String reason) {
+        if (!hasStableWindowId(sourceWindowId)) {
+            return;
+        }
+        readerSourcePhoneWindowId = sourceWindowId.trim();
+        readerSourcePhoneWindowTitle = sourceTitle == null || sourceTitle.trim().isEmpty()
+                ? readerSourcePhoneWindowId
+                : sourceTitle.trim();
+        Log.i(CONTROL_LOG_TAG,
+                "stage=reader-source endpoint=/read-session"
+                        + " windowId=" + safeWindowIdForControlLog(readerSourcePhoneWindowId)
+                        + " reason=" + safeLogToken(reason));
+    }
+
+    private void clearReaderSourceWindow(String reason) {
+        if (!hasStableWindowId(readerSourcePhoneWindowId)) {
+            return;
+        }
+        Log.i(CONTROL_LOG_TAG,
+                "stage=reader-source-clear endpoint=/live-bottom"
+                        + " windowId=" + safeWindowIdForControlLog(readerSourcePhoneWindowId)
+                        + " reason=" + safeLogToken(reason));
+        readerSourcePhoneWindowId = "";
+        readerSourcePhoneWindowTitle = "";
+    }
+
+    private void rememberReaderReturnFromPayload(JSONObject payload, String reason) {
+        if (payload == null) {
+            return;
+        }
+        String sourceWindowId = payload.optString("readerSourceWindowId", "");
+        if (!hasStableWindowId(sourceWindowId)) {
+            return;
+        }
+        String sourceTitle = readerSourcePhoneWindowTitle;
+        clearReaderSourceWindow(reason + "-reader-return");
+        // WHY: the generated Codex JSONL reader is the visible scroll target, so
+        // while it is open the selected target is `READ @source...`. Bottom/Start
+        // returns through the server's reader path. Once that return succeeds,
+        // Android must switch both renderer and Send/Close ownership back to the
+        // original source `@windowId`; otherwise a later Send or Close can hit the
+        // read-only less process instead of the live Codex session.
+        rememberSelectedPhoneWindow(-1, sourceWindowId, sourceTitle, reason + "-reader-return");
     }
 
     private String visibleTerminalTargetKey() {
@@ -6936,6 +7721,9 @@ public class MainActivity extends Activity {
     private void rememberSelectedPhoneWindow(int index, String windowId, String title, String reason) {
         if (!hasStableWindowId(windowId)) {
             return;
+        }
+        if (reason == null || !reason.contains("reader-display")) {
+            clearReaderSourceWindow(reason == null ? "select" : reason);
         }
         // WHY: close safety follows the immutable tmux `@windowId`, not the
         // shifting index or a later `/active` lookup. This protects the exact
@@ -7068,14 +7856,26 @@ public class MainActivity extends Activity {
                 // of trusting tmux's grouped select-window side effect.
                 String selectPath = "/select-live?fast=1&windowId=" + urlEncode(openedWindowId);
                 getJsonWithRetry(selectPath, selectPayload -> {
-                    sessionSwitchInFlight = false;
                     if (!selectPayload.optBoolean("ok", false)) {
+                        sessionSwitchInFlight = false;
                         String error = selectPayload.optString("error", "Command failed");
                         forceHideSessionSwitchPaintShield(reason + "-select-live-failed");
                         toast(error);
                         return;
                     }
                     rememberOpenedWindowFromPayload(payload, reason + "-select-live", targetTitle);
+                    if (shouldOpenTranscriptReader(selectPayload)) {
+                        openTranscriptReaderAfterSelect(
+                                payload.optInt("index", -1),
+                                openedWindowId,
+                                targetTitle,
+                                paintShieldGeneration,
+                                null,
+                                reason + "-select-live"
+                        );
+                        return;
+                    }
+                    sessionSwitchInFlight = false;
                     finishBottomLikeControlOpen(generation, paintShieldGeneration, message, reason);
                 }, exc -> {
                     sessionSwitchInFlight = false;
@@ -7132,7 +7932,83 @@ public class MainActivity extends Activity {
         selectTabForTyping(index, windowId, title, null);
     }
 
+    private boolean shouldOpenTranscriptReader(JSONObject payload) {
+        if (payload == null) {
+            return false;
+        }
+        if (payload.optBoolean("transcriptReaderRecommended", false)) {
+            return true;
+        }
+        JSONObject reader = payload.optJSONObject("transcriptReader");
+        return reader != null && reader.optBoolean("recommended", false);
+    }
+
+    private void openTranscriptReaderAfterSelect(
+            int index,
+            String sourceWindowId,
+            String sourceTitle,
+            long paintShieldGeneration,
+            AlertDialog[] dialogRef,
+            String reason
+    ) {
+        if (!hasStableWindowId(sourceWindowId)) {
+            sessionSwitchInFlight = false;
+            forceHideSessionSwitchPaintShield(reason + "-invalid-source");
+            toast("Cannot open transcript without a stable session id");
+            return;
+        }
+        // WHY: restored Codex panes can show a brand-new starter screen even
+        // though the full session still exists in the JSONL transcript. Do not
+        // solve that by changing scrollback, bottom anchoring, title inference,
+        // or renderer cadence. Open the existing generated reader for the exact
+        // source `@windowId`, then keep Bottom as the only path back to live
+        // typing.
+        long readGeneration = enterReadMode();
+        String path = "/read-session?windowId=" + urlEncode(sourceWindowId);
+        getJsonWithRetry(path, readerPayload -> {
+            sessionSwitchInFlight = false;
+            if (!readerPayload.optBoolean("ok", false)) {
+                forceHideSessionSwitchPaintShield(reason + "-reader-failed");
+                toast(readerPayload.optString("error", "Session transcript unavailable"));
+                return;
+            }
+            String readerWindowId = readerPayload.optString("readerWindowId", "");
+            if (!hasStableWindowId(readerWindowId)) {
+                forceHideSessionSwitchPaintShield(reason + "-reader-missing-window");
+                toast("Session transcript opened without a stable reader id");
+                return;
+            }
+            if (dialogRef != null && dialogRef[0] != null) {
+                dialogRef[0].dismiss();
+            }
+            rememberReaderSourceWindow(sourceWindowId, sourceTitle, reason);
+            rememberSelectedPhoneWindow(index, readerWindowId, sourceTitle, reason + "-reader-display");
+            keepReadModeIfCurrent(readGeneration);
+            clearBroadSessionSwitchVisualMasks(reason + "-reader-render-owned");
+            settleSelectedTabViewport(reason + "-reader");
+            refreshCaptureRendererSoon(reason + "-reader");
+            suppressTerminalBodyTapForPassiveNavigation(reason + "-reader-complete");
+            hideSessionSwitchPaintShieldSoon(reason + "-reader-safety", paintShieldGeneration, 1200);
+        }, exc -> {
+            sessionSwitchInFlight = false;
+            forceHideSessionSwitchPaintShield(reason + "-reader-unreachable");
+            toast("WEzterm control is not reachable");
+        });
+    }
+
     private void selectTabForTyping(int index, String windowId, String title, AlertDialog[] dialogRef) {
+        if (!hasStableWindowId(windowId)) {
+            // WHY: Active rows must be owned by immutable tmux `@windowId`
+            // values. Falling back to an index-only `/select-live` can open the
+            // wrong pane after tmux rows move, which looks exactly like a
+            // selected title over a fresh or unrelated Codex body.
+            Log.i(CONTROL_LOG_TAG,
+                    "stage=blocked endpoint=/select-live reason=unstable-window-id"
+                            + " windowId=" + safeWindowIdForControlLog(windowId)
+                            + " index=" + index);
+            toast("Cannot open session without a stable window id");
+            return;
+        }
         if (sessionSwitchInFlight) {
             return;
         }
@@ -7177,6 +8053,17 @@ public class MainActivity extends Activity {
             // let ttyd paint the selected session through the existing late
             // confirmation settle instead of reloading the WebView.
             rememberSelectedPhoneWindow(index, windowId, title, "select-live");
+            if (shouldOpenTranscriptReader(payload)) {
+                openTranscriptReaderAfterSelect(
+                        index,
+                        windowId,
+                        title,
+                        paintShieldGeneration,
+                        dialogRef,
+                        "select-live"
+                );
+                return;
+            }
             finishSelectedTabOpen(generation, paintShieldGeneration, title, dialogRef);
         }, exc -> {
             sessionSwitchInFlight = false;
@@ -8258,7 +9145,11 @@ public class MainActivity extends Activity {
                         + "return 'capture-target-missing';"
                         + "}catch(e){return 'capture-target-error';}"
                 + "})(" + quotedTarget + ")",
-                null
+                result -> Log.i(CONTROL_LOG_TAG,
+                        "stage=capture-target endpoint=renderer"
+                                + " windowId=" + safeWindowIdForControlLog(targetKey)
+                                + " reason=" + safeLogToken(reason)
+                                + " result=" + safeLogToken(result))
         );
         refreshCaptureRendererSoon("target-" + reason);
     }
@@ -9246,6 +10137,96 @@ public class MainActivity extends Activity {
         return activeControlBaseUrl + path;
     }
 
+    private void applyControlRequestHeaders(HttpURLConnection connection) {
+        connection.setRequestProperty("User-Agent", "WEztermAndroid/" + APP_VERSION_NAME + " (com.kaleeb.wezterm)");
+        connection.setRequestProperty("X-Mantis-Client", CONTROL_CLIENT_VALUE);
+        connection.setRequestProperty("Accept", "application/json");
+    }
+
+    private String controlBaseLabel(String baseUrl) {
+        if (CONTROL_URL.equals(baseUrl)) {
+            return "direct";
+        }
+        if (MAGIC_DNS_CONTROL_URL.equals(baseUrl)) {
+            return "magicdns";
+        }
+        return "unknown";
+    }
+
+    private String safeControlEndpointForLog(String path) {
+        if (path == null || path.trim().isEmpty()) {
+            return "/unknown";
+        }
+        String endpoint = path.trim();
+        int queryIndex = endpoint.indexOf('?');
+        if (queryIndex >= 0) {
+            endpoint = endpoint.substring(0, queryIndex);
+        }
+        if (!endpoint.startsWith("/")) {
+            endpoint = "/unknown";
+        }
+        return safeLogToken(endpoint);
+    }
+
+    private String safeWindowIdForControlLog(String value) {
+        if (value == null) {
+            return "";
+        }
+        String raw = value.trim();
+        int marker = raw.indexOf("windowId=");
+        if (marker >= 0) {
+            raw = raw.substring(marker + "windowId=".length());
+            int end = raw.indexOf('&');
+            if (end >= 0) {
+                raw = raw.substring(0, end);
+            }
+        }
+        raw = raw.replace("%40", "@").replace("%2540", "@").trim();
+        return hasStableWindowId(raw) ? safeLogToken(raw) : "";
+    }
+
+    private String safeLogToken(String value) {
+        if (value == null) {
+            return "";
+        }
+        String safe = value.replaceAll("[^A-Za-z0-9@._:/=-]", "-");
+        if (safe.length() > 96) {
+            safe = safe.substring(0, 96);
+        }
+        return safe;
+    }
+
+    private void logControlRequest(
+            String stage,
+            String method,
+            String path,
+            String baseUrl,
+            int code,
+            boolean ok,
+            long elapsedMs,
+            int bodyBytes,
+            int attemptsRemaining,
+            int controlUrlIndex,
+            Exception exception
+    ) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("stage=").append(safeLogToken(stage))
+                .append(" method=").append(safeLogToken(method))
+                .append(" endpoint=").append(safeControlEndpointForLog(path))
+                .append(" windowId=").append(safeWindowIdForControlLog(path))
+                .append(" base=").append(controlBaseLabel(baseUrl))
+                .append(" code=").append(code)
+                .append(" ok=").append(ok)
+                .append(" elapsedMs=").append(elapsedMs)
+                .append(" bodyBytes=").append(bodyBytes)
+                .append(" attemptsRemaining=").append(attemptsRemaining)
+                .append(" baseIndex=").append(controlUrlIndex);
+        if (exception != null) {
+            builder.append(" exception=").append(safeLogToken(exception.getClass().getSimpleName()));
+        }
+        Log.i(CONTROL_LOG_TAG, builder.toString());
+    }
+
     private void getJsonAttempt(
             String path,
             JsonCallback callback,
@@ -9265,17 +10246,32 @@ public class MainActivity extends Activity {
         new Thread(() -> {
             HttpURLConnection connection = null;
             String baseUrl = controlBaseUrl(controlUrlIndex);
+            long startedAt = SystemClock.elapsedRealtime();
             try {
                 URL url = new URL(baseUrl + path);
                 connection = (HttpURLConnection) url.openConnection();
                 connection.setConnectTimeout(3000);
                 connection.setReadTimeout(5000);
+                applyControlRequestHeaders(connection);
                 int code = connection.getResponseCode();
                 InputStream stream = code >= 200 && code < 400
                         ? connection.getInputStream()
                         : connection.getErrorStream();
                 String body = readAll(stream);
                 JSONObject payload = new JSONObject(body);
+                logControlRequest(
+                        "response",
+                        "GET",
+                        path,
+                        baseUrl,
+                        code,
+                        payload.optBoolean("ok", code >= 200 && code < 400),
+                        SystemClock.elapsedRealtime() - startedAt,
+                        body.getBytes(StandardCharsets.UTF_8).length,
+                        attemptsRemaining,
+                        controlUrlIndex,
+                        null
+                );
                 activeControlBaseUrl = baseUrl;
                 uiHandler.post(() -> {
                     try {
@@ -9285,6 +10281,19 @@ public class MainActivity extends Activity {
                     }
                 });
             } catch (Exception exc) {
+                logControlRequest(
+                        "exception",
+                        "GET",
+                        path,
+                        baseUrl,
+                        -1,
+                        false,
+                        SystemClock.elapsedRealtime() - startedAt,
+                        0,
+                        attemptsRemaining,
+                        controlUrlIndex,
+                        exc
+                );
                 if (controlUrlIndex + 1 < CONTROL_URLS.length) {
                     uiHandler.postDelayed(
                             () -> getJsonAttempt(
@@ -9368,6 +10377,7 @@ public class MainActivity extends Activity {
         new Thread(() -> {
             HttpURLConnection connection = null;
             String baseUrl = controlBaseUrl(controlUrlIndex);
+            long startedAt = SystemClock.elapsedRealtime();
             try {
                 URL url = new URL(baseUrl + path);
                 byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
@@ -9376,6 +10386,7 @@ public class MainActivity extends Activity {
                 connection.setDoOutput(true);
                 connection.setConnectTimeout(3000);
                 connection.setReadTimeout(5000);
+                applyControlRequestHeaders(connection);
                 connection.setRequestProperty("Content-Type", "text/plain; charset=utf-8");
                 if (idempotencyKey != null && !idempotencyKey.trim().isEmpty()) {
                     // WHY: `/submit-text` mutates tmux by pasting and pressing Enter.
@@ -9395,6 +10406,19 @@ public class MainActivity extends Activity {
                         : connection.getErrorStream();
                 String body = readAll(stream);
                 JSONObject payload = new JSONObject(body);
+                logControlRequest(
+                        "response",
+                        "POST",
+                        path,
+                        baseUrl,
+                        code,
+                        payload.optBoolean("ok", code >= 200 && code < 400),
+                        SystemClock.elapsedRealtime() - startedAt,
+                        body.getBytes(StandardCharsets.UTF_8).length,
+                        1,
+                        controlUrlIndex,
+                        null
+                );
                 activeControlBaseUrl = baseUrl;
                 uiHandler.post(() -> {
                     try {
@@ -9404,6 +10428,19 @@ public class MainActivity extends Activity {
                     }
                 });
             } catch (Exception exc) {
+                logControlRequest(
+                        "exception",
+                        "POST",
+                        path,
+                        baseUrl,
+                        -1,
+                        false,
+                        SystemClock.elapsedRealtime() - startedAt,
+                        0,
+                        1,
+                        controlUrlIndex,
+                        exc
+                );
                 if (controlUrlIndex + 1 < CONTROL_URLS.length) {
                     uiHandler.postDelayed(
                             () -> postTextAttempt(

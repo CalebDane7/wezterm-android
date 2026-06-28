@@ -97,6 +97,10 @@ Android users use the native APK.
   stale post-lift `/touch-scroll` replies, while preserving quick-flick
   momentum. It also treats tmux `scroll_position >= history_size` as the real
   history-top edge so repeated lineUp gestures cannot hang at the top range.
+- v2.96 also clamps the first live-bottom `lineDown` sample when a drag starts
+  from live mode, so movement stops at the bottom edge instead of applying a
+  visual nudge into black space and snapping back after the server reports
+  `atLiveBottom=true`.
 - v2.95 keeps slow one-finger reading drags monotonic and line-sized: slow MOVE
   no longer promotes by raw distance, same-direction slow pending work stays to
   one step, direction changes clear stale opposite-direction work, and release

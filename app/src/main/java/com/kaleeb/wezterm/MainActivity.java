@@ -1687,9 +1687,17 @@ public class MainActivity extends Activity {
             terminalTouchStartedDuringPassiveSuppression = startedInsidePassiveSuppression;
             recycleTerminalViewerDownEvent();
             terminalViewerDownEvent = MotionEvent.obtain(event);
-            terminalTouchReachedLiveBottom = false;
+            boolean startedInHistoryViewport = terminalHistoryViewportActive || readModeSuppressesKeyboard;
+            // WHY: when a drag starts from the live terminal, the first physical
+            // lineDown sample is already at the bottom edge. Waiting for
+            // `/touch-scroll` to report atLiveBottom lets the visual nudge expose
+            // black space and then snap back, which is the bottom-stuck/up-jump
+            // regression. If the drag starts from an existing history/reader
+            // viewport, do not clamp lineDown; that path still owns returning
+            // toward live bottom.
+            terminalTouchReachedLiveBottom = !startedInHistoryViewport;
             terminalTouchReachedHistoryTop = false;
-            terminalTouchStartedInHistoryViewport = terminalHistoryViewportActive || readModeSuppressesKeyboard;
+            terminalTouchStartedInHistoryViewport = startedInHistoryViewport;
             terminalTouchStableWindowId = visibleTerminalTargetKey();
             clearCaptureRendererTouchNudge("touch-start");
             // WHY: touch-scroll HTTP responses can arrive after the finger has

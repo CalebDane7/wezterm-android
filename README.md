@@ -100,7 +100,8 @@ Android users use the native APK.
 - v2.96 also clamps the first live-bottom `lineDown` sample when a drag starts
   from live mode, so movement stops at the bottom edge instead of applying a
   visual nudge into black space and snapping back after the server reports
-  `atLiveBottom=true`.
+  `atLiveBottom=true`. The matching tap guard keeps no-drag cursor/body taps on
+  the native composer path instead of treating them as bottom-restore gestures.
 - v2.95 keeps slow one-finger reading drags monotonic and line-sized: slow MOVE
   no longer promotes by raw distance, same-direction slow pending work stays to
   one step, direction changes clear stale opposite-direction work, and release

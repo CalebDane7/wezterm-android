@@ -1883,8 +1883,10 @@ public class MainActivity extends Activity {
                 recycleTerminalViewerDownEvent();
                 return true;
             }
-            if (action == MotionEvent.ACTION_UP
-                    && reachedLiveBottom) {
+            boolean shouldRestoreLiveBottomAfterDrag = action == MotionEvent.ACTION_UP
+                    && reachedLiveBottom
+                    && consumed;
+            if (shouldRestoreLiveBottomAfterDrag) {
                 // WHY: the finger has reached tmux scroll position 0, but tmux is
                 // still in copy-mode unless Android explicitly exits it. v1.56
                 // avoided the old refresh loop by doing nothing here, but that left
@@ -1892,7 +1894,10 @@ public class MainActivity extends Activity {
                 // composer. Use the lightweight tmux-only touch endpoint to cancel
                 // copy-mode, and deliberately skip WebView reload, xterm
                 // scrollToBottom, scrollIntoView, and IME focus helpers that caused
-                // the repeated page-refresh/snap regression.
+                // the repeated page-refresh/snap regression. Do not run this for a
+                // no-drag live tap: the v2.96 live-bottom edge clamp also sets
+                // `reachedLiveBottom`, and a plain cursor-area tap must still open
+                // the native composer.
                 restoreTouchLiveBottomQuietly();
                 recycleTerminalViewerDownEvent();
                 return true;

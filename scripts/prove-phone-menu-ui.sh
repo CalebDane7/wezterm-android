@@ -7,6 +7,7 @@ ADB_TIMEOUT_SECONDS="${ADB_TIMEOUT_SECONDS:-20}"
 CONTROL_URL="${PHONE_CONTROL_URL:-http://100.113.254.7:8089}"
 TMUX_SESSION="${PHONE_TMUX_SESSION:-main_phone}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SELECTION_LOCK_HELPER="$ROOT/scripts/phone-proof-selection-lock.sh"
 MANIFEST="$ROOT/app/src/main/AndroidManifest.xml"
 PACKAGE="${WEZTERM_PACKAGE:-com.kaleeb.wezterm}"
 ACTIVITY="${WEZTERM_ACTIVITY:-com.kaleeb.wezterm/.MainActivity}"
@@ -44,6 +45,17 @@ resume_window=""
 reader_window=""
 reader_source_window=""
 initial_windows_file=""
+
+if [ -f "$SELECTION_LOCK_HELPER" ]; then
+    # shellcheck source=/dev/null
+    . "$SELECTION_LOCK_HELPER"
+fi
+
+if ! declare -F phone_proof_curl >/dev/null; then
+    phone_proof_curl() {
+        command curl "$@"
+    }
+fi
 
 adb_cmd() {
     adb -s "$ADB_SERIAL" "$@"
@@ -87,7 +99,7 @@ control_get() {
     local body
     local status
     stderr_file="$(mktemp)"
-    if body="$(curl -fsS "$CONTROL_URL$path" 2>"$stderr_file")"; then
+    if body="$(phone_proof_curl -fsS "$CONTROL_URL$path" 2>"$stderr_file")"; then
         rm -f "$stderr_file"
         printf '%s\n' "$body"
         return 0
@@ -430,6 +442,86 @@ if bright < 120 or ratio < 0.006 or row_hits < 4:
         f"bounds=[{left},{top}][{right},{bottom}]); possible black WebView/cursor-only: {path}"
     )
 print(f"terminal WebView visible paint pixels: bright={bright} ratio={ratio:.4f} rowHits={row_hits} bounds=[{left},{top}][{right},{bottom}]")
+PY
+}
+
+assert_scroll_screenrecord_no_large_black_sections() {
+    local video="$1"
+    local label="$2"
+    local frame_dir="$SCREENSHOT_DIR/scroll-black-section-frames"
+    local summary="$SCREENSHOT_DIR/scroll-black-section-frame-summary.tsv"
+    rm -rf "$frame_dir"
+    mkdir -p "$frame_dir"
+    dump_ui
+    if ! command -v ffmpeg >/dev/null 2>&1; then
+        echo "phone menu UI proof failed: ffmpeg is required to inspect scroll screenrecord black sections" >&2
+        exit 1
+    fi
+    ffmpeg -hide_banner -loglevel error -i "$video" -vf fps=3 "$frame_dir/frame-%03d.png"
+    python3 - "$frame_dir" "$DUMP_LOCAL" "$summary" "$label" <<'PY'
+from pathlib import Path
+from PIL import Image
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+frame_dir, dump_path, summary_path, label = sys.argv[1:5]
+root = ET.parse(dump_path).getroot()
+chosen = None
+for node in root.iter("node"):
+    if node.attrib.get("class", "") != "android.webkit.WebView":
+        continue
+    match = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+    if not match:
+        continue
+    left, top, right, bottom = map(int, match.groups())
+    area = max(0, right - left) * max(0, bottom - top)
+    if right - left <= 100 or bottom - top <= 100:
+        continue
+    if chosen is None or area > chosen[0]:
+        chosen = (area, left, top, right, bottom)
+if chosen is None:
+    raise SystemExit("terminal WebView bounds missing; refusing to score controls/keyboard as scroll content")
+_, left, top, right, bottom = chosen
+rows = []
+bad = []
+for frame in sorted(Path(frame_dir).glob("frame-*.png")):
+    image = Image.open(frame).convert("RGB")
+    width, height = image.size
+    x1 = max(0, min(width - 1, left))
+    x2 = max(x1 + 1, min(width, right))
+    y1 = max(0, min(height - 1, top))
+    y2 = max(y1 + 1, min(height, bottom))
+    sample_x1 = x1 + max(1, (x2 - x1) // 7)
+    sample_x2 = x2 - max(1, (x2 - x1) // 7)
+    step_x = max(6, (sample_x2 - sample_x1) // 80)
+    runs = []
+    in_run = False
+    start = 0
+    for y in range(y1, y2, 4):
+        pixels = [image.getpixel((x, y)) for x in range(sample_x1, sample_x2, step_x)]
+        black_ratio = sum(1 for r, g, b in pixels if r < 10 and g < 10 and b < 10) / len(pixels)
+        if black_ratio > 0.85 and not in_run:
+            start = y
+            in_run = True
+        elif black_ratio <= 0.85 and in_run:
+            runs.append((start, y - 4))
+            in_run = False
+    if in_run:
+        runs.append((start, y2))
+    longest = max([0] + [end - start for start, end in runs])
+    rows.append(f"{frame.name}\tlongest_webview_black_run_px={longest}")
+    # WHY: the v2.96 regression was not the terminal's normal black background;
+    # it was a broad unloaded band across many terminal rows while scrolling down.
+    # Normal dense terminal frames in this proof score under a few dozen pixels.
+    if longest > 260:
+        bad.append((frame.name, longest, runs))
+Path(summary_path).write_text("\n".join(rows) + "\n")
+if bad:
+    details = "\n".join(f"{name}\t{longest}\t{runs}" for name, longest, runs in bad)
+    Path(str(summary_path) + ".failures").write_text(details + "\n")
+    raise SystemExit(f"{label} showed large WebView black sections: {bad[:8]}")
+print(f"{label} screenrecord had no large WebView black sections; max={max(int(row.split('=')[1]) for row in rows)}")
 PY
 }
 
@@ -2046,13 +2138,12 @@ select_window() {
     local payload
     if ! payload="$(control_get "/select?fast=1&windowId=$(urlencode "$window_id")")"; then
         printf '%s\n' "$payload" >&2
-        # WHY: select_window is proof setup, not the user-visible APK tap being
-        # asserted. If a one-off control 500 happens after control health already
-        # passed, select the tmux target directly so the broad phone proof can
-        # continue to test the real visible APK controls instead of dying on
-        # unreadable setup plumbing.
-        tmux select-window -t "$TMUX_SESSION:$window_id"
-        payload='{"ok": true, "action": "tmux-select-fallback"}'
+        # WHY: select_window moves the user-visible APK/web viewer. Falling back
+        # to `tmux select-window` bypasses the server-side selection-lock and
+        # viewer-retarget guard, recreating the proof-session hijack the user
+        # reported. A failed control selection is a proof blocker, not setup
+        # plumbing to work around.
+        return 1
     fi
     printf '%s\n' "$payload" | json_assert "select $window_id" "p.get('ok') is True"
 }
@@ -2203,6 +2294,9 @@ trap cleanup EXIT
 echo "phone menu UI proof: adb/control state"
 assert_exclusive_phone_proof
 assert_title_sync_stopped
+if declare -F phone_proof_require_selection_locks >/dev/null; then
+    phone_proof_require_selection_locks "phone menu UI proof"
+fi
 adb_cmd get-state | grep -Fxq "device"
 assert_installed_package_version
 control_get "/health" | json_assert "control health" "p.get('ok') is True"
@@ -2444,6 +2538,14 @@ control_get "/scroll?where=bottom" >/dev/null || true
 wait_for_active_window_id "$proof_window"
 wait_for_window_pane_mode "$proof_window" "0"
 ensure_toolbar
+scroll_record_remote="/sdcard/wezterm-v296-physical-scroll-$$.mp4"
+scroll_record_local="$SCREENSHOT_DIR/wezterm-v296-physical-scroll.mp4"
+adb_cmd shell rm -f "$scroll_record_remote" >/dev/null 2>&1 || true
+# WHY: the release-stop/top-edge checks are visual regressions. Keep a real
+# installed-phone screenrecord beside the tmux cadence samples so the plan proof
+# is not reduced to source guards or control-server JSON.
+adb_cmd shell screenrecord --time-limit 24 "$scroll_record_remote" >"$SCREENSHOT_DIR/wezterm-v296-screenrecord.log" 2>&1 &
+scroll_record_pid=$!
 # WHY: the user's core regression was physical one-finger scroll feeling delayed,
 # jumpy, and sometimes routed to Codex prompt history. ADB's `input swipe`
 # injects the same single-pointer path the app receives from a finger; slow
@@ -2536,11 +2638,28 @@ if [ "$slow_final_delta" -gt 0 ]; then
         slow_scroll_max_delta="$slow_final_delta"
     fi
 fi
+release_stop_start="$slow_scroll"
+release_stop_samples=""
+for _ in $(seq 1 6); do
+    sleep 0.18
+    release_sample="$(tmux_window_scroll_position "$proof_window")"
+    if ! [[ "$release_sample" =~ ^[0-9]+$ ]]; then
+        echo "phone menu UI proof failed: slow one-finger release sample was not numeric: $release_sample" >&2
+        exit 1
+    fi
+    release_delta=$(( release_sample - release_stop_start ))
+    if [ "$release_delta" -lt 0 ] || [ "$release_delta" -gt 4 ]; then
+        echo "phone menu UI proof failed: slow one-finger release did not stop at finger-up; release_start=$release_stop_start samples=$release_stop_samples,$release_sample delta=$release_delta" >&2
+        exit 1
+    fi
+    release_stop_samples="${release_stop_samples}${release_stop_samples:+,}$release_sample"
+done
 if [ "$slow_scroll_positive_samples" -lt 2 ] || [ "$slow_scroll" -le 0 ] || [ "$slow_scroll" -gt 96 ]; then
     echo "phone menu UI proof failed: slow one-finger drag should produce multiple small bounded deltas, samples=$slow_scroll_samples final=$slow_scroll positives=$slow_scroll_positive_samples max_delta=$slow_scroll_max_delta" >&2
     exit 1
 fi
 echo "Slow one-finger cadence samples stayed bounded: samples=$slow_scroll_samples final=$slow_scroll max_delta=$slow_scroll_max_delta"
+echo "Slow one-finger release stayed stopped: release_start=$release_stop_start samples=$release_stop_samples"
 control_get "/scroll?where=bottom" >/dev/null || true
 wait_for_active_window_id "$proof_window"
 wait_for_window_pane_mode "$proof_window" "0"
@@ -2582,6 +2701,43 @@ if [ "$live_return_elapsed_ms" -gt 1200 ]; then
     exit 1
 fi
 echo "Physical one-finger live-bottom exited copy-mode quietly and smoothly in ${live_return_elapsed_ms}ms"
+echo "phone menu UI proof: physical one-finger history-top range edge"
+control_get "/scroll?where=bottom" >/dev/null || true
+wait_for_window_pane_mode "$proof_window" "0"
+top_edge_json=""
+top_edge_seen=0
+for _ in $(seq 1 80); do
+    top_edge_json="$(control_get "/touch-scroll?where=lineUp&repeat=20")"
+    if python3 - "$top_edge_json" <<'PY'
+import json
+import sys
+p = json.loads(sys.argv[1])
+if p.get("atHistoryTop") and p.get("scrollPosition", -1) >= p.get("historySize", 10**9):
+    raise SystemExit(0)
+raise SystemExit(1)
+PY
+    then
+        top_edge_seen=1
+        break
+    fi
+done
+if [ "$top_edge_seen" != "1" ]; then
+    echo "phone menu UI proof failed: touch-scroll never reported tmux history top; last_payload=$top_edge_json" >&2
+    exit 1
+fi
+terminal_swipe history-slow 900
+sleep 0.75
+top_after_json="$(control_get "/touch-scroll?where=lineUp&repeat=1")"
+printf '%s\n' "$top_after_json" | json_assert "history top remains a bounded range edge" "p.get('ok') is True and p.get('atHistoryTop') is True and p.get('scrollPosition', -1) >= p.get('historySize', 10**9)"
+echo "History-top one-finger range edge stayed bounded: before=$top_edge_json after=$top_after_json"
+wait "$scroll_record_pid" >/dev/null 2>&1 || true
+adb_cmd pull "$scroll_record_remote" "$scroll_record_local" >"$SCREENSHOT_DIR/wezterm-v296-screenrecord-pull.log" 2>&1 || true
+if [ ! -s "$scroll_record_local" ]; then
+    echo "phone menu UI proof failed: physical scroll screenrecord was not captured at $scroll_record_local" >&2
+    exit 1
+fi
+assert_scroll_screenrecord_no_large_black_sections "$scroll_record_local" "Physical one-finger scroll"
+echo "Physical one-finger scroll screenrecord: $scroll_record_local"
 control_get "/scroll?where=bottom" >/dev/null || true
 wait_for_pane_mode "0"
 
@@ -2801,6 +2957,13 @@ for _ in $(seq 1 40); do
     fi
     sleep 0.2
 done
+# WHY: this is the newer wrong-session class from 2026-06-28. Move tmux active
+# to a different disposable window before the first typed character, while the
+# APK is still visibly rendering the original proof window. The native composer
+# must bind to the visible renderer target, not to a later `/active` poll.
+select_window "$drift_window"
+wait_for_active_window_id "$drift_window"
+sleep 1.5
 ensure_toolbar
 terminal_tap_for_typing
 sleep 0.8

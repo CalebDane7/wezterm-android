@@ -59,13 +59,13 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="196"' "current APK version must be bumped for the v2.95 slow reading scroll contract"
-require "$MANIFEST" 'android:versionName="2.95"' "current APK version must be bumped for the v2.95 slow reading scroll contract"
+require "$MANIFEST" 'android:versionCode="197"' "current APK version must be bumped for the v2.96 release-stop/top-edge scroll contract"
+require "$MANIFEST" 'android:versionName="2.96"' "current APK version must be bumped for the v2.96 release-stop/top-edge scroll contract"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.95";' "client /config proof must report the same v2.95 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.96";' "client /config proof must report the same v2.96 APK contract as the manifest"
 require "$MAIN" 'MediaStore.ACTION_PICK_IMAGES' "Upload must use Android Photo Picker for one-selection screenshots/media on Android 13+"
 require "$MAIN" 'uploadDocumentPickerIntent' "Upload must keep ACTION_OPEN_DOCUMENT fallback for non-photo-picker/files path"
 require "$MAIN" 'uploadUrisFromResult' "Upload result must handle both data URI and ClipData instead of dropping picker returns"
@@ -210,7 +210,9 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=196`, `versionName=2.95`.' "README checkpoint must match the installed v2.95 APK"
+    require "$README" 'Built checkpoint: `versionCode=197`, `versionName=2.96`.' "README checkpoint must match the installed v2.96 APK"
+    require "$README" 'stale post-lift `/touch-scroll` replies' "README must document the v2.96 release-stop contract"
+    require "$README" 'scroll_position >= history_size' "README must document the v2.96 history-top edge contract"
     require "$README" 'slow one-finger reading drags monotonic and line-sized' "README must document the v2.95 slow reading drag contract"
     require "$README" 'momentum is limited to quick high-velocity flicks' "README must document the v2.95 slow-release no-momentum contract"
     require "$README" 'larger Android layout viewport' "README must document the v2.94 zoom-out layout-coverage contract"
@@ -399,8 +401,10 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.95' "install page must advertise the current v2.95 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>196</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.96' "install page must advertise the current v2.96 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>197</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'finger-up one-finger scroll stop' "install page must mention the v2.96 release-stop fix"
+    require "$INSTALL_PAGE" 'tmux history-top edge detection' "install page must mention the v2.96 top-range lag fix"
     require "$INSTALL_PAGE" 'monotonic slow one-finger reading drag' "install page must mention the v2.95 slow reading drag fix"
     require "$INSTALL_PAGE" 'layout viewport zoom-out row coverage' "install page must mention the v2.94 zoom layout-coverage fix"
     require "$INSTALL_PAGE" 'visual-only one-finger touch-scroll nudge' "install page must mention the v2.93 scroll-latency fix"
@@ -520,7 +524,7 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.95 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.96 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"
@@ -764,6 +768,7 @@ if [ -f "$MENU_UI_PROOF" ]; then
     require "$MENU_UI_PROOF" 'Native composer stayed local before Send; no pre-send tmux draft was created' "menu UI proof must prove native draft text does not reach tmux before Send"
     require "$MENU_UI_PROOF" 'native composer pins draft target across active drift' "menu UI proof must prove Send uses the pinned draft target after /active changes"
     require "$MENU_UI_PROOF" 'Native composer pinned draft target survived active-window drift' "menu UI proof must fail if visible drafts paste into the wrong active session"
+    require "$MENU_UI_PROOF" 'before the first typed character' "menu UI proof must exercise active-window drift before the native composer pins its first draft target"
     require "$MENU_UI_PROOF" 'the proof_window intentionally runs `cat > $DRIFT_FILE`' "draft-target proof must document why the original cat is stopped before shell recovery"
     require "$MENU_UI_PROOF" 'cli_keys_window="$(tmux new-window' "menu UI proof must create a dedicated stable target before option keys"
     require "$MENU_UI_PROOF" 'Option Keys uses the APK'\''s remembered stable `@windowId`' "menu UI proof must document why option keys need a selected visible stable target"
@@ -798,8 +803,10 @@ if [ -f "$MENU_UI_PROOF" ]; then
     require "$MENU_UI_PROOF" 'Never send stale' "menu UI proof must not tap WEzterm coordinates into another foreground app"
     require "$MENU_UI_PROOF" 'recover focus and refresh' "menu UI proof must redump before retrying current-dump taps after focus loss"
     require "$MENU_UI_PROOF" 'control request failed' "menu UI proof must emit structured diagnostics for control HTTP failures"
-    require "$MENU_UI_PROOF" 'tmux-select-fallback' "menu UI proof may fallback only for setup selection after a transient control failure"
-    require "$MENU_UI_PROOF" 'select_window is proof setup' "menu UI proof WHY comment must not let select fallback replace visible APK taps"
+    require "$MENU_UI_PROOF" 'phone_proof_require_selection_locks "phone menu UI proof"' "menu UI proof must acquire verified selection locks before moving tabs"
+    require "$MENU_UI_PROOF" 'phone_proof_curl -fsS "$CONTROL_URL$path"' "menu UI proof must send verified lock headers on control-server curl calls"
+    require "$MENU_UI_PROOF" 'viewer-retarget guard' "menu UI proof WHY comment must preserve why direct tmux selection is forbidden"
+    require_absent "$MENU_UI_PROOF" 'tmux-select-fallback' "menu UI proof must not bypass control-server viewer-retarget guards with direct tmux selection"
     require "$MENU_UI_PROOF" 'could not get idle state' "menu UI proof must preserve UIAutomator idle-timeout diagnostics"
     require "$MENU_UI_PROOF" 'uiautomator dump --compressed' "menu UI proof must retry dumps with compressed mode when live terminal animation prevents idle"
     require "$MENU_UI_PROOF" 'root-only FrameLayout dump' "menu UI proof must reject Samsung root-only empty accessibility dumps"
@@ -981,6 +988,11 @@ if [ -f "$MANTIS_CONTROL_SERVER" ]; then
     require "$MANTIS_CONTROL_SERVER" 'Automation window selection requires matching Mantis selection-lock headers.' "Mantis control server must reject unowned CLI selection instead of stealing focus"
     require "$MANTIS_CONTROL_SERVER" 'X-Mantis-Selection-Lock-Owner' "Mantis control server must require an explicit automation selection lock owner"
     require "$MANTIS_CONTROL_SERVER" 'X-Mantis-Selection-Lock-Monitor' "Mantis control server must require an explicit automation selection lock monitor"
+    require "$MANTIS_CONTROL_SERVER" 'PROOF_VIEWER_RETARGET_HEADER = "X-Mantis-Allow-Proof-Viewer-Retarget"' "Mantis control server must name the explicit exclusive proof viewer-retarget header"
+    require "$MANTIS_CONTROL_SERVER" 'AUTOMATION_VIEWER_RETARGET_PATHS' "Mantis control server must block automation paths that inherently move the visible APK viewer"
+    require "$MANTIS_CONTROL_SERVER" 'Automation proof selection would move the visible APK viewer away from the locked work session.' "Mantis control server must refuse proof retargets away from the locked work session"
+    require "$MANTIS_CONTROL_SERVER" 'proof-viewer-retarget-blocked' "Mantis control server must expose a stable proof-viewer retarget blocker reason"
+    require "$MANTIS_CONTROL_SERVER" 'Restore-after-proof is not enough' "Mantis control server must preserve the proof-viewer hijack WHY comment"
     require "$MANTIS_CONTROL_SERVER" 'curl/' "Mantis control server must classify curl wrappers as automation, not user phone/browser clicks"
     require "$MANTIS_CONTROL_SERVER" '"/send-key",' "Mantis phone control server must allow the send-key mutating GET endpoint"
     require "$MANTIS_CONTROL_SERVER" 'def send_key(self, key, window_id=None):' "Mantis phone control server must implement stable-target send-key"
@@ -1413,8 +1425,33 @@ require_absent "$MAIN" 'Button cancel = button("Cancel"' "native composer must n
 require "$MAIN" 'postTextWithIdempotency(appendStableWindowQuery("/submit-text?resize=0", stableTargetKey)' "safe prompt composer must send one non-resizing server-side paste+Enter to the pinned stable windowId target"
 require_absent "$MAIN" 'postText("/draft-delta?backspace="' "normal Android typing must not mirror live draft deltas into tmux"
 require "$MAIN" 'promptComposerDraftTargetKey' "native composer draft must track the stable active window target"
+require "$MAIN" 'captureRendererWindowTargetKey' "native composer draft must track the visible capture-renderer window target before active-window fallback"
 require "$MAIN" 'promptComposerTargetKey()' "native composer draft must identify the stable active window target"
 require "$MAIN" 'promptComposerDraftSubmitTargetKey()' "native composer Send/Enter must submit to the pinned draft target, not a later active target"
+python3 - "$MAIN" <<'PY'
+import pathlib
+import sys
+
+source = pathlib.Path(sys.argv[1]).read_text()
+start = source.index("private String promptComposerTargetKey()")
+end = source.index("private void rememberReaderSourceWindow", start)
+body = source[start:end]
+renderer = body.index("captureRendererWindowTargetKey")
+current = body.index("currentPhoneWindowId")
+if renderer > current:
+    print(
+        "Phone plan regression guard failed: promptComposerTargetKey must prefer the visible capture-renderer target before currentPhoneWindowId",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+if "before the first typed character" not in body:
+    print(
+        "Phone plan regression guard failed: promptComposerTargetKey WHY comment must preserve the pre-typing active-drift regression",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+print("prompt composer visible-target guard passed")
+PY
 require "$MAIN" 'PREF_PROMPT_DRAFT_PREFIX' "native composer drafts must be persisted per stable windowId so tab switches cannot destroy typed text"
 require "$MAIN" 'rememberPromptComposerDraft' "native composer draft persistence must save the visible draft before passive tab movement"
 require "$MAIN" 'rememberedPromptComposerDraft' "native composer must restore the current windowId draft instead of showing another session draft"
@@ -1576,7 +1613,13 @@ require "$MAIN" 'stage=touch-scroll-dispatch endpoint=/touch-scroll' "APK touch-
 require "$MAIN" 'stage=touch-scroll-response endpoint=/touch-scroll' "APK touch-scroll must log safe response evidence for live-bottom/copy-mode proof"
 require "$MAIN" 'visibleTerminalTargetKey()' "visible terminal scroll target helper must exist"
 require "$MAIN" 'Prefer the selected/visible window for' "visible target WHY comment must preserve the target-drift root cause"
-require "$MAIN" 'dispatchHistoryReleaseFling(event);' "release fling must still add a bounded ACTION_UP burst so fast flicks move farther than slow drag"
+require "$MAIN" 'releaseFlingStarted = dispatchHistoryReleaseFling(event)' "release handling must distinguish true flick momentum from finger-up stop"
+require "$MAIN" 'stale in-flight `/touch-scroll` response drain one more row' "slow release WHY comment must preserve the random release-jump root cause"
+require "$MAIN" 'terminalTouchGestureGeneration++;' "slow release must generation-cancel stale post-lift touch-scroll responses"
+require "$MAIN" 'touchScrollReachedHistoryTop' "APK touch-scroll must recognize the tmux history-top edge"
+require "$MAIN" 'historySize=' "APK touch-scroll response log must expose history-size proof data"
+require "$MAIN" 'touch-scroll-top-edge' "APK top-edge touch scroll must have a distinct refresh/proof marker"
+require "$MAIN" 'top edge is also a real range boundary' "APK visual nudge guard must stop at the history-top range"
 require "$MAIN" 'scrollTerminalFromTouch(where, repeats, true, targetKey);' "release fling must route the first momentum step through the stable target"
 require_absent "$MAIN" 'shouldRestoreLiveBottomFromRelease' "release fling must not signal live-bottom restore before the server reports tmux near-bottom"
 require_absent "$MAIN" 'HISTORY_DRAG_RELEASE_FLING_BURSTS' "old two-burst fake momentum must not replace the cancellable inertial loop"
@@ -1704,14 +1747,17 @@ require "$MANTIS_CONTROL_SERVER" 'function touchScrollNudgeInProgress' "Mantis c
 require "$MANTIS_CONTROL_SERVER" 'function clearTouchScrollNudgeWhenIdle' "Mantis capture renderer must not clear finger-following residual while ultra-slow movement is still active"
 require "$MANTIS_CONTROL_SERVER" 'ultra-slow finger drags can space MOVE nudges farther apart' "Mantis capture renderer WHY comment must preserve the ultra-slow no-snap timer guard"
 require "$MANTIS_CONTROL_SERVER" 'touchScrollNudgeClearTimer=setTimeout(clearTouchScrollNudgeWhenIdle,420)' "Mantis capture renderer clear timer must re-check the active touch window before clearing"
-require "$MANTIS_CONTROL_SERVER" 'normal 550 ms polling must not compete with APK finger-down' "Mantis capture renderer must defer polling commits while the APK finger is moving"
-require "$MANTIS_CONTROL_SERVER" 'refreshQueued=true;scheduleTouchScrollNudgeRefresh();return false;' "Mantis capture renderer must queue one release/idle repaint instead of row-step polling"
+require "$MANTIS_CONTROL_SERVER" 'function touchScrollNudgeNeedsPrepaint' "Mantis capture renderer must prepaint before finger-down residual exposes black unloaded sections"
+require "$MANTIS_CONTROL_SERVER" 'large black sections' "Mantis renderer WHY comment must preserve the v2.96 scroll load-block complaint"
+require "$MANTIS_CONTROL_SERVER" 'reserveTouchScrollPrepaintRefresh' "Mantis capture renderer must throttle mid-gesture prepaint instead of broad row reloads"
+require "$MANTIS_CONTROL_SERVER" 'refreshQueued=true;scheduleTouchScrollNudgeRefresh();return false;' "Mantis capture renderer must still queue tiny-residual touch frames instead of row-step polling"
 require "$MANTIS_CONTROL_SERVER" 'tmux row commits are intentionally hidden until release/idle' "Mantis renderer WHY comment must preserve the row-step owner fix"
 require "$MANTIS_CONTROL_SERVER" 'about 25% of the viewport' "Mantis renderer WHY comment must preserve the quarter-screen chunking root cause"
 require "$MANTIS_CONTROL_SERVER" 'Math.floor(viewport.height*0.90)' "Mantis history/upward touch residual must not force server frame chunks every quarter-screen"
 require "$MANTIS_CONTROL_SERVER" 'cap*0.92' "Mantis active near-cap settle gate must stay late enough to avoid repeated quarter-screen chunks"
 require_absent "$MANTIS_CONTROL_SERVER" 'cap*0.72' "Mantis active near-cap settle gate must not regress to the old 25 percent viewport chunk trigger"
-require "$MANTIS_CONTROL_SERVER" 'Math.min(420,Math.floor(viewport.height*0.34))' "Mantis active touch residual cap must be bounded but larger than one row"
+require "$MANTIS_CONTROL_SERVER" 'down-return has no pre-rendered row coverage below the capture' "Mantis renderer WHY comment must preserve the down-return black-section owner decision"
+require "$MANTIS_CONTROL_SERVER" 'Math.max(18,Math.min(48,Math.floor(lineHeight*1.15)))' "Mantis down-return active touch residual must stay near one line so it cannot expose large black lower sections"
 require "$MAIN" 'Do not translate this' "WebView zoom must not be converted into tmux/font resize behavior"
 require "$MAIN" 'handleViewerZoomKey' "hardware/automation zoom keys must create a real WebView zoomed proof state"
 require "$MAIN" 'KEYCODE_ZOOM_IN' "zoom-in key must be wired to WebView zoom for real zoomed pan proof"
@@ -1930,6 +1976,11 @@ if [ -f "$CONTROL_SERVER" ]; then
     require "$CONTROL_SERVER" 'elif parsed.path == "/touch-scroll":' "GET /touch-scroll route must remain"
     require "$CONTROL_SERVER" 'skip Codex/reader' "touch-scroll WHY comment must preserve the low-latency reason"
     require "$CONTROL_SERVER" '"atLiveBottom"] = True' "server must expose the tmux live-bottom edge to Android touch scroll"
+    require "$CONTROL_SERVER" 'scroll_metadata=True' "server touch-scroll must return tmux edge metadata from the same hot-path command"
+    require "$CONTROL_SERVER" '#{scroll_position}\t#{history_size}' "server touch-scroll must expose history top metadata without a second tmux process"
+    require "$CONTROL_SERVER" 'parse_tmux_scroll_metadata' "server touch-scroll must parse tmux scroll-position/history-size metadata"
+    require "$CONTROL_SERVER" '"atHistoryTop"] = True' "server touch-scroll must report history-top range edge to the APK"
+    require "$CONTROL_SERVER" 'feels like the scroll range hangs' "server top-edge WHY comment must preserve the range-lag complaint"
     require "$CONTROL_SERVER" 'pane_in_copy_mode = run_tmux("display-message", "-p", "-t", target, "#{pane_in_mode}").strip() == "1"' "bottom after tmux touch-scroll must exit tmux copy-mode before Codex transcript routing"
     require "$CONTROL_SERVER" 'a desktop mouse wheel in tmux copy-mode' "touch-scroll intent comment must prevent Codex-history regressions"
     require "$CONTROL_SERVER" '"codexNoAltScreen"' "scroll layer must keep no-alt-screen Codex routing evidence"
@@ -2139,6 +2190,11 @@ require "$ROOT/scripts/prove-phone-menu-ui.sh" 'instead of the disposable New-bu
 require "$ROOT/scripts/prove-phone-menu-ui.sh" 'dump_has_button_text "Settings"' "UI proof must verify the real Settings toolbar button before tapping it from a cached dump"
 require "$ROOT/scripts/prove-phone-menu-ui.sh" 'Settings -> Scroll' "UI proof must exercise the Settings-to-Scroll path"
 require "$ROOT/scripts/prove-phone-menu-ui.sh" 'Physical one-finger slow/fast scroll proved' "UI proof must exercise physical slow-vs-fast swipe behavior"
+require "$ROOT/scripts/prove-phone-menu-ui.sh" 'Slow one-finger release stayed stopped' "UI proof must catch post-finger-up random jump regressions"
+require "$ROOT/scripts/prove-phone-menu-ui.sh" 'History-top one-finger range edge stayed bounded' "UI proof must catch top-range one-finger hang regressions"
+require "$ROOT/scripts/prove-phone-menu-ui.sh" 'screenrecord --time-limit' "UI proof must keep installed-phone visual evidence for scroll regressions"
+require "$ROOT/scripts/prove-phone-menu-ui.sh" 'assert_scroll_screenrecord_no_large_black_sections' "UI proof must analyze physical scroll screenrecords for the large black-section regression"
+require "$ROOT/scripts/prove-phone-menu-ui.sh" 'large WebView black sections' "UI proof detector must fail on unloaded black terminal sections, not just tmux scroll numbers"
 require "$ROOT/scripts/prove-phone-menu-ui.sh" 'slow_scroll_samples=' "UI proof must collect slow one-finger cadence samples"
 require "$ROOT/scripts/prove-phone-menu-ui.sh" 'slow_scroll_positive_samples' "UI proof must require multiple positive slow-drag cadence samples"
 require "$ROOT/scripts/prove-phone-menu-ui.sh" 'slow one-finger drag jumped too far between cadence samples' "UI proof must fail on slow-drag backend-cadence jumps"
@@ -2157,6 +2213,7 @@ require "$ROOT/scripts/prove-phone-menu-ui.sh" 'len(rows) >= 100' "UI proof must
 require "$ROOT/scripts/prove-phone-menu-ui.sh" 'full_view_dot_grid = len(rows) >= 180 and (narrow_bands >= 20 or repeated_columns >= 60)' "UI proof must fail the uploaded full-view dotted Active-switch screen without failing normal code columns"
 require "$ROOT/scripts/prove-phone-menu-ui.sh" 'Native composer stayed local until Send and delivered one visible token' "UI proof must exercise native composer submit without duplicate input"
 require "$ROOT/scripts/prove-phone-menu-ui.sh" 'Native composer pinned draft target survived active-window drift' "UI proof must exercise native composer pinned-target submit after active drift"
+require "$ROOT/scripts/prove-phone-menu-ui.sh" 'before the first typed character' "UI proof must exercise pre-typing active-window drift for native composer target binding"
 require "$ROOT/scripts/prove-phone-menu-ui.sh" 'Stop button delivered one Escape without submitting the visible native draft' "UI proof must exercise direct Stop-as-Escape behavior"
 require "$ROOT/scripts/prove-phone-menu-ui.sh" 'WEZTERM_UI_EXCLUSIVE_PHONE_PROOF=1 is required' "UI proof must be explicit before broad installed-phone tapping"
 require "$ROOT/scripts/prove-phone-menu-ui.sh" 'record_initial_windows' "UI proof must record pre-existing tmux windows before creating disposable tabs"
@@ -2393,6 +2450,9 @@ if [ -f "$SELECTION_LOCK_HELPER" ]; then
     require "$SELECTION_LOCK_HELPER" 'current tmux window is $current_monitor' "phone proof helper must fail when the running lane is not the lock monitor"
     require "$SELECTION_LOCK_HELPER" 'X-Mantis-Selection-Lock-Owner' "phone proof helper must send the server lock-owner header"
     require "$SELECTION_LOCK_HELPER" 'X-Mantis-Selection-Lock-Monitor' "phone proof helper must send the server lock-monitor header"
+    require "$SELECTION_LOCK_HELPER" 'PHONE_PROOF_ALLOW_VIEWER_RETARGET' "viewer-retarget override must be explicit and disposable-only"
+    require "$SELECTION_LOCK_HELPER" 'X-Mantis-Allow-Proof-Viewer-Retarget' "phone proof helper must send the retarget opt-in only when explicitly requested"
+    require "$SELECTION_LOCK_HELPER" 'instead of relying on restore' "phone proof helper must preserve the no-restore-after-proof WHY"
     require "$SELECTION_LOCK_HELPER" 'phone_proof_refuse_visible_apk_draft()' "phone proof helper must refuse tab movement while a visible APK draft is present"
     require "$SELECTION_LOCK_HELPER" 'PHONE_PROOF_ALLOW_DRAFT_STEAL' "draft-steal override must be explicit and disposable-only"
     require "$SELECTION_LOCK_HELPER" 'android.widget.EditText' "phone proof helper must inspect the visible native composer before moving tabs"

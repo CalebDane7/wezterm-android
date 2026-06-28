@@ -92,7 +92,11 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=196`, `versionName=2.95`.
+- Built checkpoint: `versionCode=197`, `versionName=2.96`.
+- v2.96 stops slow one-finger reading drags at finger-up by generation-canceling
+  stale post-lift `/touch-scroll` replies, while preserving quick-flick
+  momentum. It also treats tmux `scroll_position >= history_size` as the real
+  history-top edge so repeated lineUp gestures cannot hang at the top range.
 - v2.95 keeps slow one-finger reading drags monotonic and line-sized: slow MOVE
   no longer promotes by raw distance, same-direction slow pending work stays to
   one step, direction changes clear stale opposite-direction work, and release

@@ -127,10 +127,20 @@ phone_proof_curl() {
     if [ "${PHONE_PROOF_SELECTION_LOCK_HEADERS_READY:-0}" = "1" ]; then
         for arg in "$@"; do
             if [ "${CONTROL_URL:-}" ] && [[ "$arg" == "$CONTROL_URL"* ]]; then
-                command curl \
+                local headers=(
                     -H "X-Mantis-Automation: 1" \
                     -H "X-Mantis-Selection-Lock-Owner: ${PHONE_PROOF_SELECTION_LOCK_OWNER:-}" \
-                    -H "X-Mantis-Selection-Lock-Monitor: ${PHONE_PROOF_SELECTION_LOCK_MONITOR:-}" \
+                    -H "X-Mantis-Selection-Lock-Monitor: ${PHONE_PROOF_SELECTION_LOCK_MONITOR:-}"
+                )
+                # WHY: a proof runner can own the locks and still hijack the
+                # user's APK viewer by selecting a disposable proof window in
+                # `main_phone`. The retarget opt-in is intentionally loud so
+                # normal proof curls fail closed instead of relying on restore.
+                if [ "${PHONE_PROOF_ALLOW_VIEWER_RETARGET:-0}" = "1" ]; then
+                    headers+=(-H "X-Mantis-Allow-Proof-Viewer-Retarget: 1")
+                fi
+                command curl \
+                    "${headers[@]}" \
                     "$@"
                 return
             fi

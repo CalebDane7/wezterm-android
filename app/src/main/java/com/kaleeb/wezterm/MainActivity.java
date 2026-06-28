@@ -124,7 +124,7 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
     private static final String PREF_PROMPT_DRAFT_PREFIX = "prompt_draft_";
-    private static final String APP_VERSION_NAME = "2.95";
+    private static final String APP_VERSION_NAME = "2.96";
     private static final int PREMIUM_CONTROL_CORNER_RADIUS_DP = 14;
     private static final int PREMIUM_DIALOG_CORNER_RADIUS_DP = 22;
     private static final int ACTIVE_SESSION_ROW_GAP_DP = 10;
@@ -307,6 +307,7 @@ public class MainActivity extends Activity {
     private String terminalHistoryMomentumTargetKey = "";
     private String lastHistoryFlingWhere = "";
     private long lastHistoryFlingAtMs = 0;
+    private boolean terminalTouchReachedHistoryTop = false;
     private boolean touchScrollRenderPulseScheduled = false;
     private long touchScrollRenderPulseUntilMs = 0;
     private boolean touchScrollVisualNudgeScheduled = false;
@@ -337,6 +338,7 @@ public class MainActivity extends Activity {
     private String selectedPhoneWindowTitle = "";
     private long selectedPhoneWindowUpdatedAtMs = 0;
     private String currentPhoneWindowId = "";
+    private String captureRendererWindowTargetKey = "";
     private String readerSourcePhoneWindowId = "";
     private String readerSourcePhoneWindowTitle = "";
     private boolean activityResumed = false;
@@ -1686,6 +1688,7 @@ public class MainActivity extends Activity {
             recycleTerminalViewerDownEvent();
             terminalViewerDownEvent = MotionEvent.obtain(event);
             terminalTouchReachedLiveBottom = false;
+            terminalTouchReachedHistoryTop = false;
             terminalTouchStartedInHistoryViewport = terminalHistoryViewportActive || readModeSuppressesKeyboard;
             terminalTouchStableWindowId = visibleTerminalTargetKey();
             clearCaptureRendererTouchNudge("touch-start");
@@ -1796,8 +1799,19 @@ public class MainActivity extends Activity {
             boolean wasForwardingTouchToViewer = terminalForwardingTouchToViewer;
             boolean startedDuringPassiveSuppression = terminalTouchStartedDuringPassiveSuppression;
             boolean longPressCopied = terminalLongPressCopyConsumed;
+            boolean releaseFlingStarted = false;
             if (action == MotionEvent.ACTION_UP && terminalHistoryDragActive) {
-                dispatchHistoryReleaseFling(event);
+                clearPendingHistoryScroll();
+                releaseFlingStarted = dispatchHistoryReleaseFling(event);
+                if (!releaseFlingStarted) {
+                    // WHY: a slow reading drag ends at ACTION_UP. Do not let a
+                    // stale in-flight `/touch-scroll` response drain one more row
+                    // or trigger a bottom/top-edge refresh after the finger lifts;
+                    // that is the user-visible random release jump. True flicks
+                    // keep the current generation so bounded momentum can run.
+                    cancelHistoryMomentum();
+                    terminalTouchGestureGeneration++;
+                }
                 keepCaptureRendererPulsingDuringTouch("touch-scroll-release");
                 clearCaptureRendererTouchNudgeSoon("touch-scroll-release");
             }
@@ -1812,6 +1826,7 @@ public class MainActivity extends Activity {
             terminalTouchExceededTapSlop = false;
             terminalHorizontalPanActive = false;
             terminalTouchReachedLiveBottom = false;
+            terminalTouchReachedHistoryTop = false;
             terminalTouchStartedInHistoryViewport = false;
             terminalTouchStartedDuringPassiveSuppression = false;
             clearTerminalLongPressCopyState();
@@ -2224,6 +2239,16 @@ public class MainActivity extends Activity {
         if ("lineUp".equals(visualWhere)) {
             terminalTouchReachedLiveBottom = false;
         }
+        if (terminalTouchReachedHistoryTop && "lineUp".equals(visualWhere)) {
+            // WHY: top edge is also a real range boundary. Once tmux says the
+            // copy-mode viewport is at history top, a visual-only nudge upward has
+            // no backing rows and makes the scroll feel hung or rubber-banded.
+            terminalLastTouchVisualNudgeY = y;
+            return;
+        }
+        if ("lineDown".equals(visualWhere)) {
+            terminalTouchReachedHistoryTop = false;
+        }
         nudgeCaptureRendererForTouch(visualStep);
         terminalLastTouchVisualNudgeY = y;
     }
@@ -2277,7 +2302,7 @@ public class MainActivity extends Activity {
         return Math.max(1, Math.min(HISTORY_DRAG_MAX_PAGES_PER_STEP, repeats));
     }
 
-    private void dispatchHistoryReleaseFling(MotionEvent event) {
+    private boolean dispatchHistoryReleaseFling(MotionEvent event) {
         float totalDy = event.getY() - terminalTouchStartY;
         float absDy = Math.abs(totalDy);
         long durationMs = Math.max(1, event.getEventTime() - event.getDownTime());
@@ -2296,7 +2321,7 @@ public class MainActivity extends Activity {
         int lineThreshold = Math.max(terminalTouchSlop, dp(HISTORY_DRAG_LINE_THRESHOLD_DP));
         if (absDy < lineThreshold * HISTORY_DRAG_RELEASE_MIN_LINES
                 || releaseVelocity < HISTORY_DRAG_FLING_VELOCITY_PX_PER_SEC) {
-            return;
+            return false;
         }
         if (wallDurationMs > HISTORY_DRAG_RELEASE_FLICK_MAX_MS) {
             // WHY: slow deliberate read-drags can cover enough distance to look fast
@@ -2305,7 +2330,7 @@ public class MainActivity extends Activity {
             // events can reset MotionEvent downTime or report a bogus high tracker velocity
             // at the end of slow movement, so use the app-observed
             // ACTION_DOWN clock.
-            return;
+            return false;
         }
         String where = signedReleaseVelocity > 0 ? "lineUp" : "lineDown";
         if (terminalTouchReachedLiveBottom && "lineDown".equals(where)) {
@@ -2313,7 +2338,10 @@ public class MainActivity extends Activity {
             // already reported live bottom would queue extra lineDown requests at
             // the edge. That is the exact "refresh/bounce before I get to the
             // bottom" symptom; wait for finger-up restore instead.
-            return;
+            return false;
+        }
+        if (terminalTouchReachedHistoryTop && "lineUp".equals(where)) {
+            return false;
         }
         if (where.equals(lastHistoryFlingWhere)
                 && System.currentTimeMillis() - lastHistoryFlingAtMs <= HISTORY_DRAG_REPEATED_FLING_WINDOW_MS) {
@@ -2352,6 +2380,7 @@ public class MainActivity extends Activity {
         String targetKey = terminalTouchStableWindowId;
         scrollTerminalFromTouch(where, repeats, true, targetKey);
         startHistoryMomentum(where, releaseVelocity * HISTORY_DRAG_MOMENTUM_DECAY, flingGeneration, targetKey);
+        return true;
     }
 
     private void startHistoryMomentum(String where, float velocityPxPerSec, long gestureGeneration, String targetKey) {
@@ -2448,6 +2477,12 @@ public class MainActivity extends Activity {
         if ("lineUp".equals(where)) {
             terminalTouchReachedLiveBottom = false;
         }
+        if (terminalTouchReachedHistoryTop && "lineUp".equals(where)) {
+            return;
+        }
+        if ("lineDown".equals(where)) {
+            terminalTouchReachedHistoryTop = false;
+        }
         if (historyScrollRequestInFlight) {
             if (where.equals(pendingHistoryScrollWhere)
                     && pendingHistoryScrollGeneration == gestureGeneration
@@ -2526,6 +2561,9 @@ public class MainActivity extends Activity {
                             + " where=" + safeLogToken(where)
                             + " repeats=" + Math.max(1, repeats)
                             + " atLiveBottom=" + payload.optBoolean("atLiveBottom", false)
+                            + " atHistoryTop=" + payload.optBoolean("atHistoryTop", false)
+                            + " scrollPosition=" + payload.optInt("scrollPosition", -1)
+                            + " historySize=" + payload.optInt("historySize", -1)
                             + " paneMode=" + safeLogToken(payload.optString("paneMode", "")));
             if (gestureGeneration != terminalTouchGestureGeneration) {
                 // WHY: delayed `/scroll` responses are expected on a mobile network.
@@ -2569,6 +2607,23 @@ public class MainActivity extends Activity {
                     return;
                 }
                 refreshCaptureRendererSoon("touch-scroll-bottom-edge");
+                return;
+            }
+            if ("lineUp".equals(where) && touchScrollReachedHistoryTop(payload)) {
+                // WHY: tmux reports the history top when scroll_position reaches
+                // history_size. Stop queueing lineUp at that boundary; otherwise
+                // the APK keeps sending requests that cannot move and feels like
+                // it hangs at the range limit until old responses drain.
+                terminalTouchReachedHistoryTop = true;
+                cancelHistoryMomentum();
+                clearPendingHistoryScroll();
+                if (readModeGeneration == terminalModeGeneration) {
+                    keepReadModeIfCurrent(readModeGeneration);
+                }
+                if (terminalHistoryDragActive) {
+                    return;
+                }
+                refreshCaptureRendererSoon("touch-scroll-top-edge");
                 return;
             }
             if (readModeGeneration == terminalModeGeneration) {
@@ -2616,6 +2671,20 @@ public class MainActivity extends Activity {
         }
         int scrollPosition = payload.optInt("scrollPosition", Integer.MAX_VALUE);
         return scrollPosition >= 0 && scrollPosition <= TOUCH_SCROLL_LIVE_BOTTOM_SNAP_LINES;
+    }
+
+    private boolean touchScrollReachedHistoryTop(JSONObject payload) {
+        if (payload == null
+                || !"tmux".equals(payload.optString("layer", ""))
+                || !"tmux-lineup".equals(payload.optString("action", ""))) {
+            return false;
+        }
+        if (!payload.has("scrollPosition") || !payload.has("historySize")) {
+            return false;
+        }
+        int scrollPosition = payload.optInt("scrollPosition", -1);
+        int historySize = payload.optInt("historySize", -1);
+        return historySize > 0 && scrollPosition >= historySize;
     }
 
     private void drainPendingHistoryScroll() {
@@ -2861,6 +2930,9 @@ public class MainActivity extends Activity {
 
     private String terminalUrlWithOptions(String baseUrl, int fontSize) {
         String targetKey = visibleTerminalTargetKey();
+        if (hasStableWindowId(targetKey)) {
+            captureRendererWindowTargetKey = targetKey.trim();
+        }
         String targetQuery = hasStableWindowId(targetKey)
                 ? "&windowId=" + urlEncode(targetKey.trim())
                 : "";
@@ -7245,6 +7317,7 @@ public class MainActivity extends Activity {
                                 return;
                             }
                             clearRememberedCloseTarget("workspace-close-out");
+                            captureRendererWindowTargetKey = "";
                             refreshCaptureRendererSoon("workspace-close-out");
                             scheduleToolbarStatusDotRefresh(0);
                         }, exc -> toast("WEzterm control is not reachable"))
@@ -7315,6 +7388,9 @@ public class MainActivity extends Activity {
                     clearRememberedCloseTarget("close-dispatched");
                     clearRememberedUploadForWindow(stableWindowId, "close-dispatched");
                     forgetPromptComposerDraft(stableWindowId);
+                    if (stableWindowId.equals(captureRendererWindowTargetKey)) {
+                        captureRendererWindowTargetKey = "";
+                    }
                     control(path, "Closed session");
                 })
                 .setNegativeButton("Cancel", null)
@@ -7512,6 +7588,9 @@ public class MainActivity extends Activity {
     private void clearBulkCloseLocalState(String stableWindowId) {
         clearRememberedUploadForWindow(stableWindowId, "bulk-close-dispatched");
         forgetPromptComposerDraft(stableWindowId);
+        if (stableWindowId.equals(captureRendererWindowTargetKey)) {
+            captureRendererWindowTargetKey = "";
+        }
         if (stableWindowId.equals(selectedPhoneWindowId)) {
             clearRememberedCloseTarget("bulk-close-dispatched");
         }
@@ -7592,11 +7671,18 @@ public class MainActivity extends Activity {
     }
 
     private String promptComposerTargetKey() {
-        if (hasStableWindowId(currentPhoneWindowId)) {
-            return currentPhoneWindowId.trim();
+        // WHY: prompt drafts and Send must bind to the terminal the APK is
+        // visibly rendering. `/active` polling can drift to another tmux window
+        // before the first typed character, so using process-global active first
+        // can paste a new phone prompt into the wrong session.
+        if (hasStableWindowId(captureRendererWindowTargetKey)) {
+            return captureRendererWindowTargetKey.trim();
         }
         if (hasStableWindowId(selectedPhoneWindowId)) {
             return selectedPhoneWindowId.trim();
+        }
+        if (hasStableWindowId(currentPhoneWindowId)) {
+            return currentPhoneWindowId.trim();
         }
         return "unknown:" + terminalModeGeneration;
     }
@@ -9129,6 +9215,7 @@ public class MainActivity extends Activity {
         if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT || !hasStableWindowId(targetKey)) {
             return;
         }
+        captureRendererWindowTargetKey = targetKey.trim();
         // WHY: the title strip and toolbar already remember the selected stable
         // tmux `@windowId`, but the read-only renderer used to keep fetching the
         // process-global active window when its URL had no windowId. If another

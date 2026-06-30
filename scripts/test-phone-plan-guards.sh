@@ -6,6 +6,7 @@ MAIN="$ROOT/app/src/main/java/com/kaleeb/wezterm/MainActivity.java"
 MANIFEST="$ROOT/app/src/main/AndroidManifest.xml"
 CONTROL_SERVER="${PHONE_CONTROL_SERVER:-$HOME/.local/bin/phone-terminal-control-server}"
 MANTIS_TITLE_COMMON="${MANTIS_TITLE_COMMON:-$HOME/.local/bin/mantis_title_common.py}"
+MANTIS_TITLE_SYNC="${MANTIS_TITLE_SYNC:-$HOME/.local/bin/mantis-title-sync}"
 MANTIS_CONTROL_SERVER="${MANTIS_CONTROL_SERVER:-$HOME/.local/bin/mantis-phone-control-server}"
 MANTIS_OLD_SESSIONS_PICKER="${MANTIS_OLD_SESSIONS_PICKER:-$HOME/.local/bin/mantis-old-sessions-picker}"
 PHONE_TERMINAL="${PHONE_TERMINAL:-$HOME/.local/bin/phone-terminal}"
@@ -164,9 +165,13 @@ require "$MAIN" 'String selectPath = "/select-live?fast=1&windowId=" + urlEncode
 require "$MAIN" 'the real-phone Old Sessions proof opened a resumed tmux' "Old Sessions Resume WHY comment must preserve the failed proof"
 require "$MAIN" 'shouldOpenTranscriptReader' "Active/Old row opens must honor the control-server transcript reader recommendation for restored Codex panes"
 require "$MAIN" 'openTranscriptReaderAfterSelect' "APK must open the generated JSONL reader when a selected Codex pane looks like a fresh restored shell"
+require "$MAIN" 'reason + "-reader-required"' "Old/Continue reader-required payloads must open transcript recovery before the generic resume error toast"
+require "$MAIN" 'Treat a reader-required payload as the recovery path' "Old/Continue reader-required WHY comment must preserve the OAuth empty-shell root cause"
 require "$MAIN" '"/read-session?windowId=" + urlEncode(sourceWindowId)' "transcript reader opens must target the stable source @windowId, not whichever pane is active"
 require "$MAIN" 'rememberReaderReturnFromPayload(payload, reason)' "Bottom/Start must return reader display ownership back to the source session before typing"
-require "$MAIN" 'selected target is `READ @source...`' "reader/live-return WHY comment must preserve why Send/Close ownership must return to source"
+require "$MAIN" 'reader helper is not the canonical selected target' "reader/live-return WHY comment must preserve that READ helper panes must not become the selected source"
+require "$MAIN" 'rememberSelectedPhoneWindow(index, sourceWindowId, sourceTitle, reason + "-reader-source-control")' "reader-required APK fallback must keep the source @windowId as the selected control target"
+require_absent "$MAIN" 'rememberSelectedPhoneWindow(index, readerWindowId, sourceTitle, reason + "-reader-display")' "reader-required APK fallback must not promote READ helper panes into selected control identity"
 require "$MAIN" 'private long passiveSwitchXtermSettleGeneration = 0;' "passive Active-switch xterm settle must have its own generation"
 require "$MAIN" 'keepPassiveSwitchXtermSettleAlive(reason);' "Active switch must start the independent passive xterm settle train"
 require "$MAIN" 'reason + "-passive-switch-immediate"' "passive Active-switch settle must install immediately before delayed callbacks can be replaced"
@@ -520,11 +525,14 @@ if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ];
     require "$INSTALL_PAGE" 'two-row toolbar tap feedback' "install page must mention visible tap feedback"
     require "$INSTALL_PAGE" 'safe control retry' "install page must mention bounded control retry"
     require "$INSTALL_PAGE" 'lightweight tmux touch-scroll gestures' "install page must mention the low-latency touch-scroll fix"
-    require "$INSTALL_PAGE" 'native composer typing' "install page must mention the native composer typing fix"
-    require "$INSTALL_PAGE" 'full multi-word clipboard paste' "install page must mention full-text Copy/Paste proof"
-    require "$INSTALL_PAGE" 'direct Bottom button' "install page must mention the direct bottom button"
-    require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
+	require "$INSTALL_PAGE" 'native composer typing' "install page must mention the native composer typing fix"
+	require "$INSTALL_PAGE" 'full multi-word clipboard paste' "install page must mention full-text Copy/Paste proof"
+	require "$INSTALL_PAGE" 'direct Bottom button' "install page must mention the direct bottom button"
+	require "$INSTALL_PAGE" 'zoomed true-bottom viewer reach' "install page must mention the zoomed bottom/full-area fix"
 fi
+require "$MAIN" 'preventCopyPasteToolbarClipping(copyPasteButton);' "APK bottom toolbar must protect Copy/Paste from one-line clipping"
+require "$MAIN" 'button.setText("Copy\nPaste");' "APK Copy/Paste toolbar label must render as two full words instead of clipped single-line text"
+require "$MAIN" 'button.setMaxLines(2);' "APK Copy/Paste toolbar label must allow the protected two-line layout"
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
     require "$INSTALL_INDEX" 'WEzterm v2.96 Install' "install redirect page must not point users at a stale version label"
 fi
@@ -1004,6 +1012,14 @@ if [ -f "$MANTIS_CONTROL_SERVER" ]; then
     require "$MANTIS_CONTROL_SERVER" 'run_tmux("send-keys", "-t", target, "-l", "\x1b[3~")' "Mantis phone control server must send forward Delete as one literal ESC [ 3 ~ sequence"
     require "$MANTIS_CONTROL_SERVER" 'self.state.live_bottom_fast(window_id, trim_tail=trim_tail)' "Mantis live-bottom route must pass stable windowId through to the server method"
     require "$MANTIS_CONTROL_SERVER" 'self.live_bottom_fast(window_id=window_id)' "Mantis select-live must run Bottom-core on the selected stable windowId"
+    require "$MANTIS_CONTROL_SERVER" 'function shouldOpenTranscriptReaderPayload(payload)' "web explicit reader paths must still honor transcript-reader recovery payloads"
+    require "$MANTIS_CONTROL_SERVER" '/select-live?fast=1&windowId=${encodeURIComponent(w.windowId)}' "web Active must use select-live instead of raw select so restored shells stay keyed to source @windowId"
+    require "$MANTIS_CONTROL_SERVER" '"transcriptReaderRecommended": False' "server must not ask default Active/Workspace clients to replace live source rows with READ helpers"
+    require "$MANTIS_CONTROL_SERVER" 'reader fallback displays a helper, but the selected control target remains the source @windowId' "web reader fallback must not make READ helper windows canonical"
+    require "$MANTIS_CONTROL_SERVER" 'rememberSelectedWindow({windowId:sourceWindowId,index:-1,title:title,displayTitle:title})' "web reader fallback must keep the source @windowId as selected control target"
+    require_absent "$MANTIS_CONTROL_SERVER" 'rememberSelectedWindow({windowId:readerWindowId' "web reader fallback must not promote READ helper windows into selected control identity"
+    require "$MANTIS_CONTROL_SERVER" '"transcriptReaderAvailable": active_inline_transcript' "Workspace Load must expose transcript recovery as source-window inline state"
+    require "$MANTIS_CONTROL_SERVER" 'error.payload=payload' "web Old/Continue must preserve 409 reader-required payloads instead of losing them as generic errors"
     require "$MANTIS_CONTROL_SERVER" 'def phone_client_size(self):' "Mantis select-live must know the real phone client size"
     require "$MANTIS_CONTROL_SERVER" 'rc, output, _ = run_tmux_optional(' "Mantis phone-size helper must unpack run_tmux_optional without 500s"
     require "$MANTIS_CONTROL_SERVER" '"list-clients",' "Mantis phone-size helper must read attached phone clients instead of shell dimensions"
@@ -1028,6 +1044,19 @@ if [ -f "$MANTIS_CONTROL_SERVER" ]; then
     require "$MANTIS_CONTROL_SERVER" 'editing the native composer draft' "Mantis phone control server send-key WHY comment must preserve typing/composer boundary"
     require "$MANTIS_CONTROL_SERVER" 'elif parsed.path == "/send-key":' "Mantis phone control server must route send-key"
     require "$MANTIS_CONTROL_SERVER" '"/active?readOnly=1"' "Mantis website remote status polling must not resize shared desktop tmux windows"
+    require "$MANTIS_CONTROL_SERVER" 'def inline_transcript_render_frame(self, transcript_reader, requested_rows, requested_cols):' "Mantis renderer must show recovered JSONL transcript inline on the source live window"
+    require "$MANTIS_CONTROL_SERVER" '"transcriptInline": True' "Mantis inline transcript frames must be explicit in /terminal-frame payloads"
+    require "$MANTIS_CONTROL_SERVER" 'def codex_live_pane_has_usable_prompt(self, visible, codex_info=None):' "Mantis transcript recovery must first classify resumed Codex prompts that are usable live panes"
+    require "$MANTIS_CONTROL_SERVER" 'The transcript is useful context, but making it' "Mantis usable-prompt WHY comment must preserve the dead transcript screen root cause"
+    require "$MANTIS_CONTROL_SERVER" 'live-resume-prompt-usable' "Mantis transcript recovery must not replace a usable resumed Codex prompt with a dead transcript surface"
+    require "$MANTIS_CONTROL_SERVER" 'def strip_codex_transcript_pager_history_for_live_prompt(self, payload):' "Mantis renderer must strip stale Codex transcript-pager history from usable live prompts"
+    require "$MANTIS_CONTROL_SERVER" 'not the canonical interaction target' "Mantis renderer pager-strip WHY comment must preserve the live-prompt owner layer"
+    require "$MANTIS_CONTROL_SERVER" '"livePaneHasUsablePrompt": usable_prompt' "Mantis transcript recovery must expose whether a resumed prompt stayed the live interaction target"
+    require "$MANTIS_CONTROL_SERVER" '"livePaneHasStaleAuth": stale_auth' "Mantis transcript recovery must keep stale-auth panes out of the usable-live path"
+    require "$MANTIS_CONTROL_SERVER" '"transcriptAvailable": bool(jsonl.get("hasTranscriptContent"))' "Mantis transcript recovery must keep transcript availability separate from live interaction usability"
+    require "$MANTIS_CONTROL_SERVER" 'Keep the live pane selected so typing' "Mantis select-live must keep source @windowId selected instead of opening READ helper tabs"
+    require "$MANTIS_CONTROL_SERVER" '"inlineTranscriptRecommended": inline_transcript' "Mantis select-live must advertise inline transcript recovery without reader navigation"
+    require "$MANTIS_CONTROL_SERVER" 'flat_window = {' "Mantis /active read-only payload must mirror selected window fields at top level for APK compatibility"
     require "$MANTIS_CONTROL_SERVER" 'function targetPath(path,options={})' "Mantis website remote controls must build stable selected-window request paths"
     require "$MANTIS_CONTROL_SERVER" 'async function openNewSession()' "Mantis website remote New must select the returned stable window before typing"
     require "$MANTIS_CONTROL_SERVER" 'prevents Start/Paste from targeting a new tab while the user is still looking at an old one' "Mantis website remote New WHY comment must preserve the visible-target drift root cause"
@@ -1042,6 +1071,9 @@ if [ -f "$MANTIS_CONTROL_SERVER" ]; then
     require "$MANTIS_CONTROL_SERVER" 'def read_title_status_cache' "Mantis light tabs must keep a cheap cached status reader"
     require "$MANTIS_CONTROL_SERVER" 'def light_tab_status' "Mantis light tabs must normalize cached status dots for Android"
     require "$MANTIS_CONTROL_SERVER" '"working": "running"' "Mantis cached Working status must map to Android's green running dot"
+    require "$MANTIS_CONTROL_SERVER" 'statusTone' "Mantis light tabs must send a separate visual tone for healthy Ready rows"
+    require "$MANTIS_CONTROL_SERVER" '`status=waiting` still means "Ready"' "Mantis status tone WHY comment must preserve Ready text while avoiding warning-yellow"
+    require "$MANTIS_CONTROL_SERVER" '`statusTone=healthy`' "Mantis display rows must mark returned LLM sessions healthy instead of needs-attention yellow"
     require "$MANTIS_CONTROL_SERVER" 'Cached title-sync status' "Mantis light tabs must not flatten Active rows to fake Ready statuses"
     require_absent "$MANTIS_CONTROL_SERVER" 'Fast active picker' "Mantis light tabs must not hardcode every Active row to grey Ready"
     require "$MANTIS_CONTROL_SERVER" 'refreshQueued=false' "Mantis capture renderer must queue a follow-up repaint when a frame fetch is already in flight"
@@ -1087,7 +1119,49 @@ require "$MAIN" 'captureRendererGeometryOnlyReturnScript("fit-"' "APK passive fi
 require "$MAIN" 'private void refreshCaptureRendererPulse' "APK touch-scroll pulses must use a coalesced capture renderer refresh path"
 require "$MAIN" 'refreshIfIdle' "APK touch-scroll pulse path must preserve smooth scroll by avoiding stacked renderer refreshes"
 require "$MAIN" 'refreshCaptureRendererForComposerTransition("composer-hide")' "composer hide must not run xterm fit during capture-renderer Send/tap transitions"
-require "$MAIN" 'refreshCaptureRendererForComposerTransition(reason + "-post-send")' "post-Send settle must use capture-renderer idle pulses without xterm layout churn"
+require "$MAIN" 'refreshCaptureRendererForPostSendTransition(reason + "-post-send", generation, touchGeneration)' "post-Send settle must use guarded capture-renderer idle pulses without xterm layout churn"
+require "$MAIN" 'Post-Send settle is' "post-Send settle WHY comment must preserve the renderer-only no-hidden-live-bottom contract"
+python3 - "$MAIN" <<'PY'
+import pathlib
+import sys
+
+source = pathlib.Path(sys.argv[1]).read_text()
+start = source.index("private void settleLiveBottomAfterSend")
+end = source.index("private boolean shouldRunPostSendRendererSettle", start)
+body = source[start:end]
+if 'getJsonWithRetry(appendStableWindowQuery("/live-bottom")' in body:
+    print(
+        "Phone plan regression guard failed: post-Send settle must not start a second delayed /live-bottom request",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+for required in (
+    'refreshCaptureRendererForPostSendTransition',
+    'touchGeneration = terminalTouchGestureGeneration',
+    'result=renderer-only',
+):
+    if required not in body:
+        print(
+            f"Phone plan regression guard failed: post-Send renderer-only settle is missing {required!r}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+helper_start = source.index("private boolean shouldRunPostSendRendererSettle", end)
+helper_end = source.index("private void refreshCaptureRendererForPostSendTransition", helper_start)
+helper_body = source[helper_start:helper_end]
+for required in (
+    'touchGeneration == terminalTouchGestureGeneration',
+    '!terminalHistoryViewportActive',
+    '!terminalHistoryDragActive',
+):
+    if required not in helper_body:
+        print(
+            f"Phone plan regression guard failed: post-Send settle must be canceled by newer reading/touch state ({required})",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+print("post-Send renderer-only settle guard passed")
+PY
 require "$MAIN" 'refreshCaptureRendererForImmediateBottom(reason + "-post-bottom")' "explicit Bottom no-composer path must avoid xterm fit/canvas settle churn"
 require_absent "$MAIN" 'fitTerminalToCurrentViewSoon("composer-" + reason)' "tap-to-type composer open must not run xterm fit during capture-renderer IME animation"
 require_absent "$MAIN" 'refreshCaptureRendererForLayoutChange("composer-" + reason)' "tap-to-type composer open must not stack full capture refreshes during IME animation"
@@ -1148,6 +1222,39 @@ require "$MAIN" 'submitSafePrompt(text, "")' "normal safe prompt submit must not
 require "$MAIN" 'successToast != null && !successToast.trim().isEmpty()' "empty success Toast must mean no popup, not fallback Prompt sent"
 require "$MAIN" 'restoreLiveForTyping("")' "tap-to-type must open the composer without a success Toast over the typing area"
 require "$MAIN" 'composer itself is the success signal' "tap-to-type WHY comment must preserve the no-Toast composer contract"
+require "$MAIN" 'HISTORY_READ_TAP_RESTORE_DEBOUNCE_MS' "read-mode tap-to-type restore must be debounced after a real history drag release"
+require "$MAIN" 'shouldKeepReadModeAfterRecentHistoryDragTap' "history read-mode taps immediately after scroll release must hold the read position"
+require "$MAIN" 'no-slop touch after release snapped' "history read-tap debounce WHY comment must preserve the bottom-loop regression"
+python3 - "$MAIN" <<'PY'
+import pathlib
+import sys
+
+source = pathlib.Path(sys.argv[1]).read_text()
+start = source.index("if (shouldRestoreTyping) {")
+end = source.index("// WHY: the composer itself is the success signal.", start)
+guard_body = source[start:end]
+if "shouldKeepReadModeAfterRecentHistoryDragTap()" not in guard_body:
+    print(
+        "Phone plan regression guard failed: read-mode tap-to-type must first check the post-scroll read-hold debounce",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+if "restoreLiveForTyping(\"\")" in guard_body:
+    print(
+        "Phone plan regression guard failed: post-scroll read-hold debounce must return before restoreLiveForTyping",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+release = source.index("if (action == MotionEvent.ACTION_UP && terminalHistoryDragActive)")
+release_end = source.index("clearPendingHistoryScroll();", release)
+if "lastHistoryDragReleaseAtMs = System.currentTimeMillis();" not in source[release:release_end]:
+    print(
+        "Phone plan regression guard failed: consumed history drag release must timestamp the read-hold debounce",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+print("post-scroll read-hold tap guard passed")
+PY
 require "$MAIN" 'Refresh is a visual transport repair' "Refresh WHY comment must preserve the no-Toast transport repair contract"
 require "$MAIN" 'normal session-open' "session-open WHY comment must protect against the Opened-title popup regression"
 require "$MAIN" 'success must stay silent' "session-open WHY comment must protect against the Opened-title popup regression"
@@ -1237,6 +1344,11 @@ require "$MAIN" 'logControlRequest(' "APK control requests must log safe stage/s
 require "$MAIN" 'bodyBytes=' "APK control logs must report response size without logging response bodies"
 require "$MAIN" 'stage=capture-target endpoint=renderer' "capture renderer target updates must be visible in logcat"
 require "$MAIN" 'result=" + safeLogToken(result)' "capture renderer target callbacks must log success/missing/error result"
+require "$MAIN" 'activeStatusMatchesVisibleTarget(window)' "toolbar status polling must not overwrite a selected capture-renderer target"
+require "$MAIN" 'visible-target-mismatch' "toolbar status polling must log title/body target mismatches"
+require "$MAIN" 'keep title and capture target atomic' "toolbar status mismatch WHY comment must preserve the title/body regression root"
+require "$MAIN" 'setCaptureRendererWindowTarget(targetKey, reason + "-retry", attempt + 1)' "capture renderer target updates must retry when JS is not ready"
+require "$MAIN" 'instead of reloading WebView or letting the title' "capture target retry WHY comment must preserve the no-reload title/body fix"
 require "$MAIN" 'hideDockedPromptComposerForNavigation("scroll-dialog")' "Scroll menu must hide composer/keyboard before opening"
 require "$MAIN" 'picker/dialog actions are navigation or reading, not prompt' "navigation composer-hide WHY comment must stay"
 require "$MAIN" 'getJsonWithRetry(path, payload ->' "Active Sessions switching must retry safe control connection drops"
@@ -1245,17 +1357,26 @@ require "$MAIN" 'statusDot.setOnClickListener(openSessionClick)' "Active row sta
 require "$MAIN" 'titleRow.setOnClickListener(openSessionClick)' "Active row title/status area must switch sessions with one tap after the detail line was removed"
 require "$MAIN" 'installPlainToolbarTapHandler(button)' "plain toolbar buttons must use the deterministic in-bounds tap handler"
 require "$MAIN" 'Do not install this on Scroll' "toolbar tap WHY comment must preserve protected long-press buttons"
+require "$MAIN" 'preserveServerDisplayOrder' "Active Sessions must preserve server display order instead of re-sorting rows locally"
+require "$MAIN" 'windowsInPayloadOrder(windows)' "Active Sessions grouped rows must render in the shared /tabs payload order"
+require "$MAIN" 'buried running/current fork lanes such as @34 below older' "Active Sessions order WHY comment must preserve the missing-current regression"
 require "$MAIN" 'active row stays in its state bucket without prefixing the visible title' "Active Sessions grouped mode must not pull Current above server action-state groups"
 require "$MAIN" 'titleText.setText(title);' "Active Sessions titles must start with the shared session summary, not Current/role prefixes"
 require "$MAIN" 'ACTIVE_SESSION_ROW_GAP_DP = 10' "Active Sessions rows must keep visible gaps between wrapped summary-plus-tail titles"
 require "$MAIN" 'ACTIVE_SESSION_SCROLL_BOTTOM_INSET_DP = 18' "Active Sessions scroll area must keep bottom inset so the last title is not clipped by the dialog shell"
 require "$MAIN" 'ACTIVE_SESSION_TITLE_LINE_SPACING_DP = 3' "Active Sessions wrapped titles must keep readable line spacing"
+require "$MAIN" 'ACTIVE_SESSION_TITLE_LONG_TEXT_MIN_CHARS = 34' "Active Sessions long-title fit guard must classify repeated title-cutoff rows"
+require "$MAIN" 'ACTIVE_SESSION_TITLE_LONG_MIN_LINES = 3' "Active Sessions long titles must reserve at least three visible wrapped lines"
 require "$MAIN" 'ACTIVE_SESSION_CLOSE_BUTTON_WIDTH_DP = 56' "Active Sessions Close column must stay compact so titles get usable width"
 require "$MAIN" 'ACTIVE_SESSION_CLOSE_BUTTON_MIN_HEIGHT_DP = 56' "Active Sessions Close button must keep a stable compact touch target"
 require "$MAIN" 'ACTIVE_SESSION_CLOSE_BUTTON_GAP_DP = 6' "Active Sessions Close gap must not starve title width"
 require "$MAIN" 'summary-plus-tail titles are deliberately longer now' "Active Sessions spacing WHY comment must protect the long-title row geometry"
 require "$MAIN" 'Active Sessions title cutoff keeps recurring' "Active Sessions title cutoff WHY comment must preserve the recurring regression context"
 require "$MAIN" 'titleText.setLineSpacing(dp(ACTIVE_SESSION_TITLE_LINE_SPACING_DP), 1.0f)' "Active Sessions title TextView must add line spacing instead of shortening titles"
+require "$MAIN" 'titleText.setMinLines(ACTIVE_SESSION_TITLE_LONG_MIN_LINES)' "Active Sessions long title rows must not stay stuck at the stale two-line cutoff"
+require "$MAIN" 'ensureWrappedTitleFit(titleText, visibleTitle, "active-session-row")' "Active Sessions must run the real measured wrapped-height guard"
+require "$MAIN" 'stage=title-fit' "Active Sessions title fit guard must leave safe runtime evidence"
+require "$MAIN" 'Responsiveness: Tit' "Active Sessions title fit WHY comment must preserve the exact repeat-regression screenshot text"
 require "$MAIN" 'openPanel.setMinimumWidth(0)' "Active Sessions title card must stay zero-min-width for weighted wrapping"
 require "$MAIN" 'titleRow.setMinimumWidth(0)' "Active Sessions title row must stay zero-min-width for weighted wrapping"
 require "$MAIN" 'titleText.setMinWidth(0)' "Active Sessions title TextView must be zero-min-width so weighted wrapping can work"
@@ -1263,6 +1384,32 @@ require "$MAIN" 'close.setMinWidth(0)' "Active Sessions Close button must not ke
 require "$MAIN" 'close.setMinimumWidth(0)' "Active Sessions Close button view minimum must stay disabled"
 require "$MAIN" 'dp(ACTIVE_SESSION_CLOSE_BUTTON_WIDTH_DP)' "Active Sessions row Close layout must use the compact width constant"
 require "$MAIN" 'dp(ACTIVE_SESSION_CLOSE_BUTTON_GAP_DP)' "Active Sessions row Close layout must use the compact gap constant"
+require "$MAIN" 'TITLE_STRIP_LONG_TEXT_MIN_CHARS = 42' "selected title strip must classify long titles for measured fit"
+require "$MAIN" 'ensureSessionTitleStripFitSoon(display)' "selected title strip must run the measured wrapped-height guard after text changes"
+require "$MAIN" 'ensureWrappedTitleFit(sessionTitleStrip, display, "session-title-strip")' "selected title strip measured fit must be protected"
+require "$MAIN" 'cachedActiveSessionsPayload' "Active Sessions must keep a last-good light payload for instant reopen"
+require "$MAIN" 'showActiveSessionsDialog(cachedActiveSessionsPayload, "Active Sessions", true)' "Active Sessions must render the cached list immediately instead of waiting on /tabs"
+require "$MAIN" 'final boolean cachedDialogVisible = showedCachedDialog' "Active Sessions cache refresh must not interrupt an already visible cached picker"
+require "$MAIN" 'refreshActiveSessionsDialog(payload, "Active Sessions")' "Active Sessions must repaint the cached picker after a fresh /tabs payload"
+require "$MAIN" 'instant cached Active picker must not become the final visible' "Active Sessions cache refresh WHY comment must preserve the stale-row root fix"
+require "$MAIN" 'ACTIVE_SESSIONS_CACHE_MAX_AGE_MS = 5000' "Active Sessions cache must expire quickly so old dead rows cannot stay tappable"
+require "$MAIN" 'clearActiveSessionsCache("stale-cache")' "Active Sessions cache must clear expired row lists before showing the picker"
+require "$MAIN" 'clearActiveSessionsCache("select-live-failed")' "Active Sessions must clear cached rows when a selected row fails server validation"
+require "$CONTROL_SERVER" 'terminal-frame-singleflight' "terminal-frame must keep visual-only singleflight caching so renderer polls do not starve Active/Old/session repair endpoints"
+require "$CONTROL_SERVER" 'Cache only stable @windowId viewport renders' "terminal-frame cache WHY comment must preserve visual-cache scope and avoid stale session truth"
+require_absent "$CONTROL_SERVER" 'return self.state.cached_terminal_frame_response(("current"' "terminal-frame must not cache generic current-session frames"
+require "$MAIN" 'reason=switch-in-flight' "Active row taps must log/acknowledge in-flight suppression instead of silently doing nothing"
+require "$MAIN" 'stage=control-local' "instant controls must leave safe local-response log evidence"
+require "$MAIN" 'showToolbarControlPending(label)' "toolbar buttons must visibly acknowledge locally before backend confirmation"
+require "$MAIN" 'showToolbarControlPending("Close session")' "confirmed bottom Close must visibly acknowledge locally before /close returns"
+require "$MAIN" 'showToolbarControlPending("Close selected")' "confirmed Active Sessions bulk close must visibly acknowledge locally before validation/close returns"
+require "$MAIN" 'window.optString("statusTone", "")' "APK Active/toolbar dots must consume server statusTone"
+require "$MAIN" 'window.optBoolean("active", true)' "APK toolbar status dot must treat /active as the current lane while still accepting active=false payloads"
+require "$MAIN" 'Active Sessions dots show live session state, not selected-tab' "APK status dot WHY comment must preserve working-green semantics"
+require "$MAIN" 'background Codex pane that is still Working must stay' "APK status dot WHY comment must preserve non-selected Working rows as green"
+require "$MAIN" 'returned Ready/healthy panes are yellow' "APK status dot WHY comment must preserve Ready/healthy rows as yellow"
+require_absent "$MAIN" 'activeSession && working' "APK status dot must not make non-selected Working rows yellow again"
+require_absent "$MAIN" 'activeSession && healthy' "APK status dot must not make every selected Ready/healthy row green again"
 require "$MAIN" 'row height grow when a title needs more lines' "Active Sessions title/button WHY comment must preserve vertical growth as the clipping fix"
 require "$MAIN" 'rowParams.setMargins(0, dp(4), 0, dp(ACTIVE_SESSION_ROW_GAP_DP))' "Active Sessions row cards must keep vertical separation between titles"
 require "$MAIN" 'activeWindowFromPayload(payload)' "Active Sessions must derive the current row from the server payload"
@@ -1294,6 +1441,12 @@ require "$MAIN" 'Closed " + closedCount + " of " + totalCount' "bulk Close must 
 require "$MAIN" 'clearBulkCloseLocalState(target.windowId)' "bulk Close must clear per-window draft/upload/close state for closed targets"
 require "$MAIN" 'selectedPhoneWindowId' "main Close must remember the selected phone tmux window id"
 require "$MAIN" 'hasRememberedCloseTarget()' "main Close must prefer the selected stable window before querying /active"
+require "$MAIN" 'private static final class SelectedPhoneWindowSnapshot' "instant Active row switching must snapshot the prior target for rollback"
+require "$MAIN" 'SelectedPhoneWindowSnapshot previousSelection = selectedPhoneWindowSnapshot();' "instant Active row switching must capture rollback state before optimistic selection"
+require "$MAIN" 'rememberSelectedPhoneWindow(index, windowId, title, "select-live-local")' "Active row selection must update the visible selected target before /select-live returns"
+require "$MAIN" 'stage=control-local control=select-live' "Active row selection must leave safe local-first log evidence"
+require "$MAIN" 'restoreSelectedPhoneWindowSnapshot(previousSelection, "select-live-failed")' "Active row failure must roll back the optimistic selected target"
+require "$MAIN" 'restoreSelectedPhoneWindowSnapshot(previousSelection, "select-live-unreachable")' "Active row unreachable failure must roll back the optimistic selected target"
 require "$MAIN" 'rememberSelectedPhoneWindow(index, windowId, title, "select-live")' "Active row selection must store the exact stable close target"
 require "$MAIN" 'Close target missing; open Active and pick the session first' "main Close must refuse unqualified/raw close targets"
 require "$MAIN" 'raw `/close?fast=1`' "main Close WHY comment must document the wrong-session close regression"
@@ -1338,6 +1491,8 @@ require "$MAIN" 'TERMINAL_LONG_PRESS_COPY_MS = 700' "terminal long-press copy mu
 require "$MAIN" 'scheduleTerminalLongPressCopy(event)' "terminal ACTION_DOWN must arm long-press copy"
 require "$MAIN" 'cancelPendingTerminalLongPressCopy("move-past-slop")' "terminal movement must cancel long-press copy before scroll ownership changes"
 require "$MAIN" 'cancelPendingTerminalLongPressCopy("multi-touch")' "terminal pinch gestures must cancel long-press copy"
+require "$MAIN" 'shouldPreserveTerminalLongPressCopyWindow(absDx, absDy)' "terminal long-press copy must tolerate normal finger jitter during the hold window"
+require "$MAIN" 'terminalLongPressCopyCancelSlopPx()' "terminal long-press copy must use Android touch slop instead of the tiny reading threshold"
 require "$MAIN" 'showSelectableTerminalTextSheet();' "terminal long-press must open the native selectable terminal text sheet"
 require "$MAIN" 'private void showSelectableTerminalTextSheet()' "terminal long-press selectable sheet must stay implemented"
 require "$MAIN" 'terminalText.setTextIsSelectable(true)' "terminal long-press sheet must allow normal Android text selection handles"
@@ -1363,6 +1518,9 @@ require "$MAIN" 'toolbarNavigationButton("Old"' "Old Sessions toolbar navigation
 require "$MAIN" 'toolbarNavigationButton("Workspace", v -> showWorkspaces())' "Workspace toolbar navigation must expose the shared workspace picker"
 require "$MAIN" 'getJsonWithRetry("/workspace-list?limit=40"' "Workspace picker must use the shared server snapshot list"
 require "$MAIN" '"/workspace-restore?yes=1&path="' "Workspace Load must call the shared restore endpoint"
+require "$MANTIS_CONTROL_SERVER" 'run_tmux_optional("select-window", "-t", f"{self.active_target_session()}:{active_target}")' "Workspace restore must select the active target in the phone/web control session, not bare @windowId"
+require "$MANTIS_CONTROL_SERVER" '"inlineTranscriptRecommended": active_inline_transcript' "Workspace restore must keep restored title-only Codex panes on source @windowId with inline transcript recovery"
+require "$MANTIS_CONTROL_SERVER" '"bottomAction": "inline-transcript" if active_inline_transcript else ""' "Workspace restore must not navigate restored prompt-only panes into READ helper tabs"
 require "$MAIN" 'Name & Save' "Workspace Save must be name-first instead of an anonymous manual save"
 require "$MAIN" 'showSaveWorkspaceNameDialog' "Workspace Save must prompt for a readable workspace name"
 require "$MAIN" '"/workspace-save?reason="' "Workspace Save must pass the readable name through the shared save endpoint"
@@ -1438,11 +1596,13 @@ source = pathlib.Path(sys.argv[1]).read_text()
 start = source.index("private String promptComposerTargetKey()")
 end = source.index("private void rememberReaderSourceWindow", start)
 body = source[start:end]
-renderer = body.index("captureRendererWindowTargetKey")
-current = body.index("currentPhoneWindowId")
-if renderer > current:
+renderer = body.index("if (hasStableWindowId(captureRendererWindowTargetKey))")
+selected = body.index("if (hasStableWindowId(selectedPhoneWindowId))")
+webview = body.index("String webViewWindowId = currentWebViewWindowIdTargetKey();")
+current = body.index("if (hasStableWindowId(currentPhoneWindowId))")
+if not (renderer < selected < webview < current):
     print(
-        "Phone plan regression guard failed: promptComposerTargetKey must prefer the visible capture-renderer target before currentPhoneWindowId",
+        "Phone plan regression guard failed: promptComposerTargetKey must prefer capture, selected, then WebView before currentPhoneWindowId",
         file=sys.stderr,
     )
     sys.exit(1)
@@ -1468,6 +1628,47 @@ require "$MAIN" 'Send must paste the complete visible native composer' "Send WHY
 require "$MAIN" 'EditorInfo.IME_ACTION_SEND' "native composer keyboard Enter/action must be configured as Send"
 require "$MAIN" 'KEYCODE_ENTER' "native composer hardware Enter must be intercepted"
 require "$MAIN" 'Phone Enter must behave like the visible' "Enter WHY comment must preserve the direct Enter-equals-Send mapping"
+require "$MAIN" 'empty native composer Send/Enter confirms terminal menus' "empty native-composer Send/Enter must confirm terminal numbered menus"
+python3 - "$MAIN" <<'PY'
+import pathlib
+import sys
+
+source = pathlib.Path(sys.argv[1]).read_text()
+submit_start = source.index("private void submitDockedPrompt()")
+submit_end = source.index("private void hideDockedPromptComposer", submit_start)
+submit_body = source[submit_start:submit_end]
+for required in (
+    "text.trim().length() == 0",
+    "empty native composer Send/Enter confirms terminal menus",
+    "sendEnterToTerminal();",
+):
+    if required not in submit_body:
+        print(
+            f"Phone plan regression guard failed: empty native-composer Send/Enter must route through terminal Enter ({required})",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+start_start = source.index("private void startCurrentTask()")
+start_end = source.index("private void stopCurrentTask()", start_start)
+start_body = source[start_start:start_end]
+for required in (
+    "promptComposerInput.getText().toString().trim().length() == 0",
+    "sendEnterToTerminal();",
+):
+    if required not in start_body:
+        print(
+            f"Phone plan regression guard failed: empty Start/Send composer path must confirm terminal menus ({required})",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+if "hideDockedPromptComposer(true, false);" in start_body:
+    print(
+        "Phone plan regression guard failed: empty Start/Send composer path must not hide the composer without pressing terminal Enter",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+print("empty-composer terminal-confirm guard passed")
+PY
 require "$MAIN" 'sendEmptyComposerBackspaceToTerminal' "empty native-composer Backspace must recover text that already reached tmux"
 require "$MAIN" 'sendEmptyComposerDeleteToTerminal' "empty native-composer forward Delete must recover stale text that already reached tmux"
 require "$MAIN" 'KEYCODE_FORWARD_DEL' "native composer must intercept hardware/Gboard forward Delete when the visible composer is empty"
@@ -1554,7 +1755,9 @@ require "$MAIN" 'HISTORY_DRAG_FLING_MOVE_REPEATS = 10' "full flick move repeats 
 require "$MAIN" 'HISTORY_DRAG_RELEASE_MIN_LINES = 2f' "release fling must start from a low enough distance for real phone flicks"
 require "$MAIN" 'HISTORY_DRAG_FAST_DISTANCE_LINES = 3f' "fast distance gate must stay explicit"
 require "$MAIN" 'HISTORY_DRAG_FLING_DISTANCE_LINES = 7f' "fling distance gate must stay explicit"
-require "$MAIN" 'TOUCH_SCROLL_LIVE_BOTTOM_SNAP_LINES = 3' "near-bottom lineDown must use a conservative edge band so it cannot snap early"
+require "$MAIN" 'TOUCH_SCROLL_LIVE_BOTTOM_SNAP_LINES = 3' "near-bottom lineDown must preserve the conservative release-only edge band"
+require "$MAIN" 'boolean releaseOnlyNearBottom = !terminalHistoryDragActive && isNearTmuxLiveBottom(payload);' "near-bottom lineDown must be release-only so one-finger down-scroll can reach the real bottom"
+require "$MAIN" 'return scrollPosition == 0;' "active down-scroll must not treat the near-bottom band as the real live bottom"
 require "$MAIN" 'HISTORY_DRAG_FAST_VELOCITY_PX_PER_SEC = 1200f' "slow deliberate read drags must not be promoted into fast batches"
 require "$MAIN" 'HISTORY_DRAG_FLING_VELOCITY_PX_PER_SEC = 2400f' "true flick momentum must require an explicit high-velocity gate"
 require "$MAIN" 'HISTORY_DRAG_RELEASE_MOMENTUM_ENABLED = false' "post-release one-finger momentum must stay disabled so finger-up is a hard stop"
@@ -1563,7 +1766,7 @@ require "$MAIN" 'APK-SCROLL-POST-RELEASE-SNAP-2346' "release momentum WHY commen
 require "$MAIN" 'finger-up is now a hard stop' "release handling must preserve the exact finger-up stop contract"
 require "$MAIN" 'HISTORY_DRAG_READING_MOVE_REPEATS = 1' "slow one-finger reading drags must remain line-sized"
 require "$MAIN" 'HISTORY_DRAG_RELEASE_FLICK_MAX_MS = 360' "release momentum must stay limited to quick flicks"
-require "$MAIN" 'HISTORY_DRAG_LONG_PRESS_CANCEL_DP = 2' "moving slow drags must cancel long-press copy before text selection opens"
+require "$MAIN" 'HISTORY_DRAG_LONG_PRESS_CANCEL_DP = 2' "slow reading drags must keep the tiny post-hold threshold"
 require "$MAIN" 'HISTORY_DRAG_VISUAL_REVERSAL_SLOP_DP = 2' "visual reversal must use only a tiny jitter guard, not a row-sized dead zone"
 require "$MAIN" 'HISTORY_DRAG_DIRECTION_REVERSAL_MIN_LINES = 2f' "slow drag jitter must not flip direction on tiny opposite samples"
 require "$MAIN" 'terminalTouchGestureGeneration' "touch scrolling must generation-cancel stale delayed responses"
@@ -1619,12 +1822,74 @@ require "$MAIN" 'stage=touch-scroll-dispatch endpoint=/touch-scroll' "APK touch-
 require "$MAIN" 'stage=touch-scroll-response endpoint=/touch-scroll' "APK touch-scroll must log safe response evidence for live-bottom/copy-mode proof"
 require "$MAIN" 'visibleTerminalTargetKey()' "visible terminal scroll target helper must exist"
 require "$MAIN" 'Prefer the selected/visible window for' "visible target WHY comment must preserve the target-drift root cause"
+python3 - "$MAIN" <<'PY'
+import pathlib
+import sys
+
+source = pathlib.Path(sys.argv[1]).read_text()
+start = source.index("private String visibleTerminalTargetKey()")
+end = source.index("private String currentWebViewWindowIdTargetKey()", start)
+body = source[start:end]
+selected = body.index("if (hasStableWindowId(selectedPhoneWindowId))")
+renderer = body.index("if (hasStableWindowId(captureRendererWindowTargetKey))")
+webview = body.index("String webViewWindowId = currentWebViewWindowIdTargetKey();")
+current = body.index("if (hasStableWindowId(currentPhoneWindowId))")
+if not (selected < renderer < webview < current):
+    print(
+        "Phone plan regression guard failed: visibleTerminalTargetKey must prefer selected, capture, then WebView before currentPhoneWindowId",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+if "capture/WebView targets ahead of process-global" not in body or "slow drags, Bottom" not in body:
+    print(
+        "Phone plan regression guard failed: visibleTerminalTargetKey WHY comment must preserve the active-drift slow-drag regression",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+print("visible terminal target order guard passed")
+PY
+python3 - "$MAIN" <<'PY'
+import pathlib
+import sys
+
+source = pathlib.Path(sys.argv[1]).read_text()
+start = source.index("private void selectTabForTyping(int index, String windowId, String title, AlertDialog[] dialogRef)")
+end = source.index("private void finishSelectedTabOpen(", start)
+body = source[start:end]
+local = body.index('rememberSelectedPhoneWindow(index, windowId, title, "select-live-local")')
+request = body.index("getJsonWithRetry(path")
+confirm = body.index('rememberSelectedPhoneWindow(index, windowId, title, "select-live")')
+if not (local < request < confirm):
+    print(
+        "Phone plan regression guard failed: Active row selected target must update locally before /select-live and confirm after response",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+if "visible selected title and capture" not in body or "roll back to the snapshot" not in body:
+    print(
+        "Phone plan regression guard failed: Active row local-first WHY comment must preserve the instant-switch regression context",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+print("instant active row local-first order guard passed")
+PY
 require "$MAIN" 'releaseFlingStarted = dispatchHistoryReleaseFling(event)' "release handling must distinguish the disabled release-momentum guard from finger-down acceleration"
 require "$MAIN" 'stale in-flight `/touch-scroll` response drain one more row' "slow release WHY comment must preserve the random release-jump root cause"
 require "$MAIN" 'terminalTouchGestureGeneration++;' "slow release must generation-cancel stale post-lift touch-scroll responses"
+require "$MAIN" 'releaseCaptureRendererTouchNudge("touch-scroll-release")' "slow release must hold the exact visual residual instead of clearing it after finger-up"
+require "$MAIN" 'private void releaseCaptureRendererTouchNudge(String reason)' "APK must expose a touch-nudge release helper for exact finger-up hold"
+require "$MAIN" 'ACTION_UP must stop command replay without erasing the exact' "touch-nudge release WHY comment must preserve the exact finger-up hold contract"
+require "$MAIN" 'renderer latches the release' "APK release helper must preserve the read-hold latch contract"
+require "$MAIN" 'releaseCaptureRendererTouchNudge("touch-start-history")' "new history touches must continue from the held release residual instead of clearing into a jump"
+require "$MAIN" 'clearCaptureRendererTouchNudge("touch-bottom")' "explicit touch-bottom recovery must clear held visual residual"
+require "$MAIN" 'clearCaptureRendererTouchNudge("live-input")' "explicit live input recovery must clear held visual residual"
 require "$MAIN" 'touchScrollReachedHistoryTop' "APK touch-scroll must recognize the tmux history-top edge"
 require "$MAIN" 'historySize=' "APK touch-scroll response log must expose history-size proof data"
 require "$MAIN" 'touch-scroll-top-edge' "APK top-edge touch scroll must have a distinct refresh/proof marker"
+require "$MAIN" 'refreshCaptureRendererTouchEdge("touch-scroll-bottom-edge")' "active down-scroll must force one renderer edge commit when tmux reaches exact live bottom"
+require "$MAIN" 'refreshCaptureRendererTouchEdge("touch-scroll-top-edge")' "active up-scroll must force one renderer edge commit when tmux reaches true history top"
+require "$MAIN" 'the user hits a visual wall above the real range' "touch edge commit WHY comment must preserve the top/bottom wall regression"
+require "$MAIN" 'same-direction/stale-frame gate in' "touch edge commit must not bypass the protected renderer stale-frame guard"
 require "$MAIN" 'top edge is also a real range boundary' "APK visual nudge guard must stop at the history-top range"
 require "$MAIN" 'scrollTerminalFromTouch(where, repeats, true, targetKey);' "disabled release fling path must still route through the stable target if a future plan explicitly re-enables it"
 require_absent "$MAIN" 'shouldRestoreLiveBottomFromRelease' "release fling must not signal live-bottom restore before the server reports tmux near-bottom"
@@ -1652,7 +1917,19 @@ require "$MAIN" 'Do not advance the row baseline or throttle clock here' "tiny r
 require "$MAIN" 'Clearing it on reversal snaps the text back' "direction reversal must preserve visual residual instead of snapping to committed rows"
 require "$MAIN" 'Committing every `/terminal-frame` row' "finger-down touch-scroll response must not repaint row steps"
 require "$MAIN" 'reason.startsWith("touch-scroll")' "touch-scroll frame pulses must be gated during active finger-down drag"
-require "$MAIN" 'move-intent-before-slop' "moving slow drags must cancel pending long-press copy before full tap slop"
+require "$MAIN" 'refreshCaptureRendererTouchCommit("touch-scroll-response")' "current touch-scroll responses must request one renderer commit so residual does not freeze at its cap"
+require "$MAIN" 'A current `/touch-scroll` response is different from a blind pulse' "touch-scroll response commit WHY comment must preserve the narrow owner distinction"
+require "$MAIN" 'private void refreshCaptureRendererTouchCommit(String reason)' "APK must expose a response-owned touch-scroll renderer commit helper"
+require "$MAIN" 'successful current `/touch-scroll` response is the safe handoff point' "APK response-owned commit helper must preserve why this is not a random pulse/constant tweak"
+require "$MAIN" 'move-intent-before-slop' "moving slow drags must cancel pending long-press copy after the hold tolerance is no longer plausible"
+require "$MAIN" 'boolean verticalReadingIntent = !preserveLongPressCopyWindow' "tiny vertical movement must not steal stationary long-press copy before Android touch slop"
+require "$MAIN" 'normal tap slop after copy-hold is no longer plausible' "sub-slop reading WHY comment must preserve copy-selection versus scroll ownership"
+require "$MAIN" 'platform-scaled touch slop' "copy-selection WHY comment must preserve the Android long-press jitter tolerance"
+require "$MAIN" 'copyHoldPreserved=' "terminal touch logs must expose when long-press selection was protected from jitter"
+require "$MAIN" 'terminalTouchExceededTapSlop = true;' "sub-slop reading intent must suppress tap-to-type on tiny vertical drags while preserving pure taps"
+require "$MAIN" 'y <= terminalTouchStartY + 0.5f' "live-bottom reverse visual nudge must not move above the bottom until the finger crosses the original bottom anchor"
+require "$MAIN" 'fake positive history nudge while tmux is still at' "live-bottom reverse nudge WHY comment must preserve the invisible bottom-section snap root cause"
+require "$MAIN" 'terminalLastTouchVisualNudgeY = terminalTouchStartY;' "live-bottom reverse nudge guard must reset to the original bottom anchor before entering history"
 require "$MAIN" 'TOUCH_SCROLL_RENDER_PULSE_MS = 16' "APK touch-scroll repaint pulse cadence must stay frame-rate bounded"
 require "$MAIN" 'TOUCH_SCROLL_RENDER_PULSE_WINDOW_MS = 850' "APK touch-scroll repaint pulse window must stay bounded"
 require "$MAIN" 'TOUCH_SCROLL_VISUAL_NUDGE_CLEAR_MS = 420' "APK touch-scroll visual nudge must stay bounded and temporary"
@@ -1756,6 +2033,19 @@ require "$MANTIS_CONTROL_SERVER" 'before-boundedSettle' "Mantis capture renderer
 require_absent "$MANTIS_CONTROL_SERVER" 'settleTouchScrollNudgeWithoutSignFlip' "Mantis capture renderer must not clamp row commits to zero and snap at live bottom"
 require "$MANTIS_CONTROL_SERVER" 'touchScrollNudgeActiveUntil' "Mantis capture renderer must keep a larger active finger-down visual residual cap"
 require "$MANTIS_CONTROL_SERVER" 'function touchScrollNudgeInProgress' "Mantis capture renderer must know when finger-down pixel motion owns the display"
+require "$MANTIS_CONTROL_SERVER" 'function touchScrollNudgeFingerActive' "Mantis capture renderer must distinguish active finger motion from held post-release residual"
+require "$MANTIS_CONTROL_SERVER" 'function releaseTouchScrollNudge' "Mantis capture renderer must expose post-release residual hold to the APK"
+require "$MANTIS_CONTROL_SERVER" "finger-up is the user's chosen reading position" "Mantis renderer WHY comment must preserve the no-snap finger-up hold contract"
+require "$MANTIS_CONTROL_SERVER" 'later live-output' "Mantis renderer release hold must cover live-output growth after finger-up"
+require "$MANTIS_CONTROL_SERVER" 'touchScrollNudgeHeldAfterRelease=true' "Mantis renderer must latch every touch-scroll release, not only nonzero residuals"
+require "$MANTIS_CONTROL_SERVER" 'after finger-up, positive history residual is the exact stopped' "Mantis renderer must keep positive post-release residual from clamping into a snap"
+require "$MANTIS_CONTROL_SERVER" 'touchScrollNudgeHeldAfterRelease' "Mantis renderer must remember released residuals across post-release frame refreshes"
+require_absent "$MANTIS_CONTROL_SERVER" 'touchScrollNudgeHeldAfterRelease&&Math.abs(touchScrollNudgePx)>=0.5' "Mantis renderer must not limit release hold to residual-only frames"
+require "$MANTIS_CONTROL_SERVER" 'held touch-scroll release frame' "Mantis renderer must skip frame swaps that would move text after ACTION_UP"
+require "$MANTIS_CONTROL_SERVER" 'nextWindowId!==selectedWindowId' "Mantis renderer must preserve release hold when toolbar status confirms the same target"
+require "$MANTIS_CONTROL_SERVER" 'toolbar status probes confirm the same selected target after' "Mantis renderer target setter WHY comment must preserve the same-target hold contract"
+require "$MANTIS_CONTROL_SERVER" 'return "target-same"' "Mantis renderer target setter must be idempotent for same-window status probes"
+require_absent "$MANTIS_CONTROL_SERVER" 'clearTouchScrollNudge();selectedWindowId=String(value||"").trim();postRefreshSoon();' "Mantis renderer must not clear release hold on same-target toolbar status probes"
 require "$MANTIS_CONTROL_SERVER" 'function clearTouchScrollNudgeWhenIdle' "Mantis capture renderer must not clear finger-following residual while ultra-slow movement is still active"
 require "$MANTIS_CONTROL_SERVER" 'ultra-slow finger drags can space MOVE nudges farther apart' "Mantis capture renderer WHY comment must preserve the ultra-slow no-snap timer guard"
 require "$MANTIS_CONTROL_SERVER" 'touchScrollNudgeClearTimer=setTimeout(clearTouchScrollNudgeWhenIdle,420)' "Mantis capture renderer clear timer must re-check the active touch window before clearing"
@@ -1768,8 +2058,35 @@ require "$MANTIS_CONTROL_SERVER" 'about 25% of the viewport' "Mantis renderer WH
 require "$MANTIS_CONTROL_SERVER" 'Math.floor(viewport.height*0.90)' "Mantis history/upward touch residual must not force server frame chunks every quarter-screen"
 require "$MANTIS_CONTROL_SERVER" 'cap*0.92' "Mantis active near-cap settle gate must stay late enough to avoid repeated quarter-screen chunks"
 require_absent "$MANTIS_CONTROL_SERVER" 'cap*0.72' "Mantis active near-cap settle gate must not regress to the old 25 percent viewport chunk trigger"
+require "$MANTIS_CONTROL_SERVER" 'const scaledValue=value/Math.max(0.32,desktopFitScale||1);' "Mantis renderer touch nudge must normalize Android visible pixels through the fixed-column scale"
+require "$MANTIS_CONTROL_SERVER" 'first live-bottom drag' "Mantis renderer WHY comment must preserve the bottom-summary first-scroll scale owner"
+require "$MANTIS_CONTROL_SERVER" 'screenStack.style.transform="none";' "Mantis renderer must not animate the terminal text stack with translate3d during touch scroll"
+require_absent "$MANTIS_CONTROL_SERVER" 'translate3d(0,' "Mantis renderer must not reintroduce per-frame 3D text transforms that blur/artifact on Android WebView"
 require "$MANTIS_CONTROL_SERVER" 'down-return has no pre-rendered row coverage below the capture' "Mantis renderer WHY comment must preserve the down-return black-section owner decision"
 require "$MANTIS_CONTROL_SERVER" 'Math.max(18,Math.min(48,Math.floor(lineHeight*1.15)))' "Mantis down-return active touch residual must stay near one line so it cannot expose large black lower sections"
+require "$MANTIS_CONTROL_SERVER" '_terminal_copy_mode_anchor' "Mantis renderer must freeze copy-mode read position while live output grows below it"
+require "$MANTIS_CONTROL_SERVER" 'jump over an invisible bottom' "Mantis renderer WHY comment must preserve the bottom-section boundary root cause"
+require "$MANTIS_CONTROL_SERVER" 'copy_mode_frame_lines = max(1, visible_bottom - copy_mode_start + 1)' "Mantis renderer must bound copy-mode frames to the frozen read-window bottom"
+require "$MANTIS_CONTROL_SERVER" 'visible_rows = wrapped[-requested_rows:]' "Mantis renderer must crop copy-mode chunks from the bottom after word wrapping"
+require_absent "$MANTIS_CONTROL_SERVER" 'visible_rows = wrapped[:requested_rows]' "Mantis renderer must not show the top of a taller copy-mode chunk"
+require "$MANTIS_CONTROL_SERVER" 'wrong-place refresh/blur' "Mantis renderer must preserve the atomic row-swap/top-offset WHY comment"
+require "$MANTIS_CONTROL_SERVER" 'the same animation frame' "Mantis renderer must apply residual offset atomically with the buffered frame swap"
+require "$MANTIS_CONTROL_SERVER" 'deferred unproven active-touch frame' "Mantis renderer must not commit stale terminal-frame rows during active one-finger drags"
+require "$MANTIS_CONTROL_SERVER" 'single-frame wrong-location flash and short multi-frame jitter' "Mantis renderer WHY comment must preserve the user-visible active-touch jitter root cause"
+require "$MANTIS_CONTROL_SERVER" 'settledTouchFrame=settleTouchScrollNudgeFromScrollPosition(nextScrollPosition)' "Mantis renderer must still allow proven same-direction tmux row commits during active touch"
+require "$MANTIS_CONTROL_SERVER" 'null -> positive scrollPosition as the initial' "Mantis renderer must let the first live-bottom-to-history frame through instead of creating an upward scroll ceiling"
+require "$MANTIS_CONTROL_SERVER" 'locked in' "Mantis renderer WHY comment must preserve the user-reported scroll ceiling regression"
+require "$MANTIS_CONTROL_SERVER" 'function refreshTouchScrollEdge' "Mantis renderer must expose a forced edge-refresh path for true top/live-bottom walls"
+require "$MANTIS_CONTROL_SERVER" 'refresh(true);' "Mantis touch edge refresh must bypass only the tiny-residual active-touch defer"
+require "$MANTIS_CONTROL_SERVER" 'applyRenderedFrame still enforces the same-direction' "Mantis touch edge refresh WHY comment must preserve the stale-frame guard dependency"
+require "$MANTIS_CONTROL_SERVER" 'function refreshTouchScrollCommit' "Mantis renderer must expose a response-owned active-touch commit path"
+require "$MANTIS_CONTROL_SERVER" 'the visual nudge can run into' "Mantis renderer response commit WHY comment must preserve the freeze/chunk root cause"
+require "$MANTIS_CONTROL_SERVER" 'applyRenderedFrame still rejects stale or wrong-direction active frames' "Mantis response-owned commit must still depend on the protected stale-frame gate"
+require "$MAIN" 'rememberPostReleaseTouchScrollCommitIfNeeded()' "APK down-return release must remember only the already-dispatched in-flight touch-scroll response"
+require "$MAIN" 'refreshCaptureRendererTouchReleaseCommit("touch-scroll-release-response")' "APK down-return release must paint exactly one proven post-release row commit without re-enabling momentum"
+require "$MANTIS_CONTROL_SERVER" 'function refreshTouchScrollReleaseCommit' "Mantis renderer must expose a one-shot held-release commit path"
+require "$MANTIS_CONTROL_SERVER" 'held unproven touch-scroll release commit' "Mantis renderer must reject unproven release frames instead of repainting blur"
+require "$MANTIS_CONTROL_SERVER" 'releaseCommitAllowed:touchScrollReleaseCommitAllowed' "Mantis renderer state must expose the release-commit latch for proof"
 require "$MAIN" 'Do not translate this' "WebView zoom must not be converted into tmux/font resize behavior"
 require "$MAIN" 'handleViewerZoomKey' "hardware/automation zoom keys must create a real WebView zoomed proof state"
 require "$MAIN" 'KEYCODE_ZOOM_IN' "zoom-in key must be wired to WebView zoom for real zoomed pan proof"
@@ -1931,6 +2248,9 @@ if [ -f "$CONTROL_SERVER" ]; then
     require "$CONTROL_SERVER" '"-c",' "tmux new-window must use an explicit start directory"
     require "$CONTROL_SERVER" 'cd " + shlex.quote(DEFAULT_NEW_SESSION_CWD)' "new sessions must cd into the desktop user root"
     require "$CONTROL_SERVER" 'def select_live(self, index=None, window_id=None):' "server must implement fast select+live restore"
+    require "$CONTROL_SERVER" 'selected-live-stale-window' "select-live must return a JSON stale-row blocker for dead cached Active rows"
+    require "$CONTROL_SERVER" 'stale-window-blocked' "select-live stale-row blocker must avoid selecting or bottom-restoring a dead @windowId"
+    require "$CONTROL_SERVER" 'last-good Active Sessions cache' "select-live stale-row WHY comment must preserve the cached picker failure root"
     require "$CONTROL_SERVER" 'def phone_client_size(self):' "legacy select-live must know the real phone client size"
     require "$CONTROL_SERVER" 'rc, output, _ = run_tmux_optional(' "legacy phone-size helper must unpack run_tmux_optional without 500s"
     require "$CONTROL_SERVER" '"list-clients",' "legacy phone-size helper must read attached phone clients instead of shell dimensions"
@@ -2024,10 +2344,13 @@ if [ -f "$CONTROL_SERVER" ]; then
     require "$CONTROL_SERVER" 'shared_useful_title(title)' "server generic-title repair must route machine/model placeholder rejection through the shared title helper"
     require "$MANTIS_TITLE_COMMON" 'startswith("cabule kaleeblaptop")' "shared title helper must treat machine/account tmux labels as generic placeholders"
     require "$MANTIS_TITLE_COMMON" 'runtime_model_banner_title' "shared title helper must reject Codex OpenAI model placeholder titles"
-    require "$CONTROL_SERVER" 'def repair_generic_tmux_title' "server must repair generic raw tmux names from already-resolved Active Sessions titles"
-    require "$CONTROL_SERVER" 'broad title-sync was correctly' "generic-title repair WHY comment must preserve why the mutating title-sync service stays disabled"
-    require "$CONTROL_SERVER" 'rename-window", "-t", window_id' "generic-title repair must write to stable tmux @window ids only"
-    require "$CONTROL_SERVER" '"titleRepair": title_repair' "tabs payload must expose whether a generic tmux name was repaired"
+	require "$CONTROL_SERVER" 'def repair_generic_tmux_title' "server must repair generic raw tmux names from already-resolved Active Sessions titles"
+	require "$CONTROL_SERVER" 'broad title-sync was correctly' "generic-title repair WHY comment must preserve why the mutating title-sync service stays disabled"
+	require "$CONTROL_SERVER" 'rename-window", "-t", window_id' "generic-title repair must write to stable tmux @window ids only"
+	require "$MANTIS_TITLE_COMMON" 'def visibly_truncated_title' "shared title helper must reject ellipsis-cut title authority"
+	require "$MANTIS_TITLE_SYNC" 'must not be a compact title authority candidate' "title-sync must not store ellipsis-cut tmux names that can leak back into APK titles"
+	require "$CONTROL_SERVER" 'must not store literal ellipsis here' "control-server tmux repair must not recreate ellipsis-cut title names"
+	require "$CONTROL_SERVER" '"titleRepair": title_repair' "tabs payload must expose whether a generic tmux name was repaired"
     require_absent "$CONTROL_SERVER" 'return cached_title or title' "Active Sessions must not fall back to node when the latest-title cache is empty"
     require "$CONTROL_SERVER" 'first prompts as authority' "server latest-title cache WHY comment must preserve the old-session title regression"
     require "$CONTROL_SERVER" "source = 'cli'" "old sessions must be limited to normal CLI sessions"
@@ -2168,10 +2491,22 @@ if [ -f "$PHONE_ADB_CONNECT" ]; then
     require "$PHONE_ADB_CONNECT" 'phone-adb-connect install-latest' "no-USB install helper must remain documented"
     require "$PHONE_ADB_CONNECT" 'install-latest|install|apk) install_latest ;;' "no-USB install helper must keep the install command aliases"
     require "$PHONE_ADB_CONNECT" 'first_online_serial()' "phone ADB helper must choose a currently online direct/relay serial"
-    require "$PHONE_ADB_CONNECT" 'adb_cmd -s "$usb_serial" tcpip "$APK_CONNECT_PORT"' "phone ADB USB arm must reassert tcpip 5555 after RSA authorization"
-    require "$PHONE_ADB_CONNECT" 'AUTO_MODE=1 arm_usb || true' "phone ADB keepalive must recover by re-arming USB when USB is authorized"
+    require "$PHONE_ADB_CONNECT" 'device_adb_cmd "$usb_owner" -s "$usb_serial" tcpip "$APK_CONNECT_PORT"' "phone ADB USB arm must reassert tcpip 5555 after RSA authorization"
+    require "$PHONE_ADB_CONNECT" 'local old_auto="$AUTO_MODE" old_noninteractive="$NONINTERACTIVE"' "phone ADB keepalive must preserve caller mode while forcing background-safe recovery"
+    require "$PHONE_ADB_CONNECT" 'AUTO_MODE=1' "phone ADB keepalive must not wait on phone-side authorization prompts"
+    require "$PHONE_ADB_CONNECT" 'NONINTERACTIVE=1' "phone ADB keepalive must not prompt during background recovery"
+    require "$PHONE_ADB_CONNECT" 'ensure_home_adb || {' "phone ADB keepalive must recover through the shared home ADB owner"
     require "$PHONE_ADB_CONNECT" 'first_online_serial >/dev/null 2>&1 || return 1' "phone ADB keepalive must fail when no direct, relay, or USB-rearmed serial is online"
     require "$PHONE_ADB_CONNECT" 'phone-adb-connect arm-usb' "phone ADB helper must expose an immediate USB arm command"
+    require "$PHONE_ADB_CONNECT" 'WINDOWS_ADB_SERVER_PORT="${MANTIS_WINDOWS_ADB_SERVER_PORT:-5038}"' "phone ADB helper must keep Windows USB adb on the protected 5038 server"
+    require "$PHONE_ADB_CONNECT" 'PHONE_USB_TCPIP_REFRESH_SECONDS="${PHONE_USB_TCPIP_REFRESH_SECONDS:-${MANTIS_PHONE_USB_TCPIP_REFRESH_SECONDS:-300}}"' "phone ADB helper must preserve the 300s throttled USB tcpip refresh"
+    require "$PHONE_ADB_CONNECT" 'host_adb_cmd()' "phone ADB helper must retain a separate Windows-owned USB adb owner"
+    require "$PHONE_ADB_CONNECT" 'run_with_timeout "$HOST_ADB_TIMEOUT_SECONDS" "$host_adb" -P "$WINDOWS_ADB_SERVER_PORT"' "Windows USB adb must be timed and isolated from the normal WSL adb server"
+    require "$PHONE_ADB_CONNECT" 'maybe_refresh_usb_tcpip || true' "phone ADB keepalive must refresh USB tcpip before direct Tailnet success can short-circuit"
+    require "$PHONE_ADB_CONNECT" 'ensure_tailscale_relay "$ip" || true' "phone ADB helper must keep the localhost relay aligned with direct Tailnet ADB"
+    require "$PHONE_ADB_CONNECT" 'if [ "$ALLOW_PHONE_FOREGROUND" != "1" ]; then' "phone ADB repair must not foreground phone apps outside interactive setup"
+    require "$PHONE_ADB_CONNECT" 'home-on|on) ensure_home_adb ;;' "phone ADB helper must expose trusted-home recovery mode"
+    require "$PHONE_ADB_CONNECT" 'safe-off|off) safe_off ;;' "phone ADB helper must preserve the public-network safe-off mode"
 fi
 
 require "$ROOT/build-apk.sh" 'sha256sum build/WEzterm.apk' "build must derive the install page checksum from the signed APK"
@@ -2414,6 +2749,10 @@ if [ -f "$PHONE_HOST_KEEPALIVE" ]; then
     require "$PHONE_HOST_KEEPALIVE" 'removed stale keepalive lock' "host keepalive must log stale lock recovery instead of skipping forever"
     require "$PHONE_HOST_KEEPALIVE" 'pgrep -u "$(id -u)" -f' "host keepalive must prove no live owner before removing a stale lock"
     require "$PHONE_HOST_KEEPALIVE" 'process_is_keepalive_owner' "host keepalive owner detection must inspect argv, not just match env text"
+    require "$PHONE_HOST_KEEPALIVE" 'tailscale status --json' "host keepalive must classify Tailscale daemon state before host HTTP probes"
+    require "$PHONE_HOST_KEEPALIVE" 'tailscale ping --timeout="$TAILSCALE_PING_TIMEOUT" --c 1 "$target"' "host keepalive must prove phone Tailnet peer reachability"
+    require "$PHONE_HOST_KEEPALIVE" 'tailnet-repair:' "host keepalive must attempt a narrow Tailnet recovery before host restart"
+    require "$PHONE_HOST_KEEPALIVE" 'tailnet-blocker:' "host keepalive must log an actionable Tailnet blocker when recovery cannot run"
     require "$PHONE_HOST_KEEPALIVE" 'startup' "host keepalive must support reboot/startup cron mode"
     require "$PHONE_HOST_KEEPALIVE" '--startup' "host keepalive must support explicit startup cron mode"
 else

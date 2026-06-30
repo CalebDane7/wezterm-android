@@ -96,7 +96,10 @@ Android users use the native APK.
 - v2.96 stops one-finger reading drags at finger-up by generation-canceling
   stale post-lift `/touch-scroll` replies and disabling post-release momentum.
   Fast movement may still accelerate while the finger is down; ACTION_UP is a hard stop
-  so the viewport does not keep drifting after lift-off. It also
+  so the viewport does not keep drifting after lift-off. The down-return path
+  still lets the renderer paint exactly one already-dispatched same-gesture
+  `lineDown` response after release, so a fast flick that reached tmux before
+  finger-up does not leave the phone visibly stranded above the live bottom. It also
   treats tmux `scroll_position >= history_size` as the real history-top edge so
   repeated lineUp gestures cannot hang at the top range.
 - v2.96 also clamps the first live-bottom `lineDown` sample when a drag starts

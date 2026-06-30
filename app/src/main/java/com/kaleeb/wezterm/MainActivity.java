@@ -31,6 +31,7 @@ import android.provider.MediaStore;
 import android.provider.OpenableColumns;
 import android.text.Editable;
 import android.text.InputType;
+import android.text.Layout;
 import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.view.HapticFeedbackConstants;
@@ -130,10 +131,13 @@ public class MainActivity extends Activity {
     private static final int ACTIVE_SESSION_ROW_GAP_DP = 10;
     private static final int ACTIVE_SESSION_CARD_VERTICAL_PADDING_DP = 11;
     private static final int ACTIVE_SESSION_TITLE_LINE_SPACING_DP = 3;
+    private static final int ACTIVE_SESSION_TITLE_LONG_TEXT_MIN_CHARS = 34;
+    private static final int ACTIVE_SESSION_TITLE_LONG_MIN_LINES = 3;
     private static final int ACTIVE_SESSION_SCROLL_BOTTOM_INSET_DP = 18;
     private static final int ACTIVE_SESSION_CLOSE_BUTTON_WIDTH_DP = 56;
     private static final int ACTIVE_SESSION_CLOSE_BUTTON_MIN_HEIGHT_DP = 56;
     private static final int ACTIVE_SESSION_CLOSE_BUTTON_GAP_DP = 6;
+    private static final long ACTIVE_SESSIONS_CACHE_MAX_AGE_MS = 5000;
     private static final int PREMIUM_STATUS_DOT_SP = 18;
     private static final int PREMIUM_CONTROL_STROKE_COLOR = Color.rgb(78, 84, 108);
     private static final int PREMIUM_BUTTON_ELEVATION_DP = 2;
@@ -156,6 +160,7 @@ public class MainActivity extends Activity {
     private static final int TOOLBAR_HEIGHT_DP = 92;
     private static final int TITLE_STRIP_MIN_HEIGHT_DP = 18;
     private static final int TITLE_STRIP_LINE_SPACING_DP = 2;
+    private static final int TITLE_STRIP_LONG_TEXT_MIN_CHARS = 42;
     private static final int PROMPT_COMPOSER_INPUT_HEIGHT_DP = 44;
     private static final int PROMPT_COMPOSER_VERTICAL_PADDING_DP = 4;
     private static final long HISTORY_DRAG_THROTTLE_MS = 16;
@@ -174,6 +179,7 @@ public class MainActivity extends Activity {
     private static final int HISTORY_DRAG_MOMENTUM_DOWN_MAX_REPEATS = 6;
     private static final long HISTORY_DRAG_RELEASE_LONG_GESTURE_MS = 650;
     private static final long HISTORY_DRAG_REPEATED_FLING_WINDOW_MS = 700;
+    private static final long HISTORY_READ_TAP_RESTORE_DEBOUNCE_MS = 900;
     private static final int HISTORY_DRAG_REPEATED_FLING_BOOST_REPEATS = 8;
     private static final int HISTORY_DRAG_READING_MOVE_REPEATS = 1;
     private static final int HISTORY_DRAG_SLOW_MOVE_MAX_REPEATS = 3;
@@ -285,6 +291,7 @@ public class MainActivity extends Activity {
     private boolean terminalTouchExceededTapSlop = false;
     private boolean terminalHorizontalPanActive = false;
     private boolean terminalTouchReachedLiveBottom = false;
+    private boolean terminalTouchLoggedSubSlopMove = false;
     private boolean terminalTouchStartedDuringPassiveSuppression = false;
     private boolean terminalForwardingTouchToViewer = false;
     private MotionEvent terminalViewerDownEvent = null;
@@ -299,6 +306,11 @@ public class MainActivity extends Activity {
     private long terminalHistoryDragDirectionGeneration = 0;
     private long historyScrollRequestSerial = 0;
     private long activeHistoryScrollRequestSerial = 0;
+    private long postReleaseTouchScrollCommitGestureGeneration = -1;
+    private long postReleaseTouchScrollCommitDirectionGeneration = -1;
+    private long postReleaseTouchScrollCommitRequestSerial = -1;
+    private String postReleaseTouchScrollCommitWhere = "";
+    private String postReleaseTouchScrollCommitTargetKey = "";
     private boolean terminalHistoryMomentumActive = false;
     private boolean terminalHistoryMomentumFrameScheduled = false;
     private float terminalHistoryMomentumVelocityPxPerSec = 0f;
@@ -325,6 +337,7 @@ public class MainActivity extends Activity {
     private boolean terminalLongPressCopyArmed = false;
     private boolean terminalLongPressCopyConsumed = false;
     private long lastHistoryDragAtMs = 0;
+    private long lastHistoryDragReleaseAtMs = 0;
     private long terminalLastHistoryDragEventAtMs = 0;
     private float webViewScale = 1.0f;
     private boolean keyZoomViewerStateActive = false;
@@ -339,6 +352,9 @@ public class MainActivity extends Activity {
     private String selectedPhoneWindowTitle = "";
     private long selectedPhoneWindowUpdatedAtMs = 0;
     private String currentPhoneWindowId = "";
+    private JSONObject cachedActiveSessionsPayload = null;
+    private long cachedActiveSessionsPayloadAtMs = 0;
+    private AlertDialog activeSessionsDialog = null;
     private String captureRendererWindowTargetKey = "";
     private String readerSourcePhoneWindowId = "";
     private String readerSourcePhoneWindowTitle = "";
@@ -374,6 +390,40 @@ public class MainActivity extends Activity {
                     : filename.trim();
             this.bytes = bytes;
             this.updatedAtMs = updatedAtMs;
+        }
+    }
+
+    private static final class SelectedPhoneWindowSnapshot {
+        final String selectedWindowId;
+        final int selectedIndex;
+        final String selectedTitle;
+        final long selectedUpdatedAtMs;
+        final String currentWindowId;
+        final String captureTargetKey;
+        final String readerSourceWindowId;
+        final String readerSourceTitle;
+        final String visibleTitle;
+
+        SelectedPhoneWindowSnapshot(
+                String selectedWindowId,
+                int selectedIndex,
+                String selectedTitle,
+                long selectedUpdatedAtMs,
+                String currentWindowId,
+                String captureTargetKey,
+                String readerSourceWindowId,
+                String readerSourceTitle,
+                String visibleTitle
+        ) {
+            this.selectedWindowId = selectedWindowId == null ? "" : selectedWindowId;
+            this.selectedIndex = selectedIndex;
+            this.selectedTitle = selectedTitle == null ? "" : selectedTitle;
+            this.selectedUpdatedAtMs = selectedUpdatedAtMs;
+            this.currentWindowId = currentWindowId == null ? "" : currentWindowId;
+            this.captureTargetKey = captureTargetKey == null ? "" : captureTargetKey;
+            this.readerSourceWindowId = readerSourceWindowId == null ? "" : readerSourceWindowId;
+            this.readerSourceTitle = readerSourceTitle == null ? "" : readerSourceTitle;
+            this.visibleTitle = visibleTitle == null ? "" : visibleTitle;
         }
     }
 
@@ -1036,6 +1086,12 @@ public class MainActivity extends Activity {
         title.setContentDescription("Active session title");
         title.setOnClickListener(view -> showRememberedUploadForCurrentWindow());
         title.setOnLongClickListener(view -> pasteRememberedUploadForCurrentWindow());
+        title.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            CharSequence text = title.getText();
+            if (text != null && text.length() >= TITLE_STRIP_LONG_TEXT_MIN_CHARS) {
+                ensureWrappedTitleFit(title, text.toString(), "session-title-strip");
+            }
+        });
         return title;
     }
 
@@ -1074,6 +1130,7 @@ public class MainActivity extends Activity {
         // clipboard APIs and tmux paste buffers, so prompts can be moved between
         // phone apps and the exact active desktop pane.
         Button copyPasteButton = toolbarNavigationButton("Copy/Paste", v -> showCopyPasteControls());
+        preventCopyPasteToolbarClipping(copyPasteButton);
         copyPasteButton.setOnLongClickListener(v -> {
             // WHY: upload is also available as its own toolbar button, but a
             // long-press here preserves muscle memory for "send phone content into
@@ -1191,8 +1248,24 @@ public class MainActivity extends Activity {
         return button;
     }
 
+    private void preventCopyPasteToolbarClipping(Button button) {
+        // WHY: the fixed six-column bottom row has enough tap area but not enough
+        // one-line text width for `Copy/Paste` on the real APK keyboard layout.
+        // Keep the same handler/status label, but force the visible button text to
+        // a measured two-line label so future toolbar edits cannot regress to
+        // `Copy/Past` or other clipped bottom-button text.
+        button.setText("Copy\nPaste");
+        button.setSingleLine(false);
+        button.setMaxLines(2);
+        button.setTextSize(10);
+        button.setLineSpacing(0f, 0.92f);
+        button.setIncludeFontPadding(false);
+        button.setGravity(android.view.Gravity.CENTER);
+    }
+
     private Button toolbarNavigationButton(String label, View.OnClickListener listener) {
         return toolbarButton(label, view -> {
+            showToolbarControlPending(label);
             hideDockedPromptComposerForNavigation("toolbar-" + label.toLowerCase(Locale.US));
             listener.onClick(view);
         });
@@ -1230,23 +1303,54 @@ public class MainActivity extends Activity {
     }
 
     private void applySessionStatusDot(TextView dot, String status, boolean needsAttention, String statusLabel) {
+        applySessionStatusDot(dot, status, needsAttention, statusLabel, "", true);
+    }
+
+    private void applySessionStatusDot(TextView dot, String status, boolean needsAttention, String statusLabel, String statusTone) {
+        applySessionStatusDot(dot, status, needsAttention, statusLabel, statusTone, true);
+    }
+
+    private void applySessionStatusDot(TextView dot, String status, boolean needsAttention, String statusLabel, String statusTone, boolean activeSession) {
         if (dot == null) {
             return;
         }
         dot.setContentDescription(statusLabel == null || statusLabel.isEmpty() ? "Session status" : statusLabel);
-        if ("running".equals(status)) {
-            dot.setTextColor(Color.rgb(166, 227, 161));
-            startStatusDotPulse(dot);
-        } else if ("problem".equals(status)) {
+        String tone = statusTone == null ? "" : statusTone.trim().toLowerCase(Locale.US);
+        boolean working = "running".equals(status) || "working".equals(tone);
+        boolean healthy = "healthy".equals(tone);
+        if ("problem".equals(status) || "problem".equals(tone)) {
             stopStatusDotPulse(dot);
             dot.setTextColor(Color.rgb(243, 139, 168));
-        } else if (needsAttention) {
+        } else if (working) {
+            // WHY: Active Sessions dots show live session state, not selected-tab
+            // state. A background Codex pane that is still Working must stay
+            // green; returned Ready/healthy panes are yellow so the picker still
+            // distinguishes active work from usable-but-idle sessions.
+            dot.setTextColor(Color.rgb(166, 227, 161));
+            startStatusDotPulse(dot);
+        } else if (needsAttention || "warning".equals(tone) || healthy || "waiting".equals(status)) {
             stopStatusDotPulse(dot);
             dot.setTextColor(Color.rgb(249, 226, 175));
         } else {
             stopStatusDotPulse(dot);
             dot.setTextColor(Color.rgb(127, 132, 156));
         }
+    }
+
+    private void showToolbarControlPending(String label) {
+        if (toolbarStatusDot == null) {
+            return;
+        }
+        // WHY: endpoint timings on 2026-06-29 showed `/tabs?light=1` can take
+        // 1.5s and `/live-bottom` can take 800ms. The phone must acknowledge the
+        // tap locally before tmux/network confirmation arrives, or controls feel
+        // dead even when the backend is healthy.
+        String safeLabel = label == null || label.trim().isEmpty() ? "control" : label.trim();
+        applySessionStatusDot(toolbarStatusDot, "running", false, safeLabel + " pending");
+        Log.i(CONTROL_LOG_TAG,
+                "stage=control-local"
+                        + " control=" + safeLogToken(safeLabel)
+                        + " result=pending-indicator");
     }
 
     private void startStatusDotPulse(TextView dot) {
@@ -1336,13 +1440,27 @@ public class MainActivity extends Activity {
             JSONObject window = payload.optJSONObject("window");
             if (window != null) {
                 rememberActivePhoneWindow(window, "toolbar-status");
-                updateSessionTitleStrip(window);
-                applySessionStatusDot(
-                        toolbarStatusDot,
-                        window.optString("status", "unknown"),
-                        window.optBoolean("needsAttention", false),
-                        window.optString("statusLabel", "Unknown")
-                );
+                if (activeStatusMatchesVisibleTarget(window)) {
+                    updateSessionTitleStrip(window);
+                    applySessionStatusDot(
+                            toolbarStatusDot,
+                            window.optString("status", "unknown"),
+                            window.optBoolean("needsAttention", false),
+                            window.optString("statusLabel", "Unknown"),
+                            window.optString("statusTone", ""),
+                            window.optBoolean("active", true)
+                    );
+                } else {
+                    // WHY: `/active` is process-global tmux state, while the APK
+                    // body can be pinned to a selected read-only capture target.
+                    // Do not paint the toolbar title/status for one `@windowId`
+                    // over another session's renderer body; Active switching must
+                    // keep title and capture target atomic.
+                    Log.i(CONTROL_LOG_TAG,
+                            "stage=toolbar-status endpoint=/active result=visible-target-mismatch"
+                                    + " activeWindowId=" + safeWindowIdForControlLog(window.optString("windowId", ""))
+                                    + " visibleWindowId=" + safeWindowIdForControlLog(visibleTerminalTargetKey()));
+                }
             }
             scheduleToolbarStatusDotRefresh(TOOLBAR_STATUS_POLL_MS);
         }, exc -> {
@@ -1682,6 +1800,7 @@ public class MainActivity extends Activity {
             terminalHistoryDragActive = false;
             terminalMultiTouchGesture = false;
             terminalTouchExceededTapSlop = false;
+            terminalTouchLoggedSubSlopMove = false;
             terminalHorizontalPanActive = false;
             terminalBottomRestoreInFlight = false;
             terminalForwardingTouchToViewer = false;
@@ -1700,7 +1819,18 @@ public class MainActivity extends Activity {
             terminalTouchReachedHistoryTop = false;
             terminalTouchStartedInHistoryViewport = startedInHistoryViewport;
             terminalTouchStableWindowId = visibleTerminalTargetKey();
-            clearCaptureRendererTouchNudge("touch-start");
+            if (startedInHistoryViewport) {
+                releaseCaptureRendererTouchNudge("touch-start-history");
+            } else {
+                clearCaptureRendererTouchNudge("touch-start");
+            }
+            logTerminalTouchStage(
+                    "down",
+                    event,
+                    "startedInHistory=" + startedInHistoryViewport
+                            + " reachedLiveBottom=" + terminalTouchReachedLiveBottom
+                            + " readMode=" + readModeSuppressesKeyboard
+            );
             // WHY: touch-scroll HTTP responses can arrive after the finger has
             // already changed direction, released, or started a new gesture. Tagging
             // every request with this generation keeps stale server replies from
@@ -1711,6 +1841,7 @@ public class MainActivity extends Activity {
             scheduleTerminalLongPressCopy(event);
             cancelHistoryMomentum();
             clearPendingHistoryScroll();
+            clearPostReleaseTouchScrollCommit();
             lastHistoryDragAtMs = 0;
             // WHY: v1.30 fixed tap-to-type by refocusing xterm on live taps,
             // but doing it on ACTION_DOWN races with a user's horizontal pan.
@@ -1744,11 +1875,14 @@ public class MainActivity extends Activity {
             float dy = event.getY() - terminalTouchStartY;
             float absDx = Math.abs(dx);
             float absDy = Math.abs(dy);
+            boolean preserveLongPressCopyWindow = shouldPreserveTerminalLongPressCopyWindow(absDx, absDy);
             if (!terminalTouchExceededTapSlop
+                    && !preserveLongPressCopyWindow
                     && (absDx >= dp(HISTORY_DRAG_LONG_PRESS_CANCEL_DP)
                     || absDy >= dp(HISTORY_DRAG_LONG_PRESS_CANCEL_DP))) {
-                // WHY: a very slow reading drag can move less than Android's full
-                // tap slop for longer than the long-press timeout. That is still a
+                // WHY: after the Android long-press tolerance window is no longer
+                // plausible, a very slow reading drag can still move less than the
+                // platform touch slop for longer than the hold timeout. That is a
                 // moving finger, not a stationary copy gesture; otherwise the text
                 // selection sheet opens before the scroll owner can engage.
                 cancelPendingTerminalLongPressCopy("move-intent-before-slop");
@@ -1775,7 +1909,24 @@ public class MainActivity extends Activity {
                 return forwardTouchToViewer(event);
             }
             if (!terminalHistoryDragActive) {
-                if (absDy < terminalTouchSlop || absDy < absDx * 1.2f) {
+                boolean verticalReadingIntent = !preserveLongPressCopyWindow
+                        && absDy >= dp(HISTORY_DRAG_LONG_PRESS_CANCEL_DP)
+                        && absDy >= absDx * 1.2f;
+                if ((absDy < terminalTouchSlop || absDy < absDx * 1.2f)
+                        && !verticalReadingIntent) {
+                    if (!terminalTouchLoggedSubSlopMove
+                            && (absDx >= dp(HISTORY_DRAG_LONG_PRESS_CANCEL_DP)
+                            || absDy >= dp(HISTORY_DRAG_LONG_PRESS_CANCEL_DP))) {
+                        terminalTouchLoggedSubSlopMove = true;
+                        logTerminalTouchStage(
+                                "move-subslop",
+                                event,
+                                "dx=" + touchLogFloat(dx)
+                                        + " dy=" + touchLogFloat(dy)
+                                        + " slop=" + terminalTouchSlop
+                                        + " copyHoldPreserved=" + preserveLongPressCopyWindow
+                        );
+                    }
                     return true;
                 }
                 // WHY: once a one-finger gesture is clearly vertical, WEzterm
@@ -1783,13 +1934,30 @@ public class MainActivity extends Activity {
                 // the early part of a vertical swipe is what made old tabs page
                 // scroll below the terminal text area before the tmux/Codex
                 // history layer could take over.
+                // WHY: the current phone contract is stricter than Android's
+                // normal tap slop after copy-hold is no longer plausible: if the
+                // user moves vertically by the small "reading intent" threshold,
+                // they are trying to hold/read, not open the composer. Starting
+                // history ownership here lets the renderer keep the exact sub-line
+                // residual at finger-up instead of snapping or treating the tiny
+                // drag as a tap.
                 if (terminalTouchStartedDuringPassiveSuppression) {
                     hideDockedPromptComposerForNavigation("passive-nav-scroll-start");
                 }
                 cancelPendingTerminalLongPressCopy("history-drag-start");
+                terminalTouchExceededTapSlop = true;
                 terminalHistoryDragActive = true;
                 terminalLastHistoryDragY = terminalTouchStartY;
                 terminalLastTouchVisualNudgeY = terminalLastHistoryDragY;
+                logTerminalTouchStage(
+                        "history-start",
+                        event,
+                        "dx=" + touchLogFloat(dx)
+                                + " dy=" + touchLogFloat(dy)
+                                + " slop=" + terminalTouchSlop
+                                + " startedInHistory=" + terminalTouchStartedInHistoryViewport
+                                + " reachedLiveBottom=" + terminalTouchReachedLiveBottom
+                );
                 enterReadMode();
                 keepCaptureRendererPulsingDuringTouch("touch-scroll-start");
             }
@@ -1810,7 +1978,9 @@ public class MainActivity extends Activity {
             boolean longPressCopied = terminalLongPressCopyConsumed;
             boolean releaseFlingStarted = false;
             if (action == MotionEvent.ACTION_UP && terminalHistoryDragActive) {
+                lastHistoryDragReleaseAtMs = System.currentTimeMillis();
                 clearPendingHistoryScroll();
+                rememberPostReleaseTouchScrollCommitIfNeeded();
                 releaseFlingStarted = dispatchHistoryReleaseFling(event);
                 if (!releaseFlingStarted) {
                     // WHY: a slow reading drag ends at ACTION_UP. Do not let a
@@ -1825,8 +1995,17 @@ public class MainActivity extends Activity {
                     terminalTouchGestureGeneration++;
                 }
                 keepCaptureRendererPulsingDuringTouch("touch-scroll-release");
-                clearCaptureRendererTouchNudgeSoon("touch-scroll-release");
+                releaseCaptureRendererTouchNudge("touch-scroll-release");
             }
+            logTerminalTouchStage(
+                    action == MotionEvent.ACTION_CANCEL ? "cancel" : "up",
+                    event,
+                    "consumed=" + consumed
+                            + " movedPastTapSlop=" + movedPastTapSlop
+                            + " reachedLiveBottom=" + reachedLiveBottom
+                            + " releaseFlingStarted=" + releaseFlingStarted
+                            + " historyWhere=" + safeLogToken(terminalHistoryDragWhere)
+            );
             boolean shouldRestoreTyping = action == MotionEvent.ACTION_UP
                     && startedInHistoryViewport
                     && !terminalHistoryDragActive
@@ -1845,7 +2024,7 @@ public class MainActivity extends Activity {
             if (wasMultiTouch || wasHorizontalPan) {
                 allowViewerPanBriefly();
                 clearCaptureRendererTouchNudge("viewer-owned-release");
-            } else if (consumed || action == MotionEvent.ACTION_CANCEL) {
+            } else if (action == MotionEvent.ACTION_CANCEL) {
                 clearCaptureRendererTouchNudgeSoon("touch-end");
             }
             if (wasMultiTouch) {
@@ -1862,6 +2041,20 @@ public class MainActivity extends Activity {
                 return true;
             }
             if (shouldRestoreTyping) {
+                if (shouldKeepReadModeAfterRecentHistoryDragTap()) {
+                    // WHY: after a real one-finger scroll, the user's next tiny
+                    // contact is often a continuation/reading hold, not a request to
+                    // type. The old read-mode tap shortcut immediately fired
+                    // `/live-bottom`, so a slight no-slop touch after release snapped
+                    // the viewport back to the bottom. Keep live cursor taps
+                    // unchanged; only suppress this history-mode shortcut briefly
+                    // after a consumed scroll release.
+                    Log.i(CONTROL_LOG_TAG,
+                            "stage=history-read-tap action=hold-read-mode result=recent-scroll-release");
+                    keepReadModeIfCurrent(terminalModeGeneration);
+                    recycleTerminalViewerDownEvent();
+                    return true;
+                }
                 // WHY: the composer itself is the success signal. A tap-to-type
                 // success Toast sits over the same bottom area the user is trying to
                 // inspect, recreating the v2.57 popup-over-prompt regression while
@@ -1938,6 +2131,14 @@ public class MainActivity extends Activity {
         return false;
     }
 
+    private boolean shouldKeepReadModeAfterRecentHistoryDragTap() {
+        if (!terminalHistoryViewportActive || !readModeSuppressesKeyboard) {
+            return false;
+        }
+        long elapsedMs = System.currentTimeMillis() - lastHistoryDragReleaseAtMs;
+        return elapsedMs >= 0 && elapsedMs <= HISTORY_READ_TAP_RESTORE_DEBOUNCE_MS;
+    }
+
     private void scheduleTerminalLongPressCopy(MotionEvent event) {
         cancelPendingTerminalLongPressCopy("new-down");
         terminalLongPressCopyConsumed = false;
@@ -1984,6 +2185,25 @@ public class MainActivity extends Activity {
         terminalLongPressCopyGeneration++;
     }
 
+    private boolean shouldPreserveTerminalLongPressCopyWindow(float absDx, float absDy) {
+        if (!terminalLongPressCopyArmed || terminalTouchDownWallClockMs <= 0) {
+            return false;
+        }
+        long heldForMs = System.currentTimeMillis() - terminalTouchDownWallClockMs;
+        if (heldForMs < 0 || heldForMs >= TERMINAL_LONG_PRESS_COPY_MS) {
+            return false;
+        }
+        return Math.max(absDx, absDy) < terminalLongPressCopyCancelSlopPx();
+    }
+
+    private float terminalLongPressCopyCancelSlopPx() {
+        // WHY: Android long-press gestures are allowed to wander inside the
+        // platform-scaled touch slop. Using the 2dp reading-drag threshold here
+        // made normal finger jitter start history scroll before the selectable
+        // terminal text sheet could open.
+        return Math.max(terminalTouchSlop, dp(HISTORY_DRAG_LONG_PRESS_CANCEL_DP));
+    }
+
     private boolean shouldHandOffToViewerHorizontalPan(float absDx, float absDy) {
         if (isViewerZoomed()) {
             // WHY: zoomed horizontal point-of-view pan has natural thumb drift.
@@ -2028,6 +2248,30 @@ public class MainActivity extends Activity {
         if (terminalVelocityTracker != null) {
             terminalVelocityTracker.addMovement(event);
         }
+    }
+
+    private void logTerminalTouchStage(String action, MotionEvent event, String detail) {
+        if (event == null) {
+            return;
+        }
+        // WHY: repeated snap/jump fixes failed when we inferred the owner layer
+        // from screenshots alone. These safe logs prove whether the real phone
+        // path is still tap/sub-slop, has entered tmux-owned history scroll, or
+        // is releasing a consumed drag before any scroll-behavior patch is made.
+        Log.i(CONTROL_LOG_TAG,
+                "stage=terminal-touch"
+                        + " action=" + safeLogToken(action)
+                        + " windowId=" + safeWindowIdForControlLog(terminalTouchStableWindowId)
+                        + " x=" + touchLogFloat(event.getX())
+                        + " y=" + touchLogFloat(event.getY())
+                        + " historyActive=" + terminalHistoryDragActive
+                        + " readMode=" + readModeSuppressesKeyboard
+                        + " composerVisible=" + isDockedPromptComposerVisible()
+                        + " detail=" + safeLogToken(detail));
+    }
+
+    private String touchLogFloat(float value) {
+        return String.format(Locale.US, "%.1f", value);
     }
 
     private void cancelHistoryMomentum() {
@@ -2251,6 +2495,20 @@ public class MainActivity extends Activity {
             // background near the toolbar before tmux can report another bottom
             // response, which is the current slow-scroll screenshot regression.
             terminalLastTouchVisualNudgeY = y;
+            return;
+        }
+        if (terminalTouchReachedLiveBottom
+                && "lineUp".equals(visualWhere)
+                && y <= terminalTouchStartY + 0.5f) {
+            // WHY: live-bottom lineDown samples are intentionally swallowed above.
+            // If the same finger reverses before crossing back past the original
+            // bottom touch point, using that swallowed MOVE as the visual baseline
+            // creates a fake positive history nudge while tmux is still at
+            // scroll_position 0. That is the "invisible bottom section" snap: the
+            // summary slides under the toolbar even though no real history row was
+            // entered. Hold the visual baseline at the original bottom anchor until
+            // the finger genuinely drags into history.
+            terminalLastTouchVisualNudgeY = terminalTouchStartY;
             return;
         }
         if ("lineUp".equals(visualWhere)) {
@@ -2586,6 +2844,13 @@ public class MainActivity extends Activity {
                 return;
             }
             historyScrollRequestInFlight = false;
+            boolean postReleaseCommitAllowed = shouldAcceptPostReleaseTouchScrollResponse(
+                    gestureGeneration,
+                    directionGeneration,
+                    requestSerial,
+                    targetKey,
+                    where
+            );
             Log.i(CONTROL_LOG_TAG,
                     "stage=touch-scroll-response endpoint=/touch-scroll"
                             + " windowId=" + safeWindowIdForControlLog(targetKey)
@@ -2596,7 +2861,7 @@ public class MainActivity extends Activity {
                             + " scrollPosition=" + payload.optInt("scrollPosition", -1)
                             + " historySize=" + payload.optInt("historySize", -1)
                             + " paneMode=" + safeLogToken(payload.optString("paneMode", "")));
-            if (gestureGeneration != terminalTouchGestureGeneration) {
+            if (gestureGeneration != terminalTouchGestureGeneration && !postReleaseCommitAllowed) {
                 // WHY: delayed `/scroll` responses are expected on a mobile network.
                 // They may still be valid tmux commands, but they no longer describe
                 // the user's current finger gesture. Do not let them mark live-bottom
@@ -2604,7 +2869,7 @@ public class MainActivity extends Activity {
                 drainPendingHistoryScroll();
                 return;
             }
-            if (directionGeneration != terminalHistoryDragDirectionGeneration) {
+            if (directionGeneration != terminalHistoryDragDirectionGeneration && !postReleaseCommitAllowed) {
                 // WHY: the user can reverse direction while the prior `/touch-scroll`
                 // response is still in flight. That old response may be a valid tmux
                 // command, but it must not repaint/refresh the phone as if it were
@@ -2612,7 +2877,9 @@ public class MainActivity extends Activity {
                 drainPendingHistoryScroll();
                 return;
             }
-            if ("lineDown".equals(where) && touchScrollReachedLiveBottom(payload)) {
+            boolean exactLiveBottom = touchScrollReachedLiveBottom(payload);
+            boolean releaseOnlyNearBottom = !terminalHistoryDragActive && isNearTmuxLiveBottom(payload);
+            if ("lineDown".equals(where) && (exactLiveBottom || releaseOnlyNearBottom)) {
                 // WHY: the server has reached tmux's real live bottom. During
                 // ACTION_MOVE this must remain a stop signal, not a live-typing
                 // restore, or the screen flips to the prompt before the user's
@@ -2620,9 +2887,9 @@ public class MainActivity extends Activity {
                 // and keep read-mode until ACTION_UP performs one explicit bottom
                 // restore. v1.60 proved a fast physical return swipe could land a
                 // a short bottom band and strand the phone in copy-mode, so
-                // `touchScrollReachedLiveBottom` also treats a tiny tmux lineDown
-                // remainder as the bottom edge and restores quietly if the finger
-                // has already lifted.
+                // the tiny near-bottom band is now release-only. Treating
+                // `scroll_position <= 3` as live bottom while the finger was still
+                // down created the invisible floor a few rows above the prompt.
                 terminalTouchReachedLiveBottom = true;
                 cancelHistoryMomentum();
                 clearPendingHistoryScroll();
@@ -2634,6 +2901,7 @@ public class MainActivity extends Activity {
                     keepReadModeIfCurrent(readModeGeneration);
                 }
                 if (terminalHistoryDragActive) {
+                    refreshCaptureRendererTouchEdge("touch-scroll-bottom-edge");
                     drainPendingHistoryScroll();
                     return;
                 }
@@ -2652,6 +2920,7 @@ public class MainActivity extends Activity {
                     keepReadModeIfCurrent(readModeGeneration);
                 }
                 if (terminalHistoryDragActive) {
+                    refreshCaptureRendererTouchEdge("touch-scroll-top-edge");
                     return;
                 }
                 refreshCaptureRendererSoon("touch-scroll-top-edge");
@@ -2665,7 +2934,27 @@ public class MainActivity extends Activity {
                 // is the visible scroll. Committing every `/terminal-frame` row as
                 // soon as tmux replies makes the phone move in row steps and makes
                 // direction reversals feel like stale commands are draining.
+                // A current `/touch-scroll` response is different from a blind pulse:
+                // tmux has accepted same-gesture row movement, and the renderer still
+                // enforces its same-direction stale-frame gate. Request one response-owned
+                // commit so the visual residual does not hit its cap and load rows in chunks.
+                refreshCaptureRendererTouchCommit("touch-scroll-response");
                 drainPendingHistoryScroll();
+                return;
+            }
+            if (postReleaseCommitAllowed) {
+                // WHY: ACTION_UP still cancels momentum and stale queued commands, but
+                // a fast down flick can have one already-dispatched same-gesture tmux
+                // `lineDown` response return after finger-up. Dropping that proven row
+                // commit leaves the renderer latched above the real prompt and feels
+                // like an invisible bottom boundary. Paint this one response through
+                // the renderer's release-held stale-frame gate; do not issue any new
+                // post-release scroll work.
+                if (readModeGeneration == terminalModeGeneration) {
+                    keepReadModeIfCurrent(readModeGeneration);
+                }
+                refreshCaptureRendererTouchReleaseCommit("touch-scroll-release-response");
+                clearPostReleaseTouchScrollCommit();
                 return;
             }
             refreshCaptureRendererSoon("touch-scroll");
@@ -2676,6 +2965,7 @@ public class MainActivity extends Activity {
                 return;
             }
             historyScrollRequestInFlight = false;
+            clearPostReleaseTouchScrollCommit();
             toast("WEzterm control is not reachable");
             drainPendingHistoryScroll();
         });
@@ -2688,7 +2978,20 @@ public class MainActivity extends Activity {
         return (payload.optBoolean("atLiveBottom", false)
                 && "tmux".equals(payload.optString("layer", ""))
                 && "tmux-linedown".equals(payload.optString("action", "")))
-                || isNearTmuxLiveBottom(payload);
+                || isAtTmuxLiveBottom(payload);
+    }
+
+    private boolean isAtTmuxLiveBottom(JSONObject payload) {
+        if (payload == null
+                || !"tmux".equals(payload.optString("layer", ""))
+                || !"tmux-linedown".equals(payload.optString("action", ""))) {
+            return false;
+        }
+        if (!payload.has("scrollPosition")) {
+            return false;
+        }
+        int scrollPosition = payload.optInt("scrollPosition", Integer.MAX_VALUE);
+        return scrollPosition == 0;
     }
 
     private boolean isNearTmuxLiveBottom(JSONObject payload) {
@@ -2826,6 +3129,33 @@ public class MainActivity extends Activity {
         }, TOUCH_SCROLL_VISUAL_NUDGE_CLEAR_MS);
     }
 
+    private void releaseCaptureRendererTouchNudge(String reason) {
+        pendingTouchVisualNudgePx = 0f;
+        touchScrollVisualNudgeScheduled = false;
+        touchScrollVisualNudgeGeneration++;
+        if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            return;
+        }
+        // WHY: ACTION_UP must stop command replay without erasing the exact
+        // reader frame under the user's finger. The renderer latches the release
+        // frame until an explicit touch/live-input/session action clears it;
+        // clearing or repainting here recreated post-release snaps when live
+        // output arrived below a stable tmux copy-mode scrollPosition.
+        webView.evaluateJavascript(
+                "(function(){"
+                        + "try{"
+                        + "var r=window.__mantisCaptureRenderer;"
+                        + "if(r&&typeof r.releaseTouchScrollNudge==='function'){return r.releaseTouchScrollNudge()?'touch-nudge-release':'touch-nudge-release-empty';}"
+                        + "return 'touch-nudge-release-missing';"
+                        + "}catch(e){return 'touch-nudge-release-error';}"
+                + "})()",
+                result -> Log.i(CONTROL_LOG_TAG,
+                        "stage=touch-nudge-release endpoint=renderer"
+                                + " reason=" + safeLogToken(reason)
+                                + " result=" + safeLogToken(String.valueOf(result)))
+        );
+    }
+
     private void clearCaptureRendererTouchNudge(String reason) {
         pendingTouchVisualNudgePx = 0f;
         touchScrollVisualNudgeScheduled = false;
@@ -2887,6 +3217,48 @@ public class MainActivity extends Activity {
         pendingHistoryScrollTargetKey = "";
     }
 
+    private void clearPostReleaseTouchScrollCommit() {
+        postReleaseTouchScrollCommitGestureGeneration = -1;
+        postReleaseTouchScrollCommitDirectionGeneration = -1;
+        postReleaseTouchScrollCommitRequestSerial = -1;
+        postReleaseTouchScrollCommitWhere = "";
+        postReleaseTouchScrollCommitTargetKey = "";
+    }
+
+    private void rememberPostReleaseTouchScrollCommitIfNeeded() {
+        clearPostReleaseTouchScrollCommit();
+        if (!historyScrollRequestInFlight || !"lineDown".equals(terminalHistoryDragWhere)) {
+            return;
+        }
+        // WHY: post-release momentum stays disabled, but the current in-flight
+        // down-return request was already dispatched while the finger was physically
+        // down. Remember only that exact response so the renderer can paint the tmux
+        // row commit instead of leaving the phone visually stuck above the bottom.
+        postReleaseTouchScrollCommitGestureGeneration = terminalTouchGestureGeneration;
+        postReleaseTouchScrollCommitDirectionGeneration = terminalHistoryDragDirectionGeneration;
+        postReleaseTouchScrollCommitRequestSerial = activeHistoryScrollRequestSerial;
+        postReleaseTouchScrollCommitWhere = terminalHistoryDragWhere;
+        postReleaseTouchScrollCommitTargetKey = terminalTouchStableWindowId == null
+                ? ""
+                : terminalTouchStableWindowId.trim();
+    }
+
+    private boolean shouldAcceptPostReleaseTouchScrollResponse(
+            long gestureGeneration,
+            long directionGeneration,
+            long requestSerial,
+            String targetKey,
+            String where
+    ) {
+        String stableTargetKey = targetKey == null ? "" : targetKey.trim();
+        return requestSerial == postReleaseTouchScrollCommitRequestSerial
+                && gestureGeneration == postReleaseTouchScrollCommitGestureGeneration
+                && directionGeneration == postReleaseTouchScrollCommitDirectionGeneration
+                && "lineDown".equals(where)
+                && where.equals(postReleaseTouchScrollCommitWhere)
+                && stableTargetKey.equals(postReleaseTouchScrollCommitTargetKey);
+    }
+
     private void supersedeHistoryScrollInFlightForDirectionChange() {
         if (!historyScrollRequestInFlight) {
             return;
@@ -2897,6 +3269,7 @@ public class MainActivity extends Activity {
         // and allow the reverse direction to dispatch immediately.
         historyScrollRequestInFlight = false;
         activeHistoryScrollRequestSerial = -1;
+        clearPostReleaseTouchScrollCommit();
     }
 
     private void refreshCaptureRendererPulse(String reason) {
@@ -2924,6 +3297,71 @@ public class MainActivity extends Activity {
                         + "var r=window.__mantisCaptureRenderer;"
                         + "if(r&&typeof r.refreshIfIdle==='function'){return r.refreshIfIdle()?'capture-refresh-idle':'capture-refresh-busy';}"
                         + "if(r&&typeof r.refresh==='function'){r.refresh();return 'capture-refresh-fallback';}"
+                        + "return 'not-capture';"
+                        + "}catch(e){return 'err';}"
+                + "})()",
+                null
+        );
+    }
+
+    private void refreshCaptureRendererTouchEdge(String reason) {
+        if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            return;
+        }
+        String safeReason = sanitizeJavascriptReason(reason);
+        // WHY: normal finger-down touch-scroll pulses intentionally suppress
+        // renderer commits so slow drags do not turn into row-step jitter. The
+        // true tmux top/live-bottom edge is different: if Android keeps suppressing
+        // that final edge frame, the user hits a visual wall above the real range
+        // edge even though `/touch-scroll` already reached it. Force exactly one
+        // edge fetch, but leave the renderer's same-direction/stale-frame gate in
+        // control of whether rows may swap.
+        webView.evaluateJavascript(
+                "(function(){"
+                        + "try{"
+                        + "var r=window.__mantisCaptureRenderer;"
+                        + "if(r&&typeof r.refreshTouchScrollEdge==='function'){return r.refreshTouchScrollEdge('" + safeReason + "')?'touch-edge-refresh':'touch-edge-busy';}"
+                        + "if(r&&typeof r.refresh==='function'){r.refresh(true);return 'touch-edge-refresh-fallback';}"
+                        + "return 'not-capture';"
+                        + "}catch(e){return 'err';}"
+                + "})()",
+                null
+        );
+    }
+
+    private void refreshCaptureRendererTouchCommit(String reason) {
+        if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            return;
+        }
+        String safeReason = sanitizeJavascriptReason(reason);
+        // WHY: normal finger-down pulses stay gated to avoid row-step jitter. A
+        // successful current `/touch-scroll` response is the safe handoff point:
+        // renderer-side same-direction proof decides whether the frame can swap,
+        // while this prevents the touch nudge from freezing at its local cap.
+        webView.evaluateJavascript(
+                "(function(){"
+                        + "try{"
+                        + "var r=window.__mantisCaptureRenderer;"
+                        + "if(r&&typeof r.refreshTouchScrollCommit==='function'){return r.refreshTouchScrollCommit('" + safeReason + "')?'touch-commit-refresh':'touch-commit-busy';}"
+                        + "if(r&&typeof r.refresh==='function'){r.refresh(true);return 'touch-commit-refresh-fallback';}"
+                        + "return 'not-capture';"
+                        + "}catch(e){return 'err';}"
+                + "})()",
+                null
+        );
+    }
+
+    private void refreshCaptureRendererTouchReleaseCommit(String reason) {
+        if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
+            return;
+        }
+        String safeReason = sanitizeJavascriptReason(reason);
+        webView.evaluateJavascript(
+                "(function(){"
+                        + "try{"
+                        + "var r=window.__mantisCaptureRenderer;"
+                        + "if(r&&typeof r.refreshTouchScrollReleaseCommit==='function'){return r.refreshTouchScrollReleaseCommit('" + safeReason + "')?'touch-release-commit-refresh':'touch-release-commit-busy';}"
+                        + "if(r&&typeof r.refreshTouchScrollCommit==='function'){return r.refreshTouchScrollCommit('" + safeReason + "')?'touch-release-commit-fallback':'touch-release-commit-skip';}"
                         + "return 'not-capture';"
                         + "}catch(e){return 'err';}"
                 + "})()",
@@ -3344,7 +3782,12 @@ public class MainActivity extends Activity {
                 && promptComposerBar.getVisibility() == View.VISIBLE
                 && promptComposerInput != null) {
             if (promptComposerInput.getText().toString().trim().length() == 0) {
-                hideDockedPromptComposer(true, false);
+                // WHY: Codex/Claude terminal menus often show a highlighted
+                // choice and ask for plain Enter to confirm. With an empty native
+                // composer, the obvious Start/Send control must confirm the
+                // terminal menu instead of silently hiding the composer and making
+                // the numbered prompt feel dead.
+                sendEnterToTerminal();
                 return;
             }
             // WHY: Start sits under the user's thumb and now doubles as "send the
@@ -3624,32 +4067,67 @@ public class MainActivity extends Activity {
 
     private void settleLiveBottomAfterSend(String reason) {
         long generation = terminalModeGeneration;
+        long touchGeneration = terminalTouchGestureGeneration;
         liveInputVisibilityGeneration++;
         cancelViewerTypingPositionRetries(reason);
         uiHandler.postDelayed(() -> {
-            if (generation != terminalModeGeneration || readModeSuppressesKeyboard || terminalHistoryViewportActive) {
+            if (!shouldRunPostSendRendererSettle(generation, touchGeneration)) {
                 return;
             }
-            // WHY: the control server already sent Enter at live bottom. After that,
-            // Android hides the native composer and IME, which changes the WebView
-            // height after the tmux submit has already happened. Do one delayed
-            // server live-bottom settle plus a passive xterm resize so the phone
-            // returns to the bottom automatically after Send, without reloading
-            // ttyd or running the old multi-step scroll/keyboard burst.
-            getJsonWithRetry(appendStableWindowQuery("/live-bottom"), payload -> {
-                if (generation != terminalModeGeneration) {
-                    return;
-                }
-                pinTerminalViewportLocal();
-                refreshCaptureRendererForComposerTransition(reason + "-post-send");
-                if (shouldPreserveZoomedViewerForPassiveBottom(reason)) {
-                    cancelViewerTypingPositionRetries(reason + "-preserve-zoomed-send");
-                } else {
-                    scrollViewerToTypingPositionOnce(reason, 180);
-                }
-                scheduleToolbarStatusDotRefresh(150);
-            }, exc -> toast("WEzterm control is not reachable"));
-        }, 420);
+            // WHY: `/submit-text?resize=0` and `/send-enter` already move tmux to
+            // live bottom before pressing Enter. A second delayed `/live-bottom`
+            // request here timed out for several seconds and could still complete
+            // after the user started one-finger reading, snapping the viewport back
+            // to the bottom and raising false unreachable toasts. Post-Send settle is
+            // therefore renderer-only and is canceled by any newer terminal touch.
+            Log.i(CONTROL_LOG_TAG,
+                    "stage=post-send-settle endpoint=renderer"
+                            + " reason=" + safeLogToken(reason)
+                            + " result=renderer-only");
+            pinTerminalViewportLocal();
+            refreshCaptureRendererForPostSendTransition(reason + "-post-send", generation, touchGeneration);
+            if (shouldPreserveZoomedViewerForPassiveBottom(reason)) {
+                cancelViewerTypingPositionRetries(reason + "-preserve-zoomed-send");
+            } else {
+                scrollViewerToTypingPositionOnce(reason, 180);
+            }
+            scheduleToolbarStatusDotRefresh(150);
+        }, 120);
+    }
+
+    private boolean shouldRunPostSendRendererSettle(long generation, long touchGeneration) {
+        return generation == terminalModeGeneration
+                && touchGeneration == terminalTouchGestureGeneration
+                && !readModeSuppressesKeyboard
+                && !terminalHistoryViewportActive
+                && !terminalHistoryDragActive;
+    }
+
+    private void refreshCaptureRendererForPostSendTransition(String reason, long generation, long touchGeneration) {
+        refreshCaptureRendererPulseIfPostSendCurrent(reason, generation, touchGeneration);
+        uiHandler.postDelayed(
+                () -> refreshCaptureRendererPulseIfPostSendCurrent(
+                        reason + "-composer-settle-1",
+                        generation,
+                        touchGeneration
+                ),
+                180
+        );
+        uiHandler.postDelayed(
+                () -> refreshCaptureRendererPulseIfPostSendCurrent(
+                        reason + "-composer-settle-2",
+                        generation,
+                        touchGeneration
+                ),
+                520
+        );
+    }
+
+    private void refreshCaptureRendererPulseIfPostSendCurrent(String reason, long generation, long touchGeneration) {
+        if (!shouldRunPostSendRendererSettle(generation, touchGeneration)) {
+            return;
+        }
+        refreshCaptureRendererPulse(reason);
     }
 
     private void submitDockedPrompt() {
@@ -3657,6 +4135,15 @@ public class MainActivity extends Activity {
             return;
         }
         String text = promptComposerInput.getText().toString();
+        if (text.trim().length() == 0) {
+            // WHY: empty native composer Send/Enter confirms terminal menus.
+            // The real APK screenshot showed a Codex numbered prompt waiting for
+            // Enter while Samsung Enter and the visible Send button appeared to do
+            // nothing. Nonempty text still uses `/submit-text`; only an empty
+            // composer maps to the terminal's plain Enter confirmation.
+            sendEnterToTerminal();
+            return;
+        }
         submitDockedPromptText(text);
     }
 
@@ -4235,6 +4722,7 @@ public class MainActivity extends Activity {
         terminalTouchReachedLiveBottom = false;
         readModeSuppressesKeyboard = false;
         clearPendingHistoryScroll();
+        clearCaptureRendererTouchNudge("touch-bottom");
         hideHistoryTouchOverlayQuietly();
     }
 
@@ -4250,6 +4738,7 @@ public class MainActivity extends Activity {
         terminalTouchGestureGeneration++;
         readModeSuppressesKeyboard = false;
         clearPendingHistoryScroll();
+        clearCaptureRendererTouchNudge("live-input");
         if (pinAfterOverlay) {
             hideHistoryTouchOverlay();
         } else {
@@ -5748,6 +6237,28 @@ public class MainActivity extends Activity {
 
     private void showActiveSessions() {
         hideDockedPromptComposerForNavigation("active-dialog");
+        showToolbarControlPending("Active Sessions");
+        boolean showedCachedDialog = false;
+        if (activeSessionsCacheFresh()) {
+            try {
+                // WHY: Active Sessions is the most common correction path and the
+                // measured `/tabs?light=1` p95 is too slow to be the first visible
+                // response. Reuse only a very recent immutable @windowId payload for
+                // an instant reopen, then refresh the cache in the background. Older
+                // cached lists can outlive tmux recovery/restarts and show dead rows
+                // such as @46; those must wait for fresh `/tabs` rather than brick
+                // the live Codex target with stale selection attempts.
+                showActiveSessionsDialog(cachedActiveSessionsPayload, "Active Sessions", true);
+                showedCachedDialog = true;
+                Log.i(CONTROL_LOG_TAG,
+                        "stage=control-local control=active-sessions result=cached-dialog"
+                                + " cacheAgeMs=" + Math.max(0, SystemClock.elapsedRealtime() - cachedActiveSessionsPayloadAtMs));
+            } catch (Exception exc) {
+                clearActiveSessionsCache("cached-dialog-failed");
+                Log.w(CONTROL_LOG_TAG, "stage=control-local control=active-sessions result=cached-dialog-failed", exc);
+            }
+        }
+        final boolean cachedDialogVisible = showedCachedDialog;
         // WHY: Active Sessions is the phone's hot tab switcher. It must not wait
         // for `/sessions`, which also scans old Codex sessions and heavier
         // per-window pane status. Use the light `/tabs` payload for immediate
@@ -5755,14 +6266,89 @@ public class MainActivity extends Activity {
         // saved-session endpoint so it cannot inherit live-window rows or broad
         // `/sessions` latency.
         getJsonWithRetry("/tabs?light=1", payload -> {
-            showActiveSessionsDialog(payload, "Active Sessions", true);
+            rememberActiveSessionsPayload(payload, "tabs-light");
+            if (cachedDialogVisible) {
+                refreshActiveSessionsDialog(payload, "Active Sessions");
+            } else {
+                showActiveSessionsDialog(payload, "Active Sessions", true);
+            }
         }, exc ->
                 getJsonWithRetry("/tabs", payload -> {
-                    showActiveSessionsDialog(payload, "Active Sessions", true);
+                    rememberActiveSessionsPayload(payload, "tabs-full");
+                    if (cachedDialogVisible) {
+                        refreshActiveSessionsDialog(payload, "Active Sessions");
+                    } else {
+                        showActiveSessionsDialog(payload, "Active Sessions", true);
+                    }
                 }, fallbackExc -> {
-                    toast("WEzterm control is not reachable");
+                    if (!cachedDialogVisible) {
+                        toast("WEzterm control is not reachable");
+                    }
                 })
         );
+    }
+
+    private boolean activeSessionsCacheFresh() {
+        if (cachedActiveSessionsPayload == null) {
+            return false;
+        }
+        long ageMs = SystemClock.elapsedRealtime() - cachedActiveSessionsPayloadAtMs;
+        if (ageMs >= 0 && ageMs <= ACTIVE_SESSIONS_CACHE_MAX_AGE_MS) {
+            return true;
+        }
+        clearActiveSessionsCache("stale-cache");
+        return false;
+    }
+
+    private void rememberActiveSessionsPayload(JSONObject payload, String reason) {
+        cachedActiveSessionsPayload = payload;
+        cachedActiveSessionsPayloadAtMs = SystemClock.elapsedRealtime();
+        Log.i(CONTROL_LOG_TAG,
+                "stage=control-local control=active-sessions result=cache-updated"
+                        + " reason=" + safeLogToken(reason)
+                        + " rows=" + activeSessionsPayloadRowCount(payload));
+    }
+
+    private int activeSessionsPayloadRowCount(JSONObject payload) {
+        if (payload == null) {
+            return 0;
+        }
+        JSONArray tabs = payload.optJSONArray("tabs");
+        if (tabs != null) {
+            return tabs.length();
+        }
+        JSONArray windows = payload.optJSONArray("displayWindows");
+        if (windows == null) {
+            windows = payload.optJSONArray("topWindows");
+        }
+        if (windows == null) {
+            windows = payload.optJSONArray("windows");
+        }
+        return windows == null ? 0 : windows.length();
+    }
+
+    private void clearActiveSessionsCache(String reason) {
+        long ageMs = cachedActiveSessionsPayload == null
+                ? -1
+                : Math.max(0, SystemClock.elapsedRealtime() - cachedActiveSessionsPayloadAtMs);
+        cachedActiveSessionsPayload = null;
+        cachedActiveSessionsPayloadAtMs = 0;
+        Log.i(CONTROL_LOG_TAG,
+                "stage=control-local control=active-sessions result=cache-cleared"
+                        + " reason=" + safeLogToken(reason)
+                        + " cacheAgeMs=" + ageMs);
+    }
+
+    private void refreshActiveSessionsDialog(JSONObject payload, String title) throws Exception {
+        // WHY: the instant cached Active picker must not become the final visible
+        // truth. During session repair the backend can gain many restored rows
+        // after the cached dialog opens; repaint the open dialog once fresh
+        // `/tabs?light=1` returns so the APK cannot keep showing a stale 13-row
+        // session list while the control server already exports the recovered rows.
+        if (activeSessionsDialog != null && activeSessionsDialog.isShowing()) {
+            activeSessionsDialog.dismiss();
+        }
+        showActiveSessionsDialog(payload, title, true);
     }
 
     private void showOldSessions() {
@@ -6033,6 +6619,7 @@ public class MainActivity extends Activity {
             if (!payload.optBoolean("ok", false)) {
                 toast(payload.optString("error", "Auth repair did not complete"));
             }
+            clearActiveSessionsCache("account-switch-repair-auth");
             refreshCodexAccountDialog(dialogRef);
         }, exc -> toast("WEzterm control is not reachable"));
     }
@@ -6090,6 +6677,7 @@ public class MainActivity extends Activity {
         addActiveDialogActions(list, dialogRef, selectedCloseTargets);
         JSONObject activeWindow = activeWindowFromPayload(payload);
         JSONArray groups = payload.optJSONArray("groups");
+        boolean preserveServerDisplayOrder = "Active Sessions".equals(title) && preferGroups;
         if (preferGroups && groups != null && groups.length() > 0) {
             for (int i = 0; i < groups.length(); i++) {
                 JSONObject group = groups.getJSONObject(i);
@@ -6097,11 +6685,16 @@ public class MainActivity extends Activity {
                 if (windows == null || windows.length() == 0) {
                     continue;
                 }
-                // WHY: `/tabs` now groups Active Sessions by action state/color
-                // for phone scanning: needs-input first, completed middle,
-                // working bottom. Do not pull Current above those groups again;
+                // WHY: the server is the shared session/title brain and already
+                // orders Active Sessions by the live operator state. Android must
+                // not re-sort grouped rows by a local urgency heuristic, because
+                // that buried running/current fork lanes such as @34 below older
+                // ready rows while `/tabs?light=1` exported the correct order.
                 // active row stays in its state bucket without prefixing the visible title.
-                List<JSONObject> groupRows = sortedWindows(windows);
+                // Do not invent a client-side current heuristic.
+                List<JSONObject> groupRows = preserveServerDisplayOrder
+                        ? windowsInPayloadOrder(windows)
+                        : sortedWindows(windows);
                 if (groupRows.isEmpty()) {
                     continue;
                 }
@@ -6116,7 +6709,9 @@ public class MainActivity extends Activity {
             if (windows == null) {
                 windows = payload.getJSONArray("windows");
             }
-            List<JSONObject> rows = sortedWindows(windows);
+            List<JSONObject> rows = preserveServerDisplayOrder
+                    ? windowsInPayloadOrder(windows)
+                    : sortedWindows(windows);
             if (rows.isEmpty()) {
                 addSectionHeader(list, "Nothing needs attention", 0);
             } else {
@@ -6129,6 +6724,14 @@ public class MainActivity extends Activity {
                 .setView(premiumDialogShell(title, subtitle, scrollView))
                 .show();
         dialogRef[0] = dialog;
+        if ("Active Sessions".equals(title) && preferGroups) {
+            activeSessionsDialog = dialog;
+            dialog.setOnDismissListener(d -> {
+                if (activeSessionsDialog == dialog) {
+                    activeSessionsDialog = null;
+                }
+            });
+        }
         stylePremiumDialogWindow(dialog);
         // WHY: Android AlertDialog can focus a child row or preserve a measured
         // scroll position, which made Active Sessions open in the middle. The phone picker
@@ -6509,6 +7112,22 @@ public class MainActivity extends Activity {
         return sortedWindows(windows, null);
     }
 
+    private List<JSONObject> windowsInPayloadOrder(JSONArray windows) throws Exception {
+        return windowsInPayloadOrder(windows, null);
+    }
+
+    private List<JSONObject> windowsInPayloadOrder(JSONArray windows, JSONObject skipWindow) throws Exception {
+        List<JSONObject> ordered = new ArrayList<>();
+        for (int i = 0; i < windows.length(); i++) {
+            JSONObject window = windows.getJSONObject(i);
+            if (sameWindow(window, skipWindow)) {
+                continue;
+            }
+            ordered.add(window);
+        }
+        return ordered;
+    }
+
     private List<JSONObject> sortedWindows(JSONArray windows, JSONObject skipWindow) throws Exception {
         List<JSONObject> sorted = new ArrayList<>();
         for (int i = 0; i < windows.length(); i++) {
@@ -6608,10 +7227,16 @@ public class MainActivity extends Activity {
         // WHY: Mantis owns the shared title system in `/sessions`; Android is a
         // display client. Do not summarize titles here or the phone APK will
         // drift from desktop tmux, web remote, and Old Sessions.
-        String title = window.optString("title", window.optString("name", "shell"));
+        String rawTitle = window.optString("title", window.optString("name", "shell"));
+        String serverDisplayTitle = window.optString("displayTitle", "").trim();
+        final String title = serverDisplayTitle.isEmpty()
+                ? rawTitle
+                : window.optString("displayTitle", rawTitle);
         String visibleTitle = displaySessionTitle(title);
         String status = window.optString("status", "idle");
         String statusLabel = window.optString("statusLabel", "Done");
+        String statusTone = window.optString("statusTone", "");
+        boolean activeSession = window.optBoolean("active", false);
 
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -6655,7 +7280,7 @@ public class MainActivity extends Activity {
         statusDot.setGravity(android.view.Gravity.CENTER);
         statusDot.setIncludeFontPadding(false);
         statusDot.setContentDescription(statusLabel);
-        applySessionStatusDot(statusDot, status, window.optBoolean("needsAttention", false), statusLabel);
+        applySessionStatusDot(statusDot, status, window.optBoolean("needsAttention", false), statusLabel, statusTone, activeSession);
 
         TextView titleText = new TextView(this);
         titleText.setText(visibleTitle);
@@ -6675,6 +7300,16 @@ public class MainActivity extends Activity {
         // title text; Android owns wrapping and width allocation. Keep this
         // TextView unlimited, non-ellipsized, and zero-min-width so the weighted
         // title card wraps instead of being starved by the Close action column.
+        if (visibleTitle.length() >= ACTIVE_SESSION_TITLE_LONG_TEXT_MIN_CHARS) {
+            // WHY: the 2026-06-29 repeat screenshot showed the visible row stop
+            // at "Hybrid Mantis APK Responsiveness: Tit" even though `/tabs`
+            // carried the full title. Long rows need an explicit measured-height
+            // floor so Android cannot keep a stale two-line card after wrapping.
+            titleText.setMinLines(ACTIVE_SESSION_TITLE_LONG_MIN_LINES);
+        }
+        titleText.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
+                ensureWrappedTitleFit(titleText, visibleTitle, "active-session-row")
+        );
         // WHY: the full session title is now a long-press copy target. Android
         // child views with long-click listeners can intercept taps instead of
         // letting the parent card open the session, which made Active switching
@@ -7414,6 +8049,7 @@ public class MainActivity extends Activity {
                 .setTitle("Close " + safeTitle + "?")
                 .setMessage("This closes that active session and whatever is running inside it.")
                 .setPositiveButton("Close", (dialog, which) -> {
+                    showToolbarControlPending("Close session");
                     String path = "/close?fast=1&windowId=" + urlEncode(stableWindowId);
                     if (index >= 0) {
                         path += "&index=" + index;
@@ -7449,6 +8085,7 @@ public class MainActivity extends Activity {
                 .setTitle("Close " + targets.size() + " sessions?")
                 .setMessage(bulkCloseConfirmationMessage(targets))
                 .setPositiveButton("Close", (dialog, which) -> {
+                    showToolbarControlPending("Close selected");
                     logActiveBulkCloseTargets("bulk-close-confirm", targets);
                     validateAndDispatchBulkCloseTargets(targets, dialogRef);
                 })
@@ -7656,11 +8293,31 @@ public class MainActivity extends Activity {
         }
     }
 
+    private boolean activeStatusMatchesVisibleTarget(JSONObject window) {
+        if (window == null) {
+            return false;
+        }
+        String activeWindowId = window.optString("windowId", "").trim();
+        if (!hasStableWindowId(activeWindowId)) {
+            return false;
+        }
+        boolean hasPinnedVisibleTarget = hasStableWindowId(selectedPhoneWindowId)
+                || hasStableWindowId(captureRendererWindowTargetKey)
+                || hasStableWindowId(currentWebViewWindowIdTargetKey());
+        if (!hasPinnedVisibleTarget) {
+            return true;
+        }
+        return activeWindowId.equals(visibleTerminalTargetKey());
+    }
+
     private void updateSessionTitleStrip(JSONObject window) {
         if (window == null) {
             return;
         }
-        String title = window.optString("title", "");
+        String title = window.optString("displayTitle", "");
+        if (title.trim().isEmpty()) {
+            title = window.optString("title", "");
+        }
         if (title.trim().isEmpty()) {
             title = window.optString("name", "");
         }
@@ -7679,6 +8336,7 @@ public class MainActivity extends Activity {
         if (upload == null) {
             sessionTitleStrip.setText(display);
             sessionTitleStrip.setContentDescription("Active session: " + display);
+            ensureSessionTitleStripFitSoon(display);
             return;
         }
         // WHY: v2.67 proved that upload state belongs in the composer when the
@@ -7691,6 +8349,80 @@ public class MainActivity extends Activity {
                 "Active session: " + display + ". Last upload for " + upload.windowId + ": "
                         + upload.path + ". Tap copies upload path. Long press pastes upload path."
         );
+        ensureSessionTitleStripFitSoon(display);
+    }
+
+    private void ensureSessionTitleStripFitSoon(String display) {
+        if (sessionTitleStrip == null || display == null
+                || display.length() < TITLE_STRIP_LONG_TEXT_MIN_CHARS) {
+            return;
+        }
+        sessionTitleStrip.post(() ->
+                ensureWrappedTitleFit(sessionTitleStrip, display, "session-title-strip")
+        );
+    }
+
+    private void ensureWrappedTitleFit(TextView titleView, String title, String reason) {
+        if (titleView == null || title == null || title.trim().isEmpty()) {
+            return;
+        }
+        int availableWidth = titleView.getWidth()
+                - titleView.getCompoundPaddingLeft()
+                - titleView.getCompoundPaddingRight();
+        if (availableWidth <= 0) {
+            return;
+        }
+        Layout layout = titleView.getLayout();
+        int measuredLines = layout == null ? 1 : Math.max(1, layout.getLineCount());
+        int estimatedLines = estimateWrappedTitleLines(titleView, title, availableWidth);
+        int neededLines = Math.max(measuredLines, estimatedLines);
+        if (neededLines <= 1) {
+            return;
+        }
+        int neededHeight = titleView.getCompoundPaddingTop()
+                + titleView.getCompoundPaddingBottom()
+                + (titleView.getLineHeight() * neededLines)
+                + (dp(ACTIVE_SESSION_TITLE_LINE_SPACING_DP) * Math.max(0, neededLines - 1));
+        if (titleView.getMinHeight() >= neededHeight) {
+            return;
+        }
+        // WHY: source guards that only required `setEllipsize(null)` still let
+        // the real APK show a long Active row as `... Responsiveness: Tit`.
+        // Enforce the actual wrapped height after Android measures the real
+        // phone width so future title, toolbar, or Close-column edits cannot
+        // silently recreate the visible cutoff.
+        titleView.setMinHeight(neededHeight);
+        titleView.requestLayout();
+        Log.i(CONTROL_LOG_TAG,
+                "stage=title-fit"
+                        + " reason=" + safeLogToken(reason)
+                        + " lines=" + neededLines
+                        + " width=" + availableWidth
+                        + " minHeight=" + neededHeight
+                        + " title=" + safeLogToken(displaySessionTitle(title)));
+    }
+
+    private int estimateWrappedTitleLines(TextView titleView, String title, int availableWidth) {
+        String[] words = title.trim().split("\\s+");
+        if (words.length == 0) {
+            return 1;
+        }
+        int lines = 1;
+        String current = "";
+        for (String word : words) {
+            if (word.isEmpty()) {
+                continue;
+            }
+            String candidate = current.isEmpty() ? word : current + " " + word;
+            if (!current.isEmpty()
+                    && titleView.getPaint().measureText(candidate) > availableWidth) {
+                lines++;
+                current = word;
+            } else {
+                current = candidate;
+            }
+        }
+        return Math.max(1, lines);
     }
 
     private String currentSessionTitleDisplay() {
@@ -7713,6 +8445,10 @@ public class MainActivity extends Activity {
         }
         if (hasStableWindowId(selectedPhoneWindowId)) {
             return selectedPhoneWindowId.trim();
+        }
+        String webViewWindowId = currentWebViewWindowIdTargetKey();
+        if (hasStableWindowId(webViewWindowId)) {
+            return webViewWindowId.trim();
         }
         if (hasStableWindowId(currentPhoneWindowId)) {
             return currentPhoneWindowId.trim();
@@ -7756,12 +8492,12 @@ public class MainActivity extends Activity {
         }
         String sourceTitle = readerSourcePhoneWindowTitle;
         clearReaderSourceWindow(reason + "-reader-return");
-        // WHY: the generated Codex JSONL reader is the visible scroll target, so
-        // while it is open the selected target is `READ @source...`. Bottom/Start
-        // returns through the server's reader path. Once that return succeeds,
-        // Android must switch both renderer and Send/Close ownership back to the
-        // original source `@windowId`; otherwise a later Send or Close can hit the
-        // read-only less process instead of the live Codex session.
+        // WHY: the generated Codex JSONL reader is only a fallback display
+        // helper, not the canonical selected target. If Bottom/Start returns
+        // through the server's explicit reader path, Android must still switch
+        // renderer and Send/Close ownership back to the original source
+        // `@windowId`; otherwise a later Send or Close can hit the read-only less
+        // process instead of the live Codex session.
         rememberSelectedPhoneWindow(-1, sourceWindowId, sourceTitle, reason + "-reader-return");
     }
 
@@ -7770,16 +8506,21 @@ public class MainActivity extends Activity {
         // APK is visibly showing. `/active` polling can change `currentPhoneWindowId`
         // when another tmux lane selects `main_phone`, while the read-only capture
         // still shows the previous window. Prefer the selected/visible window for
-        // scroll gestures so fast fling batches cannot land in a different lane.
+        // scroll gestures, and keep capture/WebView targets ahead of process-global
+        // active so slow drags, Bottom, or composer taps cannot land in a
+        // different lane after resume.
         if (hasStableWindowId(selectedPhoneWindowId)) {
             return selectedPhoneWindowId.trim();
         }
-        if (hasStableWindowId(currentPhoneWindowId)) {
-            return currentPhoneWindowId.trim();
+        if (hasStableWindowId(captureRendererWindowTargetKey)) {
+            return captureRendererWindowTargetKey.trim();
         }
         String webViewWindowId = currentWebViewWindowIdTargetKey();
         if (hasStableWindowId(webViewWindowId)) {
             return webViewWindowId.trim();
+        }
+        if (hasStableWindowId(currentPhoneWindowId)) {
+            return currentPhoneWindowId.trim();
         }
         return "unknown:" + terminalModeGeneration;
     }
@@ -7857,6 +8598,52 @@ public class MainActivity extends Activity {
         selectedPhoneWindowUpdatedAtMs = System.currentTimeMillis();
         updateSessionTitleStrip(selectedPhoneWindowTitle);
         setCaptureRendererWindowTarget(selectedPhoneWindowId, reason);
+    }
+
+    private SelectedPhoneWindowSnapshot selectedPhoneWindowSnapshot() {
+        return new SelectedPhoneWindowSnapshot(
+                selectedPhoneWindowId,
+                selectedPhoneWindowIndex,
+                selectedPhoneWindowTitle,
+                selectedPhoneWindowUpdatedAtMs,
+                currentPhoneWindowId,
+                captureRendererWindowTargetKey,
+                readerSourcePhoneWindowId,
+                readerSourcePhoneWindowTitle,
+                sessionTitleStrip == null ? "" : String.valueOf(sessionTitleStrip.getText())
+        );
+    }
+
+    private void restoreSelectedPhoneWindowSnapshot(SelectedPhoneWindowSnapshot snapshot, String reason) {
+        if (snapshot == null) {
+            return;
+        }
+        selectedPhoneWindowId = snapshot.selectedWindowId;
+        selectedPhoneWindowIndex = snapshot.selectedIndex;
+        selectedPhoneWindowTitle = snapshot.selectedTitle;
+        selectedPhoneWindowUpdatedAtMs = snapshot.selectedUpdatedAtMs;
+        currentPhoneWindowId = snapshot.currentWindowId;
+        readerSourcePhoneWindowId = snapshot.readerSourceWindowId;
+        readerSourcePhoneWindowTitle = snapshot.readerSourceTitle;
+        String restoredTitle = !snapshot.visibleTitle.trim().isEmpty()
+                ? snapshot.visibleTitle
+                : (hasStableWindowId(selectedPhoneWindowId) ? selectedPhoneWindowTitle : "WEzTerm");
+        updateSessionTitleStrip(restoredTitle);
+        String restoreTarget = hasStableWindowId(snapshot.captureTargetKey)
+                ? snapshot.captureTargetKey
+                : (hasStableWindowId(selectedPhoneWindowId)
+                        ? selectedPhoneWindowId
+                        : (hasStableWindowId(currentPhoneWindowId) ? currentPhoneWindowId : ""));
+        if (hasStableWindowId(restoreTarget)) {
+            setCaptureRendererWindowTarget(restoreTarget, reason);
+        } else {
+            captureRendererWindowTargetKey = "";
+            refreshCaptureRendererSoon(reason + "-no-target");
+        }
+        Log.i(CONTROL_LOG_TAG,
+                "stage=select-live-rollback"
+                        + " reason=" + safeLogToken(reason)
+                        + " windowId=" + safeWindowIdForControlLog(selectedPhoneWindowId));
     }
 
     private void clearRememberedCloseTarget(String reason) {
@@ -7941,8 +8728,14 @@ public class MainActivity extends Activity {
 
     private void controlAndSettleLiveBottom(String path, String message, String reason, String targetTitle) {
         if (sessionSwitchInFlight) {
+            Log.i(CONTROL_LOG_TAG,
+                    "stage=blocked endpoint=" + safeControlEndpointForLog(path)
+                            + " reason=switch-in-flight"
+                            + " control=" + safeLogToken(reason));
+            toast("Session switch still opening");
             return;
         }
+        showToolbarControlPending(reason == null || reason.trim().isEmpty() ? "session switch" : reason);
         suppressTerminalBodyTapForPassiveNavigation(reason + "-dispatch");
         hideDockedPromptComposerForSessionSwitch(reason + "-dispatch");
         sessionSwitchInFlight = true;
@@ -7950,6 +8743,29 @@ public class MainActivity extends Activity {
         long generation = leaveReadModeForLiveInput();
         clearBroadSessionSwitchVisualMasks(reason + "-after-live-mode-cleanup");
         getJsonWithRetry(path, payload -> {
+            if (shouldOpenTranscriptReader(payload)) {
+                String readerSourceWindowId = payload.optString("windowId", "");
+                JSONObject reader = payload.optJSONObject("transcriptReader");
+                if (!hasStableWindowId(readerSourceWindowId) && reader != null) {
+                    readerSourceWindowId = reader.optString("sourceWindowId", "");
+                }
+                // WHY: server-side resume must fail closed when a saved Codex
+                // UUID maps to a live pane that only shows a fresh starter shell.
+                // Treat a reader-required payload as the recovery path, not as a
+                // generic failed resume toast, or Old/Continue will strand the
+                // user on the same title-only empty shell after OAuth repair.
+                if (hasStableWindowId(readerSourceWindowId)) {
+                    openTranscriptReaderAfterSelect(
+                            payload.optInt("index", -1),
+                            readerSourceWindowId,
+                            targetTitle,
+                            paintShieldGeneration,
+                            null,
+                            reason + "-reader-required"
+                    );
+                    return;
+                }
+            }
             if (!payload.optBoolean("ok", false)) {
                 sessionSwitchInFlight = false;
                 String error = payload.optString("error", "Command failed");
@@ -8077,11 +8893,11 @@ public class MainActivity extends Activity {
             return;
         }
         // WHY: restored Codex panes can show a brand-new starter screen even
-        // though the full session still exists in the JSONL transcript. Do not
-        // solve that by changing scrollback, bottom anchoring, title inference,
-        // or renderer cadence. Open the existing generated reader for the exact
-        // source `@windowId`, then keep Bottom as the only path back to live
-        // typing.
+        // though the full session still exists in the JSONL transcript. The
+        // control server now renders that transcript inline on the source
+        // `@windowId`; if an older reader-required payload reaches the APK, the
+        // READ helper is only a fallback artifact and must not become the
+        // selected Send/Close/Active target.
         long readGeneration = enterReadMode();
         String path = "/read-session?windowId=" + urlEncode(sourceWindowId);
         getJsonWithRetry(path, readerPayload -> {
@@ -8100,8 +8916,16 @@ public class MainActivity extends Activity {
             if (dialogRef != null && dialogRef[0] != null) {
                 dialogRef[0].dismiss();
             }
-            rememberReaderSourceWindow(sourceWindowId, sourceTitle, reason);
-            rememberSelectedPhoneWindow(index, readerWindowId, sourceTitle, reason + "-reader-display");
+            Log.i(CONTROL_LOG_TAG,
+                    "stage=reader-helper endpoint=/read-session"
+                            + " windowId=" + safeWindowIdForControlLog(readerWindowId)
+                            + " sourceWindowId=" + safeWindowIdForControlLog(sourceWindowId)
+                            + " reason=" + safeLogToken(reason));
+            // WHY: reader helper is not the canonical selected target. Keep the
+            // original live source selected so /tabs, /active, Send, Close, and
+            // Bottom agree on the same usable @id instead of promoting READ @...
+            // helper panes into the session identity.
+            rememberSelectedPhoneWindow(index, sourceWindowId, sourceTitle, reason + "-reader-source-control");
             keepReadModeIfCurrent(readGeneration);
             clearBroadSessionSwitchVisualMasks(reason + "-reader-render-owned");
             settleSelectedTabViewport(reason + "-reader");
@@ -8125,12 +8949,19 @@ public class MainActivity extends Activity {
                     "stage=blocked endpoint=/select-live reason=unstable-window-id"
                             + " windowId=" + safeWindowIdForControlLog(windowId)
                             + " index=" + index);
+            clearActiveSessionsCache("select-live-unstable-window-id");
             toast("Cannot open session without a stable window id");
             return;
         }
         if (sessionSwitchInFlight) {
+            Log.i(CONTROL_LOG_TAG,
+                    "stage=blocked endpoint=/select-live reason=switch-in-flight"
+                            + " windowId=" + safeWindowIdForControlLog(windowId)
+                            + " index=" + index);
+            toast("Session switch still opening");
             return;
         }
+        SelectedPhoneWindowSnapshot previousSelection = selectedPhoneWindowSnapshot();
         suppressTerminalBodyTapForPassiveNavigation("select-live-dispatch");
         hideDockedPromptComposerForSessionSwitch("select-live-dispatch");
         if (dialogRef != null && dialogRef[0] != null) {
@@ -8142,6 +8973,18 @@ public class MainActivity extends Activity {
         }
         sessionSwitchInFlight = true;
         long paintShieldGeneration = showSessionSwitchPaintShield("select-live");
+        showToolbarControlPending("select-live");
+        // WHY: the 2026-06-29 instant-switch regression proved that dismissing
+        // the picker is not enough. The visible selected title and capture
+        // renderer target must move to the tapped stable `@windowId` before the
+        // `/select-live` round trip returns; failures roll back to the snapshot
+        // above so Close and renderer state do not drift.
+        rememberSelectedPhoneWindow(index, windowId, title, "select-live-local");
+        Log.i(CONTROL_LOG_TAG,
+                "stage=control-local control=select-live"
+                        + " result=optimistic-selected"
+                        + " windowId=" + safeWindowIdForControlLog(windowId)
+                        + " index=" + index);
         // WHY: opening a tab from the phone should never require a separate Live
         // tap or Enter press. The select happens first, then the selected tab is
         // forced back to the live bottom. Android keeps this as passive navigation:
@@ -8159,6 +9002,8 @@ public class MainActivity extends Activity {
             sessionSwitchInFlight = false;
             if (!payload.optBoolean("ok", false)) {
                 String error = payload.optString("error", "Command failed");
+                clearActiveSessionsCache("select-live-failed");
+                restoreSelectedPhoneWindowSnapshot(previousSelection, "select-live-failed");
                 forceHideSessionSwitchPaintShield("select-live-failed");
                 toast(error);
                 return;
@@ -8186,6 +9031,8 @@ public class MainActivity extends Activity {
             finishSelectedTabOpen(generation, paintShieldGeneration, title, dialogRef);
         }, exc -> {
             sessionSwitchInFlight = false;
+            clearActiveSessionsCache("select-live-unreachable");
+            restoreSelectedPhoneWindowSnapshot(previousSelection, "select-live-unreachable");
             forceHideSessionSwitchPaintShield("select-live-unreachable");
             toast("WEzterm control is not reachable");
         });
@@ -9245,6 +10092,10 @@ public class MainActivity extends Activity {
     }
 
     private void setCaptureRendererWindowTarget(String targetKey, String reason) {
+        setCaptureRendererWindowTarget(targetKey, reason, 0);
+    }
+
+    private void setCaptureRendererWindowTarget(String targetKey, String reason, int attempt) {
         if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT || !hasStableWindowId(targetKey)) {
             return;
         }
@@ -9269,7 +10120,27 @@ public class MainActivity extends Activity {
                         "stage=capture-target endpoint=renderer"
                                 + " windowId=" + safeWindowIdForControlLog(targetKey)
                                 + " reason=" + safeLogToken(reason)
-                                + " result=" + safeLogToken(result))
+                                + " result=" + safeLogToken(result)
+                                + " attempt=" + attempt)
+        );
+        webView.evaluateJavascript(
+                "(function(){try{return !!(window.__mantisCaptureRenderer&&typeof window.__mantisCaptureRenderer.setWindowId==='function');}catch(e){return false;}})()",
+                ready -> {
+                    if (attempt >= 3
+                            || ready == null
+                            || ready.contains("true")
+                            || !hasStableWindowId(targetKey)) {
+                        return;
+                    }
+                    // WHY: a row tap can beat the capture renderer's JS install
+                    // during APK reconnects. Retry the in-place target update a
+                    // few times instead of reloading WebView or letting the title
+                    // strip advance while the body remains on the previous pane.
+                    uiHandler.postDelayed(
+                            () -> setCaptureRendererWindowTarget(targetKey, reason + "-retry", attempt + 1),
+                            120L + (attempt * 180L)
+                    );
+                }
         );
         refreshCaptureRendererSoon("target-" + reason);
     }

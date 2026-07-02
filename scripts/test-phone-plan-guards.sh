@@ -60,13 +60,13 @@ require_absent() {
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="197"' "current APK version must be bumped for the v2.96 release-stop/top-edge scroll contract"
-require "$MANIFEST" 'android:versionName="2.96"' "current APK version must be bumped for the v2.96 release-stop/top-edge scroll contract"
+require "$MANIFEST" 'android:versionCode="198"' "current APK version must be bumped for the v2.97 phone-clickable account setup release"
+require "$MANIFEST" 'android:versionName="2.97"' "current APK version must be bumped for the v2.97 phone-clickable account setup release"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.96";' "client /config proof must report the same v2.96 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.97";' "client /config proof must report the same v2.97 APK contract as the manifest"
 require "$MAIN" 'MediaStore.ACTION_PICK_IMAGES' "Upload must use Android Photo Picker for one-selection screenshots/media on Android 13+"
 require "$MAIN" 'uploadDocumentPickerIntent' "Upload must keep ACTION_OPEN_DOCUMENT fallback for non-photo-picker/files path"
 require "$MAIN" 'uploadUrisFromResult' "Upload result must handle both data URI and ClipData instead of dropping picker returns"
@@ -74,7 +74,7 @@ require "$MAIN" 'uploadUrisFromShareIntent' "Upload share target must handle Cli
 require "$MAIN" 'WEztermUpload' "Upload must leave privacy-safe stage logs for future picker/server diagnosis"
 require "$MAIN" 'refreshCaptureRendererForLayoutChange' "Bottom layout changes must pulse the capture renderer so the live cursor row repaints above the keyboard"
 require "$MAIN" 'refreshCaptureRendererForComposerTransition' "composer tap/send transitions must use capture-renderer idle pulses instead of xterm-era layout churn"
-require "$MAIN" 'multi-second Send feel' "composer transition WHY comment must preserve the tap/send latency and flicker regression context"
+require "$MAIN" 'draft survives failed sends without keeping the phone visually stuck' "Send WHY comment must preserve both the failed-send and local-latency regression context"
 require "$MAIN" 'refreshCaptureRendererPulse(reason + "-composer-settle-1")' "composer transition settle must coalesce capture-renderer refreshes through refreshIfIdle"
 require_absent "$MAIN" 'Loading active sessions' "Active Sessions must not show a separate loading modal before the sessions list"
 require_absent "$MAIN" 'Loading saved sessions' "Old Sessions must not show a separate loading modal before the saved-session list"
@@ -107,12 +107,19 @@ require "$MAIN" '"Codex account"' "Settings must expose the APK Codex account-sw
 require "$MAIN" 'showCodexAccountSettings' "APK Settings must open the native Codex account switcher"
 require "$MAIN" '"/account-switch-status"' "APK Codex account switcher must read safe current account/status"
 require "$MAIN" '"/account-switch-start?targetEmail="' "APK Codex account switcher must route saved-account buttons through the central account-switch decision endpoint"
-require "$MAIN" 'Sign in to Codex' "Public APK installs must support first-time Codex sign-in without preset aliases"
-require "$MAIN" 'Sign in with another account' "Signed-in APK installs must support switching to a different Codex account"
+require "$MAIN" 'Show Codex login code' "Public APK installs must support first-time Codex sign-in with an explicit code path"
+require "$MAIN" 'Show login code for another account' "Signed-in APK installs must expose explicit code-based Codex login"
+require "$MAIN" 'codexDeviceAuthAvailable' "APK must render central explicit code-login availability instead of guessing locally"
+require "$MAIN" '"explicit-code-login"' "APK must require the central explicit-code-login action before showing saved-account code login"
+require "$MAIN" '"Show code"' "APK code-login confirmation must make the one-time-code action obvious"
+require "$MAIN" '"&allowDeviceAuth=1"' "APK must append allowDeviceAuth only from the explicit code-login action"
+require "$MAIN" 'saved-account buttons intentionally use the central no-device' "APK WHY comment must preserve saved-account no-device fallback boundary"
 require "$MAIN" 'Start Codex sign-in?' "APK must confirm before starting a Codex account switch that can trigger 2FA/session churn"
 require "$MAIN" 'This can trigger Google or OpenAI verification' "APK account-switch confirmation must warn about verification challenges"
 require "$MAIN" 'Open sign-in page' "APK account-switch flow must open the provider device-auth page from the phone"
+require "$MAIN" 'new Intent(Intent.ACTION_VIEW, Uri.parse(url))' "APK Open sign-in page must launch the phone browser with the volatile provider URL"
 require "$MAIN" 'Copy one-time code' "APK account-switch flow must expose the provider device-auth code without persisting it"
+require "$MAIN" 'ClipData.newPlainText("Codex one-time code", code)' "APK one-time code copy must use Android clipboard only, not stored preferences"
 require "$MAIN" '"/account-switch-cancel"' "APK Codex account switcher must let the user cancel without closing sessions"
 require "$MAIN" '"/account-switch-repair-auth?yes=1"' "APK Codex account switcher must repair stale Codex panes after sign-in"
 require "$MAIN" 'the one-time code is volatile UI only' "APK must preserve the volatile-only device-code boundary"
@@ -121,7 +128,10 @@ require "$MANTIS_CONTROL_SERVER" '"/account-switch-status"' "control server must
 require "$MANTIS_CONTROL_SERVER" '"/account-switch-start"' "control server must expose APK account-switch start endpoint"
 require "$MANTIS_CONTROL_SERVER" '"/account-switch-cancel"' "control server must expose APK account-switch cancel endpoint"
 require "$MANTIS_CONTROL_SERVER" 'blocked_saved_account_unavailable' "control server must block saved-account aliases instead of falling through to unusable device codes"
-require "$MANTIS_CONTROL_SERVER" '"codex", "login", "--device-auth"' "control server must reserve Codex device auth for explicit phone sign-in fallback"
+require "$MANTIS_CONTROL_SERVER" '"deviceAuthAvailable"' "control server must expose explicit code-login availability from central account state"
+require "$MANTIS_CONTROL_SERVER" '"deviceAuthAction": "explicit-code-login"' "control server must mark code login as an explicit user action"
+require "$MANTIS_CONTROL_SERVER" 'Use Show login code' "control server saved-account blocker must point to the explicit code-login action"
+require "$MANTIS_CONTROL_SERVER" 'codex_command_args("login", "--device-auth")' "control server must reserve Codex device auth for explicit phone sign-in fallback"
 require_absent "$MAIN" 'showViewportModeSettings();' "Settings must not expose a second Desktop/Mobile viewport selector"
 require_absent "$MAIN" 'Use Desktop: fixed 132-column zoom/pan' "Settings must not keep the removed duplicate viewport chooser"
 require_absent "$MAIN" 'Use Mobile: fit phone width' "Settings must not keep the removed duplicate viewport chooser"
@@ -216,11 +226,16 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=197`, `versionName=2.96`.' "README checkpoint must match the installed v2.96 APK"
+    require "$README" 'Built checkpoint: `versionCode=198`, `versionName=2.97`.' "README checkpoint must match the v2.97 APK release"
+    require "$README" 'v2.97 carries the phone-clickable Codex account setup path' "README must document the phone-clickable Codex account setup contract"
+    require "$README" 'opens the sign-in page with Android' "README must document the phone browser handoff for Codex sign-in"
+    require "$README" 'copies the one-time code without storing it' "README must document the volatile one-time-code boundary"
     require "$README" 'stale post-lift `/touch-scroll` replies' "README must document the v2.96 release-stop contract"
     require "$README" 'disabling post-release momentum' "README must document the v2.96 hard-stop finger-up contract"
     require "$README" 'ACTION_UP is a hard stop' "README must document that one-finger release does not keep drifting"
     require "$README" 'scroll_position >= history_size' "README must document the v2.96 history-top edge contract"
+    require "$README" 'v2.96 Send follow-up restores the v2.84/v2.85 locally immediate' "README must document the current draft-safe local-immediate Send contract"
+    require "$README" 'hides the composer as soon as the idempotent POST is queued' "README must document that Send gives immediate local feedback while saving the draft"
     require "$README" 'slow one-finger reading drags monotonic and line-sized' "README must document the v2.95 slow reading drag contract"
     require "$README" 'momentum is limited to quick high-velocity flicks' "README must document the v2.95 slow-release no-momentum contract"
     require "$README" 'larger Android layout viewport' "README must document the v2.94 zoom-out layout-coverage contract"
@@ -409,8 +424,11 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.96' "install page must advertise the current v2.96 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>197</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'WEzterm v2.97' "install page must advertise the current v2.97 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>198</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'phone-clickable Codex account setup' "install page must mention the v2.97 phone-clickable account setup"
+    require "$INSTALL_PAGE" 'Open sign-in page' "install page must mention the v2.97 phone browser sign-in action"
+    require "$INSTALL_PAGE" 'Copy one-time code' "install page must mention the v2.97 one-time code action"
     require "$INSTALL_PAGE" 'finger-up one-finger scroll stop' "install page must mention the v2.96 release-stop fix"
     require "$INSTALL_PAGE" 'tmux history-top edge detection' "install page must mention the v2.96 top-range lag fix"
     require "$INSTALL_PAGE" 'monotonic slow one-finger reading drag' "install page must mention the v2.95 slow reading drag fix"
@@ -535,7 +553,7 @@ require "$MAIN" 'preventCopyPasteToolbarClipping(copyPasteButton);' "APK bottom 
 require "$MAIN" 'button.setText("Copy\nPaste");' "APK Copy/Paste toolbar label must render as two full words instead of clipped single-line text"
 require "$MAIN" 'button.setMaxLines(2);' "APK Copy/Paste toolbar label must allow the protected two-line layout"
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.96 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.97 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"
@@ -1392,6 +1410,9 @@ require "$MAIN" 'cachedActiveSessionsPayload' "Active Sessions must keep a last-
 require "$MAIN" 'showActiveSessionsDialog(cachedActiveSessionsPayload, "Active Sessions", true)' "Active Sessions must render the cached list immediately instead of waiting on /tabs"
 require "$MAIN" 'final boolean cachedDialogVisible = showedCachedDialog' "Active Sessions cache refresh must not interrupt an already visible cached picker"
 require "$MAIN" 'refreshActiveSessionsDialog(payload, "Active Sessions")' "Active Sessions must repaint the cached picker after a fresh /tabs payload"
+require "$MAIN" 'refreshActiveSessionsDialogIfShowing("resume")' "Active Sessions must refresh an already-open dialog when the APK resumes"
+require "$MAIN" 'still-open dialog kept showing stale rows' "Active resume-refresh WHY comment must preserve the stale already-open dialog root"
+require "$MAIN" 'refreshActiveSessionsDialogPayloadIfShowing(payload, reason + "-tabs-light")' "Active resume refresh must repaint the visible dialog from fresh light tabs"
 require "$MAIN" 'instant cached Active picker must not become the final visible' "Active Sessions cache refresh WHY comment must preserve the stale-row root fix"
 require "$MAIN" 'ACTIVE_SESSIONS_CACHE_MAX_AGE_MS = 5000' "Active Sessions cache must expire quickly so old dead rows cannot stay tappable"
 require "$MAIN" 'clearActiveSessionsCache("stale-cache")' "Active Sessions cache must clear expired row lists before showing the picker"
@@ -1683,10 +1704,48 @@ require "$MAIN" 'pasting the same draft' "submit in-flight WHY comment must pres
 require "$MAIN" 'postTextWithIdempotency' "native composer /submit-text must send an idempotency key across control URL retries"
 require "$MAIN" 'Idempotency-Key' "native composer /submit-text retries must use the standard idempotency header"
 require "$MAIN" 'fallback control URL' "idempotency WHY comment must preserve the lost-response retry duplicate root cause"
-require "$MAIN" 'Hide locally as soon as the idempotent POST is queued' "Send latency fix must keep immediate local composer feedback"
+require "$MAIN" 'draft survives failed sends without keeping the phone visually stuck' "Send must save the draft and hide locally before server success"
 require "$MAIN" 'clearPromptComposerAfterSuccessfulSubmit' "Send must clear drafts only after /submit-text succeeds"
-require "$MAIN" 'restorePromptComposerAfterFailedSubmit' "Send must restore the visible draft after a failed optimistic submit"
+require "$MAIN" 'restorePromptComposerAfterFailedSubmit' "Send must preserve or restore the visible draft after failed submit"
 require "$MAIN" 'WEztermSend' "Send path must leave privacy-safe stage timing logs"
+python3 - "$MAIN" <<'PY'
+import pathlib
+import sys
+
+source = pathlib.Path(sys.argv[1]).read_text()
+start = source.index("private void submitSafePrompt(")
+end = source.index("private boolean clearPromptComposerAfterSuccessfulSubmit", start)
+body = source[start:end]
+callback = body.index('postTextWithIdempotency(appendStableWindowQuery("/submit-text?resize=0", stableTargetKey)')
+pre_callback = body[:callback]
+if "hideDockedPromptComposer(true" in pre_callback:
+    print(
+        "Phone plan regression guard failed: nonempty Send must not clear the native draft before /submit-text returns",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+if 'logPromptSendStage("visible-wait"' in pre_callback:
+    print(
+        "Phone plan regression guard failed: nonempty Send must not keep the composer visibly waiting for /submit-text",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+for required in (
+    "saveVisiblePromptComposerDraft();",
+    "hideDockedPromptComposer(false, false);",
+    'logPromptSendStage("local-hide"',
+    "boolean submittedDraftCleared = clearPromptComposerAfterSuccessfulSubmit(stableTargetKey, value);",
+    "if (submittedDraftCleared && isDockedPromptComposerVisible())",
+    "hideDockedPromptComposer(false, false);",
+):
+    if required not in body:
+        print(
+            f"Phone plan regression guard failed: success-only Send draft lifecycle missing {required!r}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+print("local-immediate success-only send draft lifecycle guard passed")
+PY
 require "$SELECTION_LOCK_HELPER" 'empty_hint_texts = {' "phone proof draft preflight must distinguish real drafts from empty composer hints"
 require "$SELECTION_LOCK_HELPER" 'Type prompt - tap Send' "phone proof draft preflight must ignore the native composer placeholder text"
 require "$MAIN" 'Stop is the phone equivalent of the desktop Escape key' "Stop WHY comment must preserve the direct Stop-equals-Escape mapping"
@@ -2773,6 +2832,8 @@ if [ -f "$APK_RELEASE_SCRIPT" ]; then
     # latest/download URL can lag behind the phone build installed locally.
     require "$APK_RELEASE_SCRIPT" 'waiting for WEzTerm source autopush before APK release' "APK release cron must wait for clean source before publishing"
     require "$APK_RELEASE_SCRIPT" 'origin/main to match local HEAD' "APK release cron must prove GitHub has the source commit before tagging"
+    require "$APK_RELEASE_SCRIPT" 'unknown_untracked' "APK release cron must still block unknown untracked paths"
+    require "$APK_RELEASE_SCRIPT" '.codex-backups/|\.backups/|proof/' "APK release cron must allow local proof/backups without blocking a pushed release"
     require "$APK_RELEASE_SCRIPT" 'gh release create "$tag" "$apk#WEzterm.apk"' "APK release cron must create the GitHub release asset"
     require "$APK_RELEASE_SCRIPT" 'gh release upload "$tag" "$apk#WEzterm.apk"' "APK release cron must refresh an existing GitHub release asset safely"
     require "$APK_RELEASE_SCRIPT" 'Stop maps to one desktop Escape' "APK release notes must preserve direct Stop behavior"

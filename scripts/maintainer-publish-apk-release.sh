@@ -34,9 +34,15 @@ cd "$ROOT"
 have git || die "git is required"
 have gh || die "gh is required"
 
-if [ -n "$(git status --porcelain)" ]; then
-  echo "[$(timestamp)] waiting for WEzTerm source autopush before APK release; repo is dirty"
-  git status --short | sed 's/^/[dirty] /'
+dirty="$(git status --porcelain --untracked-files=all)"
+tracked_dirty="$(printf '%s\n' "$dirty" | grep -Ev '^\?\? ' || true)"
+unknown_untracked="$(printf '%s\n' "$dirty" | grep -E '^\?\? ' | grep -Ev '^\?\? (\.codex-backups/|\.backups/|proof/)' || true)"
+if [ -n "$tracked_dirty" ] || [ -n "$unknown_untracked" ]; then
+  # WHY: this repo keeps local proof/backups beside the APK source. Those files
+  # must not block a release, but tracked edits or unknown untracked paths still
+  # mean the APK source is not a safe pushed release candidate.
+  echo "[$(timestamp)] waiting for WEzTerm source autopush before APK release; repo has source-like dirty paths"
+  printf '%s\n' "$tracked_dirty" "$unknown_untracked" | sed '/^$/d; s/^/[dirty] /'
   exit 0
 fi
 

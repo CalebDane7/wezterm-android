@@ -92,7 +92,15 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=197`, `versionName=2.96`.
+- Built checkpoint: `versionCode=198`, `versionName=2.97`.
+- v2.97 carries the phone-clickable Codex account setup path: Settings ->
+  Codex account reads central `/account-switch-status`, shows generic
+  code-login actions instead of hardcoded private email buttons, renders only
+  volatile `device.url` / `device.code`, opens the sign-in page with Android
+  `ACTION_VIEW`, and copies the one-time code without storing it in APK
+  preferences. Saved account rows still route through the host
+  `/account-switch-start` decision path so OAuth repair, session titles, and
+  transcript context stay owned by the shared controller.
 - v2.96 stops one-finger reading drags at finger-up by generation-canceling
   stale post-lift `/touch-scroll` replies and disabling post-release momentum.
   Fast movement may still accelerate while the finger is down; ACTION_UP is a hard stop
@@ -107,6 +115,13 @@ Android users use the native APK.
   visual nudge into black space and snapping back after the server reports
   `atLiveBottom=true`. The matching tap guard keeps no-drag cursor/body taps on
   the native composer path instead of treating them as bottom-restore gestures.
+- v2.96 Send follow-up restores the v2.84/v2.85 locally immediate
+  behavior while keeping the v2.96 draft-safety guard: native Send saves the
+  visible draft, hides the composer as soon as the idempotent POST is queued,
+  keeps `/submit-text?resize=0`, stable `@windowId`, and idempotency, then
+  clears the saved draft only after server success. Failed sends restore or
+  preserve the draft for the pinned target instead of making the APK look like a
+  sent prompt vanished.
 - v2.95 keeps slow one-finger reading drags monotonic and line-sized: slow MOVE
   no longer promotes by raw distance, same-direction slow pending work stays to
   one step, direction changes clear stale opposite-direction work, and release

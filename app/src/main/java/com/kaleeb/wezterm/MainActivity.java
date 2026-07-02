@@ -125,7 +125,7 @@ public class MainActivity extends Activity {
     private static final String PREF_UPLOAD_BYTES_PREFIX = "upload_bytes_";
     private static final String PREF_UPLOAD_UPDATED_PREFIX = "upload_updated_";
     private static final String PREF_PROMPT_DRAFT_PREFIX = "prompt_draft_";
-    private static final String APP_VERSION_NAME = "2.96";
+    private static final String APP_VERSION_NAME = "2.97";
     private static final int PREMIUM_CONTROL_CORNER_RADIUS_DP = 14;
     private static final int PREMIUM_DIALOG_CORNER_RADIUS_DP = 22;
     private static final int ACTIVE_SESSION_ROW_GAP_DP = 10;
@@ -523,6 +523,7 @@ public class MainActivity extends Activity {
             scheduleBlankTerminalWatchdog("launcher-reentry");
         }
         scheduleToolbarStatusDotRefresh(0);
+        refreshActiveSessionsDialogIfShowing("resume");
     }
 
     @Override
@@ -4338,12 +4339,11 @@ public class MainActivity extends Activity {
         int submitChars = value.length();
         logPromptSendStage("queued", stableTargetKey, sendStartedAtMs, submitChars);
         if (isDockedPromptComposerVisible()) {
-            // WHY: the controller/tmux submit path is already sub-second, but the
-            // user still felt a multi-second Send because the APK kept the native
-            // composer open until the HTTP callback and then stacked IME/render
-            // settle work. Hide locally as soon as the idempotent POST is queued,
-            // while preserving the draft until server success so failures restore
-            // the exact text instead of losing the user's prompt.
+            // WHY: draft survives failed sends without keeping the phone visually stuck.
+            // Save the visible text first, then hide locally as soon as the
+            // idempotent POST is queued; success forgets the saved draft, while
+            // failure restores or preserves it for the pinned target.
+            saveVisiblePromptComposerDraft();
             hideDockedPromptComposer(false, false);
             logPromptSendStage("local-hide", stableTargetKey, sendStartedAtMs, submitChars);
         }
@@ -4357,6 +4357,7 @@ public class MainActivity extends Activity {
         // made some submits wait on tmux size bookkeeping before the user saw a
         // response. Keep the same stable @windowId, idempotency key, and server
         // paste+Enter, but explicitly use the non-resizing submit mode.
+        logPromptSendStage("request", stableTargetKey, sendStartedAtMs, submitChars);
         postTextWithIdempotency(appendStableWindowQuery("/submit-text?resize=0", stableTargetKey), value, submitIdempotencyKey, payload -> {
             logPromptSendStage("response", stableTargetKey, sendStartedAtMs, submitChars);
             if (!payload.optBoolean("ok", false)) {
@@ -4369,7 +4370,11 @@ public class MainActivity extends Activity {
                 toast(successToast);
             }
             finishPromptComposerSubmit(submitFingerprint);
-            clearPromptComposerAfterSuccessfulSubmit(stableTargetKey, value);
+            boolean submittedDraftCleared = clearPromptComposerAfterSuccessfulSubmit(stableTargetKey, value);
+            logPromptSendStage("success", stableTargetKey, sendStartedAtMs, submitChars);
+            if (submittedDraftCleared && isDockedPromptComposerVisible()) {
+                hideDockedPromptComposer(false, false);
+            }
             if (generation != terminalModeGeneration) {
                 return;
             }
@@ -4389,15 +4394,15 @@ public class MainActivity extends Activity {
         });
     }
 
-    private void clearPromptComposerAfterSuccessfulSubmit(String targetKey, String submittedValue) {
-        forgetPromptComposerDraft(targetKey);
+    private boolean clearPromptComposerAfterSuccessfulSubmit(String targetKey, String submittedValue) {
         if (promptComposerInput == null || !targetKey.equals(promptComposerDraftTargetKey)) {
-            return;
+            return false;
         }
         String visibleValue = promptComposerInput.getText().toString().trim();
         if (!submittedValue.equals(visibleValue)) {
-            return;
+            return false;
         }
+        forgetPromptComposerDraft(targetKey);
         promptComposerProgrammaticTextChange = true;
         try {
             promptComposerInput.setText("");
@@ -4405,13 +4410,21 @@ public class MainActivity extends Activity {
             promptComposerProgrammaticTextChange = false;
         }
         promptComposerDraftLocalGeneration++;
+        return true;
     }
 
     private void restorePromptComposerAfterFailedSubmit(String targetKey) {
-        if (!hasStableWindowId(targetKey) || !targetKey.equals(promptComposerTargetKey())) {
+        if (!hasStableWindowId(targetKey)) {
             return;
         }
-        promptComposerDraftTargetKey = targetKey;
+        String stableTargetKey = targetKey.trim();
+        promptComposerDraftTargetKey = stableTargetKey;
+        if (!stableTargetKey.equals(promptComposerTargetKey())) {
+            Log.i(SEND_LOG_TAG,
+                    "stage=failure-draft-preserved target=" + safePromptSendTargetForLog(stableTargetKey)
+                            + " reason=target-drift");
+            return;
+        }
         showDockedPromptComposer("submit-failed");
     }
 
@@ -6309,6 +6322,52 @@ public class MainActivity extends Activity {
                         + " rows=" + activeSessionsPayloadRowCount(payload));
     }
 
+    private void refreshActiveSessionsDialogIfShowing(String reason) {
+        if (activeSessionsDialog == null || !activeSessionsDialog.isShowing()) {
+            return;
+        }
+        // WHY: the installed APK can be foregrounded with an old Active dialog
+        // already open. Reopening Active was refreshing `/tabs?light=1`, but the
+        // still-open dialog kept showing stale rows until the user manually
+        // closed it. Refresh only that visible picker on resume; do not call the
+        // full opener path, which would hide drafts or create a new navigation
+        // action while the user is just returning to the app.
+        Log.i(CONTROL_LOG_TAG,
+                "stage=control-local control=active-sessions result=resume-refresh-start"
+                        + " reason=" + safeLogToken(reason));
+        getJsonWithRetry("/tabs?light=1", payload -> {
+            rememberActiveSessionsPayload(payload, reason + "-tabs-light");
+            refreshActiveSessionsDialogPayloadIfShowing(payload, reason + "-tabs-light");
+        }, exc ->
+                getJsonWithRetry("/tabs", payload -> {
+                    rememberActiveSessionsPayload(payload, reason + "-tabs-full");
+                    refreshActiveSessionsDialogPayloadIfShowing(payload, reason + "-tabs-full");
+                }, fallbackExc -> Log.w(CONTROL_LOG_TAG,
+                        "stage=control-local control=active-sessions result=resume-refresh-failed"
+                                + " reason=" + safeLogToken(reason),
+                        fallbackExc)
+                )
+        );
+    }
+
+    private void refreshActiveSessionsDialogPayloadIfShowing(JSONObject payload, String reason) {
+        if (activeSessionsDialog == null || !activeSessionsDialog.isShowing()) {
+            return;
+        }
+        try {
+            refreshActiveSessionsDialog(payload, "Active Sessions");
+            Log.i(CONTROL_LOG_TAG,
+                    "stage=control-local control=active-sessions result=resume-refreshed"
+                            + " reason=" + safeLogToken(reason)
+                            + " rows=" + activeSessionsPayloadRowCount(payload));
+        } catch (Exception exc) {
+            Log.w(CONTROL_LOG_TAG,
+                    "stage=control-local control=active-sessions result=resume-refresh-render-failed"
+                            + " reason=" + safeLogToken(reason),
+                    exc);
+        }
+    }
+
     private int activeSessionsPayloadRowCount(JSONObject payload) {
         if (payload == null) {
             return 0;
@@ -6414,6 +6473,15 @@ public class MainActivity extends Activity {
         addSectionHeader(list, "Current Codex account", 0);
         list.addView(codexAccountText(codexAccountStatusText(payload), 13, Color.rgb(224, 230, 246)));
 
+        if (codexDeviceAuthAvailable(payload)) {
+            String target = codexDisplayText(payload.optString("targetLabel", ""), payload.optString("targetEmail", ""));
+            addSectionHeader(list, "Login code", 0);
+            list.addView(codexAccountActionButton(
+                    target.isEmpty() ? "Show Codex login code" : "Show login code for " + target,
+                    view -> startCodexAccountDeviceCode(payload.optString("targetEmail", ""), payload.optString("targetLabel", ""), dialogRef)
+            ));
+        }
+
         JSONObject device = codexDevice(payload);
         if (device.length() > 0) {
             addSectionHeader(list, "Device sign-in", 0);
@@ -6458,8 +6526,8 @@ public class MainActivity extends Activity {
 
         addSectionHeader(list, "Actions", 0);
         list.addView(codexAccountActionButton(
-                codexCurrentAuthenticated(payload) ? "Sign in with another account" : "Sign in to Codex",
-                view -> startCodexAccountSwitch("", "", dialogRef)
+                codexCurrentAuthenticated(payload) ? "Show login code for another account" : "Show Codex login code",
+                view -> startCodexAccountDeviceCode("", "", dialogRef)
         ));
         list.addView(codexAccountActionButton("Refresh status", view -> refreshCodexAccountDialog(dialogRef)));
         list.addView(codexAccountActionButton("Repair signed-in sessions", view -> repairCodexAccountSwitch(dialogRef)));
@@ -6565,8 +6633,18 @@ public class MainActivity extends Activity {
         return device == null ? new JSONObject() : device;
     }
 
+    private boolean codexDeviceAuthAvailable(JSONObject payload) {
+        return payload != null
+                && payload.optBoolean("deviceAuthAvailable", false)
+                && "explicit-code-login".equals(payload.optString("deviceAuthAction", ""));
+    }
+
     private void startCodexAccountSwitch(String email, String label, AlertDialog[] dialogRef) {
         confirmCodexAccountSwitch(email, label, dialogRef);
+    }
+
+    private void startCodexAccountDeviceCode(String email, String label, AlertDialog[] dialogRef) {
+        confirmCodexAccountDeviceCode(email, label, dialogRef);
     }
 
     private void confirmCodexAccountSwitch(String email, String label, AlertDialog[] dialogRef) {
@@ -6585,9 +6663,35 @@ public class MainActivity extends Activity {
                 .show();
     }
 
+    private void confirmCodexAccountDeviceCode(String email, String label, AlertDialog[] dialogRef) {
+        String display = codexDisplayText(label, email);
+        if (display.isEmpty()) {
+            display = "Codex";
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Show Codex login code?")
+                .setMessage(
+                        "This starts the OpenAI device-code login for " + display + ". "
+                                + "Current sessions stay visible; after sign-in, run Repair signed-in sessions if any pane still shows stale auth."
+                )
+                .setPositiveButton("Show code", (dialog, which) -> startCodexAccountSwitchConfirmed(email, label, true, dialogRef))
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
     private void startCodexAccountSwitchConfirmed(String email, String label, AlertDialog[] dialogRef) {
+        startCodexAccountSwitchConfirmed(email, label, false, dialogRef);
+    }
+
+    private void startCodexAccountSwitchConfirmed(String email, String label, boolean allowDeviceAuth, AlertDialog[] dialogRef) {
         String path = "/account-switch-start?targetEmail=" + urlEncode(email)
                 + "&targetLabel=" + urlEncode(label);
+        if (allowDeviceAuth) {
+            // WHY: saved-account buttons intentionally use the central no-device
+            // decision path. Code login is a separate explicit user action so the
+            // APK never mistakes an alias for reusable saved credentials.
+            path += "&allowDeviceAuth=1";
+        }
         getJsonWithRetry(path, payload -> {
             if (dialogRef[0] != null) {
                 dialogRef[0].dismiss();

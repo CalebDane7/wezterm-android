@@ -92,8 +92,12 @@ Android users use the native APK.
 
 ## Current Checkpoint
 
-- Built checkpoint: `versionCode=198`, `versionName=2.97`.
-- v2.97 carries the phone-clickable Codex account setup path: Settings ->
+- Built checkpoint: `versionCode=200`, `versionName=2.99`.
+- v2.99 refreshes already-open Active Sessions dialogs on app resume so restored
+  phone sessions cannot keep stale rows such as `Session Pending` after the
+  central `/tabs` title authority is clean. It preserves the v2.98 native title/
+  status chrome guard and the phone-clickable Codex account setup path from
+  v2.97: Settings ->
   Codex account reads central `/account-switch-status`, shows generic
   code-login actions instead of hardcoded private email buttons, renders only
   volatile `device.url` / `device.code`, opens the sign-in page with Android

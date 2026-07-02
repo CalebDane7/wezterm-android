@@ -55,18 +55,43 @@ require_absent() {
     fi
 }
 
+require_onresume_refreshes_active_dialog() {
+    python3 - "$MAIN" <<'PY'
+import re
+import sys
+
+path = sys.argv[1]
+source = open(path, encoding="utf-8").read()
+match = re.search(
+    r"protected void onResume\(\) \{(?P<body>.*?)\n    \}\n\n    @Override\n    protected void onPause\(\)",
+    source,
+    re.S,
+)
+if not match:
+    print("Phone plan regression guard failed: could not locate onResume body", file=sys.stderr)
+    sys.exit(1)
+body = match.group("body")
+if 'refreshActiveSessionsDialogIfShowing("resume")' not in body:
+    print(
+        "Phone plan regression guard failed: onResume must refresh an already-open Active Sessions dialog",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+PY
+}
+
 # WHY: this source-level audit is intentionally broad. The phone plan records a
 # pattern of fixes regressing older fixes: scroll removing recovery, reconnect
 # removing auto-reload, swipe fixes breaking typing, and toolbar cleanup hiding
 # required controls. These cheap guards run before every APK build so a future
 # edit cannot silently remove the protected behavior again.
-require "$MANIFEST" 'android:versionCode="198"' "current APK version must be bumped for the v2.97 phone-clickable account setup release"
-require "$MANIFEST" 'android:versionName="2.97"' "current APK version must be bumped for the v2.97 phone-clickable account setup release"
+require "$MANIFEST" 'android:versionCode="200"' "current APK version must be bumped for the v2.99 Active-dialog resume refresh release"
+require "$MANIFEST" 'android:versionName="2.99"' "current APK version must be bumped for the v2.99 Active-dialog resume refresh release"
 require "$MANIFEST" 'android:windowSoftInputMode="adjustResize"' "activity must resize for IME without activity-start keyboard forcing"
 require_absent "$MANIFEST" 'stateVisible|adjustResize' "activity-start IME forcing must not return"
 require "$MANIFEST" 'android.intent.action.SEND' "WEzterm must remain an Android share target for screenshots/media"
 require "$MANIFEST" 'android.intent.action.SEND_MULTIPLE' "WEzterm must accept multiple shared media files"
-require "$MAIN" 'private static final String APP_VERSION_NAME = "2.97";' "client /config proof must report the same v2.97 APK contract as the manifest"
+require "$MAIN" 'private static final String APP_VERSION_NAME = "2.99";' "client /config proof must report the same v2.99 APK contract as the manifest"
 require "$MAIN" 'MediaStore.ACTION_PICK_IMAGES' "Upload must use Android Photo Picker for one-selection screenshots/media on Android 13+"
 require "$MAIN" 'uploadDocumentPickerIntent' "Upload must keep ACTION_OPEN_DOCUMENT fallback for non-photo-picker/files path"
 require "$MAIN" 'uploadUrisFromResult' "Upload result must handle both data URI and ClipData instead of dropping picker returns"
@@ -99,6 +124,7 @@ require "$MAIN" 'terminalUrlWithOptions' "APK terminal URL builder must carry re
 require "$MAIN" '&windowId=' "APK initial capture renderer URL must include the stable visible window target when known"
 require "$MAIN" 'process-global active window when its URL had no windowId' "renderer target WHY comment must preserve the active-window drift root cause"
 require "$MAIN" 'title over a blank/wrong terminal body' "renderer target WHY comment must preserve the v2.81 black-body false proof root cause"
+require_onresume_refreshes_active_dialog
 require "$MAIN" 'lastImeInsetBottom > 0 || isDockedPromptComposerVisible()' "navigation hiding must not run while keyboard/composer anchoring is active"
 require "$MAIN" 'http://100.113.254.7:8089/terminal-renderer' "APK visual URL must use the non-resizing control-server capture renderer"
 require "$MAIN" 'APK_CAPTURE_RENDERER_COLS = 132' "APK capture renderer must preserve the readable 132-column logical grid"
@@ -232,8 +258,10 @@ if [ -f "$README" ]; then
     # WHY: the APK can be correct while the public handoff still serves stale
     # install/proof text. Guard the docs that the phone actually opens so future
     # work cannot pass source checks while advertising an old build again.
-    require "$README" 'Built checkpoint: `versionCode=198`, `versionName=2.97`.' "README checkpoint must match the v2.97 APK release"
-    require "$README" 'v2.97 carries the phone-clickable Codex account setup path' "README must document the phone-clickable Codex account setup contract"
+    require "$README" 'Built checkpoint: `versionCode=200`, `versionName=2.99`.' "README checkpoint must match the v2.99 APK release"
+    require "$README" 'v2.99 refreshes already-open Active Sessions dialogs on app resume' "README must document the v2.99 stale Active-dialog refresh contract"
+    require "$README" 'v2.98 native title/' "README must document that the v2.98 title/body authority contract is preserved"
+    require "$README" 'phone-clickable Codex account setup' "README must document the phone-clickable Codex account setup contract"
     require "$README" 'opens the sign-in page with Android' "README must document the phone browser handoff for Codex sign-in"
     require "$README" 'copies the one-time code without storing it' "README must document the volatile one-time-code boundary"
     require "$README" 'stale post-lift `/touch-scroll` replies' "README must document the v2.96 release-stop contract"
@@ -430,11 +458,12 @@ if [ -f "$MACOS_PREFLIGHT" ]; then
     require "$MACOS_PREFLIGHT" 'ttyd --interface ${tailnet_ip} --port 8088 tmux attach -t ${TMUX_SESSION}' "macOS preflight must print the fast ttyd host command"
 fi
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_PAGE" ]; then
-    require "$INSTALL_PAGE" 'WEzterm v2.97' "install page must advertise the current v2.97 APK"
-    require "$INSTALL_PAGE" 'versionCode: <code>198</code>' "install page versionCode must match the manifest"
-    require "$INSTALL_PAGE" 'phone-clickable Codex account setup' "install page must mention the v2.97 phone-clickable account setup"
-    require "$INSTALL_PAGE" 'Open sign-in page' "install page must mention the v2.97 phone browser sign-in action"
-    require "$INSTALL_PAGE" 'Copy one-time code' "install page must mention the v2.97 one-time code action"
+    require "$INSTALL_PAGE" 'WEzterm v2.99' "install page must advertise the current v2.99 APK"
+    require "$INSTALL_PAGE" 'versionCode: <code>200</code>' "install page versionCode must match the manifest"
+    require "$INSTALL_PAGE" 'Active Sessions dialogs refresh on app resume' "install page must mention the v2.99 stale Active-dialog refresh fix"
+    require "$INSTALL_PAGE" 'phone-clickable Codex account setup' "install page must mention the phone-clickable account setup"
+    require "$INSTALL_PAGE" 'Open sign-in page' "install page must mention the phone browser sign-in action"
+    require "$INSTALL_PAGE" 'Copy one-time code' "install page must mention the one-time code action"
     require "$INSTALL_PAGE" 'finger-up one-finger scroll stop' "install page must mention the v2.96 release-stop fix"
     require "$INSTALL_PAGE" 'tmux history-top edge detection' "install page must mention the v2.96 top-range lag fix"
     require "$INSTALL_PAGE" 'monotonic slow one-finger reading drag' "install page must mention the v2.95 slow reading drag fix"
@@ -559,7 +588,7 @@ require "$MAIN" 'preventCopyPasteToolbarClipping(copyPasteButton);' "APK bottom 
 require "$MAIN" 'button.setText("Copy\nPaste");' "APK Copy/Paste toolbar label must render as two full words instead of clipped single-line text"
 require "$MAIN" 'button.setMaxLines(2);' "APK Copy/Paste toolbar label must allow the protected two-line layout"
 if [ "${PHONE_SKIP_GENERATED_PAGE_GUARD:-0}" != "1" ] && [ -f "$INSTALL_INDEX" ]; then
-    require "$INSTALL_INDEX" 'WEzterm v2.97 Install' "install redirect page must not point users at a stale version label"
+    require "$INSTALL_INDEX" 'WEzterm v2.99 Install' "install redirect page must not point users at a stale version label"
 fi
 require "$MAIN" 'private static final String TERMINAL_URL = "http://100.113.254.7:8089/terminal-renderer"' "APK terminal URL must prefer the proven direct Tailnet IP capture renderer"
 require "$MAIN" 'MAGIC_DNS_TERMINAL_URL' "APK must keep MagicDNS as fallback, not the primary path"

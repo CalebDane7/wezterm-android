@@ -356,6 +356,7 @@ public class MainActivity extends Activity {
     private long cachedActiveSessionsPayloadAtMs = 0;
     private AlertDialog activeSessionsDialog = null;
     private String captureRendererWindowTargetKey = "";
+    private String confirmedCaptureRendererWindowTargetKey = "";
     private String readerSourcePhoneWindowId = "";
     private String readerSourcePhoneWindowTitle = "";
     private boolean activityResumed = false;
@@ -1457,6 +1458,7 @@ public class MainActivity extends Activity {
                     // Do not paint the toolbar title/status for one `@windowId`
                     // over another session's renderer body; Active switching must
                     // keep title and capture target atomic.
+                    updateSessionTitleStripFromVisibleRenderer("toolbar-status-visible-target-mismatch");
                     Log.i(CONTROL_LOG_TAG,
                             "stage=toolbar-status endpoint=/active result=visible-target-mismatch"
                                     + " activeWindowId=" + safeWindowIdForControlLog(window.optString("windowId", ""))
@@ -1468,7 +1470,9 @@ public class MainActivity extends Activity {
             if (generation != toolbarStatusGeneration || !activityResumed) {
                 return;
             }
-            updateSessionTitleStrip("WEzterm control unreachable");
+            if (!keepSessionTitleOnControlFailure("toolbar-status-unreachable")) {
+                updateSessionTitleStrip("WEzterm control unreachable");
+            }
             applySessionStatusDot(toolbarStatusDot, "unknown", true, "WEzterm control unreachable");
             scheduleToolbarStatusDotRefresh(TOOLBAR_STATUS_POLL_MS);
         });
@@ -3403,7 +3407,13 @@ public class MainActivity extends Activity {
     private String terminalUrlWithOptions(String baseUrl, int fontSize) {
         String targetKey = visibleTerminalTargetKey();
         if (hasStableWindowId(targetKey)) {
-            captureRendererWindowTargetKey = targetKey.trim();
+            String stableTarget = targetKey.trim();
+            if (!stableTarget.equals(captureRendererWindowTargetKey)) {
+                confirmedCaptureRendererWindowTargetKey = "";
+            }
+            captureRendererWindowTargetKey = stableTarget;
+        } else {
+            confirmedCaptureRendererWindowTargetKey = "";
         }
         String targetQuery = hasStableWindowId(targetKey)
                 ? "&windowId=" + urlEncode(targetKey.trim())
@@ -8090,6 +8100,7 @@ public class MainActivity extends Activity {
                             }
                             clearRememberedCloseTarget("workspace-close-out");
                             captureRendererWindowTargetKey = "";
+                            confirmedCaptureRendererWindowTargetKey = "";
                             refreshCaptureRendererSoon("workspace-close-out");
                             scheduleToolbarStatusDotRefresh(0);
                         }, exc -> toast("WEzterm control is not reachable"))
@@ -8163,6 +8174,9 @@ public class MainActivity extends Activity {
                     forgetPromptComposerDraft(stableWindowId);
                     if (stableWindowId.equals(captureRendererWindowTargetKey)) {
                         captureRendererWindowTargetKey = "";
+                    }
+                    if (stableWindowId.equals(confirmedCaptureRendererWindowTargetKey)) {
+                        confirmedCaptureRendererWindowTargetKey = "";
                     }
                     control(path, "Closed session");
                 })
@@ -8365,6 +8379,9 @@ public class MainActivity extends Activity {
         if (stableWindowId.equals(captureRendererWindowTargetKey)) {
             captureRendererWindowTargetKey = "";
         }
+        if (stableWindowId.equals(confirmedCaptureRendererWindowTargetKey)) {
+            confirmedCaptureRendererWindowTargetKey = "";
+        }
         if (stableWindowId.equals(selectedPhoneWindowId)) {
             clearRememberedCloseTarget("bulk-close-dispatched");
         }
@@ -8407,11 +8424,14 @@ public class MainActivity extends Activity {
         }
         boolean hasPinnedVisibleTarget = hasStableWindowId(selectedPhoneWindowId)
                 || hasStableWindowId(captureRendererWindowTargetKey)
+                || hasStableWindowId(confirmedCaptureRendererWindowTargetKey)
                 || hasStableWindowId(currentWebViewWindowIdTargetKey());
         if (!hasPinnedVisibleTarget) {
             return true;
         }
-        return activeWindowId.equals(visibleTerminalTargetKey());
+        String confirmedVisibleTarget = confirmedVisibleTerminalTargetKey();
+        return hasStableWindowId(confirmedVisibleTarget)
+                && activeWindowId.equals(confirmedVisibleTarget);
     }
 
     private void updateSessionTitleStrip(JSONObject window) {
@@ -8454,6 +8474,69 @@ public class MainActivity extends Activity {
                         + upload.path + ". Tap copies upload path. Long press pastes upload path."
         );
         ensureSessionTitleStripFitSoon(display);
+    }
+
+    private void updateSessionTitleStripFromVisibleRenderer(String reason) {
+        String title = visibleRendererSessionTitle();
+        if (!usableSessionTitle(title)) {
+            return;
+        }
+        // WHY: `/active` polling is process-global, while the APK body can be
+        // pinned to a previously selected capture renderer. When those targets
+        // diverge, keep the native title strip tied to the confirmed body title
+        // instead of stamping another session's title over stale terminal rows.
+        updateSessionTitleStrip(title);
+        Log.i(CONTROL_LOG_TAG,
+                "stage=toolbar-status endpoint=/active result=visible-title-preserved"
+                        + " reason=" + safeLogToken(reason)
+                        + " windowId=" + safeWindowIdForControlLog(confirmedVisibleTerminalTargetKey())
+                        + " title=" + safeLogToken(displaySessionTitle(title)));
+    }
+
+    private boolean keepSessionTitleOnControlFailure(String reason) {
+        String title = visibleRendererSessionTitle();
+        if (usableSessionTitle(title)) {
+            updateSessionTitleStrip(title);
+            Log.i(CONTROL_LOG_TAG,
+                    "stage=toolbar-status endpoint=/active result=kept-visible-title"
+                            + " reason=" + safeLogToken(reason)
+                            + " windowId=" + safeWindowIdForControlLog(confirmedVisibleTerminalTargetKey())
+                            + " title=" + safeLogToken(displaySessionTitle(title)));
+            return true;
+        }
+        String current = sessionTitleStrip == null ? "" : String.valueOf(sessionTitleStrip.getText());
+        return usableSessionTitle(current);
+    }
+
+    private String visibleRendererSessionTitle() {
+        String visibleTarget = confirmedVisibleTerminalTargetKey();
+        if (hasStableWindowId(visibleTarget)
+                && visibleTarget.equals(selectedPhoneWindowId)
+                && usableSessionTitle(selectedPhoneWindowTitle)) {
+            return selectedPhoneWindowTitle.trim();
+        }
+        String webTitle = webView == null ? "" : webView.getTitle();
+        if (usableSessionTitle(webTitle)) {
+            return webTitle.trim();
+        }
+        String current = sessionTitleStrip == null ? "" : String.valueOf(sessionTitleStrip.getText());
+        if (usableSessionTitle(current)) {
+            return current.trim();
+        }
+        if (usableSessionTitle(selectedPhoneWindowTitle)) {
+            return selectedPhoneWindowTitle.trim();
+        }
+        return "";
+    }
+
+    private boolean usableSessionTitle(String title) {
+        if (title == null) {
+            return false;
+        }
+        String cleaned = title.trim();
+        return !cleaned.isEmpty()
+                && !"WEzTerm".equalsIgnoreCase(cleaned)
+                && !"WEzterm control unreachable".equalsIgnoreCase(cleaned);
     }
 
     private void ensureSessionTitleStripFitSoon(String display) {
@@ -8629,6 +8712,26 @@ public class MainActivity extends Activity {
         return "unknown:" + terminalModeGeneration;
     }
 
+    private String confirmedVisibleTerminalTargetKey() {
+        // WHY: selectedPhoneWindowId is an optimistic command target. Toolbar
+        // title/status must follow the body the WebView has actually loaded or
+        // acknowledged via capture renderer setWindowId(), otherwise the APK can
+        // show one session title over another session's terminal rows.
+        if (hasStableWindowId(confirmedCaptureRendererWindowTargetKey)) {
+            return confirmedCaptureRendererWindowTargetKey.trim();
+        }
+        String webViewWindowId = currentWebViewWindowIdTargetKey();
+        if (hasStableWindowId(webViewWindowId)) {
+            return webViewWindowId.trim();
+        }
+        if (!hasStableWindowId(selectedPhoneWindowId)
+                && !hasStableWindowId(captureRendererWindowTargetKey)
+                && hasStableWindowId(currentPhoneWindowId)) {
+            return currentPhoneWindowId.trim();
+        }
+        return "";
+    }
+
     private String currentWebViewWindowIdTargetKey() {
         if (webView == null) {
             return "";
@@ -8742,6 +8845,7 @@ public class MainActivity extends Activity {
             setCaptureRendererWindowTarget(restoreTarget, reason);
         } else {
             captureRendererWindowTargetKey = "";
+            confirmedCaptureRendererWindowTargetKey = "";
             refreshCaptureRendererSoon(reason + "-no-target");
         }
         Log.i(CONTROL_LOG_TAG,
@@ -10203,7 +10307,11 @@ public class MainActivity extends Activity {
         if (webView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT || !hasStableWindowId(targetKey)) {
             return;
         }
-        captureRendererWindowTargetKey = targetKey.trim();
+        String stableTarget = targetKey.trim();
+        if (!stableTarget.equals(captureRendererWindowTargetKey)) {
+            confirmedCaptureRendererWindowTargetKey = "";
+        }
+        captureRendererWindowTargetKey = stableTarget;
         // WHY: the title strip and toolbar already remember the selected stable
         // tmux `@windowId`, but the read-only renderer used to keep fetching the
         // process-global active window when its URL had no windowId. If another
@@ -10211,7 +10319,7 @@ public class MainActivity extends Activity {
         // title over a blank/wrong terminal body. Update the capture target in
         // place instead of reloading WebView so Active/New/Old switches stay fast
         // and the protected zoom/pan gesture layer is not reset.
-        String quotedTarget = JSONObject.quote(targetKey.trim());
+        String quotedTarget = JSONObject.quote(stableTarget);
         webView.evaluateJavascript(
                 "(function(target){"
                         + "try{"
@@ -10220,12 +10328,15 @@ public class MainActivity extends Activity {
                         + "return 'capture-target-missing';"
                         + "}catch(e){return 'capture-target-error';}"
                 + "})(" + quotedTarget + ")",
-                result -> Log.i(CONTROL_LOG_TAG,
-                        "stage=capture-target endpoint=renderer"
-                                + " windowId=" + safeWindowIdForControlLog(targetKey)
-                                + " reason=" + safeLogToken(reason)
-                                + " result=" + safeLogToken(result)
-                                + " attempt=" + attempt)
+                result -> {
+                    markCaptureRendererWindowTargetConfirmed(stableTarget, reason, result);
+                    Log.i(CONTROL_LOG_TAG,
+                            "stage=capture-target endpoint=renderer"
+                                    + " windowId=" + safeWindowIdForControlLog(stableTarget)
+                                    + " reason=" + safeLogToken(reason)
+                                    + " result=" + safeLogToken(result)
+                                    + " attempt=" + attempt);
+                }
         );
         webView.evaluateJavascript(
                 "(function(){try{return !!(window.__mantisCaptureRenderer&&typeof window.__mantisCaptureRenderer.setWindowId==='function');}catch(e){return false;}})()",
@@ -10247,6 +10358,44 @@ public class MainActivity extends Activity {
                 }
         );
         refreshCaptureRendererSoon("target-" + reason);
+    }
+
+    private void markCaptureRendererWindowTargetConfirmed(String targetKey, String reason, String result) {
+        if (!hasStableWindowId(targetKey)) {
+            return;
+        }
+        String stableTarget = targetKey.trim();
+        String rawResult = result == null ? "" : result;
+        if (!rawResult.contains("capture-target:" + stableTarget)) {
+            return;
+        }
+        confirmedCaptureRendererWindowTargetKey = stableTarget;
+        Log.i(CONTROL_LOG_TAG,
+                "stage=capture-target endpoint=renderer result=confirmed"
+                        + " windowId=" + safeWindowIdForControlLog(stableTarget)
+                        + " reason=" + safeLogToken(reason));
+    }
+
+    private void markCaptureRendererUrlTargetLoaded(String url, String reason) {
+        if (url == null || url.trim().isEmpty()) {
+            return;
+        }
+        try {
+            String windowId = Uri.parse(url).getQueryParameter("windowId");
+            if (!hasStableWindowId(windowId)) {
+                return;
+            }
+            String stableTarget = windowId.trim();
+            captureRendererWindowTargetKey = stableTarget;
+            confirmedCaptureRendererWindowTargetKey = stableTarget;
+            Log.i(CONTROL_LOG_TAG,
+                    "stage=capture-target endpoint=renderer result=url-confirmed"
+                            + " windowId=" + safeWindowIdForControlLog(stableTarget)
+                            + " reason=" + safeLogToken(reason));
+        } catch (Exception ignored) {
+            // Ignore malformed transient WebView URLs; the JS acknowledgement
+            // path will confirm the target once the renderer is ready.
+        }
     }
 
     private void focusTerminalInputSoon() {
@@ -11834,6 +11983,7 @@ public class MainActivity extends Activity {
         @Override
         public void onPageFinished(WebView view, String url) {
             super.onPageFinished(view, url);
+            markCaptureRendererUrlTargetLoaded(url, "page-finished");
             focusTerminalInputSoon(false);
             // WHY: WebView reports page-finished before the next painted frame is
             // guaranteed to reflect ttyd/xterm. The old visibility call ran

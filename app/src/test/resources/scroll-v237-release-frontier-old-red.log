@@ -1,0 +1,11 @@
+1785149899.131 WEztermControl: stage=local-history-ready endpoint=renderer result=READY windowId=@74 generationKey=@74:-74:764744:100000 start=4342 end=4841 renderRows=1030
+1785149926.117 WEztermControl: stage=local-history-ready endpoint=renderer result=READY windowId=@74 generationKey=@74:-74:764744:100000 start=3842 end=4341 renderRows=1160
+1785149926.207 WEztermControl: stage=local-history-ready endpoint=renderer result=background-refill-requested windowId=@74 start=3342
+1785149929.655 WEztermControl: stage=gesture-viewport-owner endpoint=renderer result=ACQUIRED actionId=scroll-72075600-30 windowId=@74 serial=29 precommittedSeams=0 readyHistoryBatchesBefore=3 readyHistoryBatchesAfter=3
+1785149929.697 WEztermControl: stage=touch-nudge endpoint=renderer actionId=scroll-72075600-30 deltaPx=17.38 result=READY_GAP appliedPx=17.4 visibleDistinctRowDisplacement=0 nextStart=3342
+1785149930.139 WEztermControl: stage=touch-nudge endpoint=renderer actionId=scroll-72075600-30 deltaPx=360.05 result=READY_GAP appliedPx=0.0 visibleDistinctRowDisplacement=43 nextStart=3342
+1785149930.147 WEztermControl: stage=terminal-touch actionId=scroll-72075600-30 action=up windowId=@74 detail=releaseFlingStarted=false
+1785149930.148 WEztermControl: stage=touch-nudge-release endpoint=renderer actionId=scroll-72075600-30 result=visible-owner-held heldAfterRelease=true visibleDistinctRowDisplacement=43
+1785149885.619 WEztermControl: stage=terminal-touch actionId=scroll-72031450-4 action=up windowId=@74 detail=releaseFlingStarted=true
+1785149885.624 WEztermControl: stage=touch-nudge endpoint=renderer actionId=scroll-72031450-4 deltaPx=-458.85 result=CLAMPED appliedPx=0.0
+1785149885.626 WEztermControl: stage=touch-nudge endpoint=renderer actionId=scroll-72031450-4 deltaPx=25.00 result=READY_GAP appliedPx=25.0

@@ -5,14 +5,16 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SDK="${ANDROID_HOME:-$HOME/.local/share/android-sdk}"
 BUILD_TOOLS="$SDK/build-tools/35.0.0"
 ANDROID_JAR="$SDK/platforms/android-35/android.jar"
-KEYSTORE="$HOME/.android/wezterm-debug.keystore"
+KEYSTORE="${WEZTERM_KEYSTORE:-$HOME/.android/wezterm-debug.keystore}"
 
 AAPT2="$BUILD_TOOLS/aapt2"
 D8="$BUILD_TOOLS/d8"
 ZIPALIGN="$BUILD_TOOLS/zipalign"
 APKSIGNER="$BUILD_TOOLS/apksigner"
+PROFGEN="$SDK/cmdline-tools/latest/bin/profgen"
+APKANALYZER="$SDK/cmdline-tools/latest/bin/apkanalyzer"
 
-for tool in "$AAPT2" "$D8" "$ZIPALIGN" "$APKSIGNER" "$ANDROID_JAR" "$KEYSTORE"; do
+for tool in "$AAPT2" "$D8" "$ZIPALIGN" "$APKSIGNER" "$PROFGEN" "$APKANALYZER" "$ANDROID_JAR" "$KEYSTORE"; do
     if [ ! -e "$tool" ]; then
         echo "Missing build dependency: $tool" >&2
         exit 1
@@ -20,9 +22,9 @@ for tool in "$AAPT2" "$D8" "$ZIPALIGN" "$APKSIGNER" "$ANDROID_JAR" "$KEYSTORE"; 
 done
 
 cd "$ROOT"
-rm -rf build/compiled build/gen build/classes build/dex
-rm -f build/WEzterm-unsigned.apk build/WEzterm-with-dex-unsigned.apk build/WEzterm-aligned-unsigned.apk build/WEzterm.apk build/WEzterm.apk.idsig
-mkdir -p build/compiled build/gen build/classes build/dex
+rm -rf build/compiled build/gen build/classes build/test-classes build/dex build/profile
+rm -f build/WEzterm-unsigned.apk build/WEzterm-with-dex-unsigned.apk build/WEzterm-aligned-unsigned.apk build/WEzterm.apk build/WEzterm.apk.idsig build/WEzterm.dm build/WEzterm.apk.json
+mkdir -p build/compiled build/gen build/classes build/test-classes build/dex build/profile/assets/dexopt
 
 # WHY: the phone plan has repeatedly regressed protected UX after unrelated
 # fixes. Run cheap source-level regression gates before compiling so a future
@@ -34,6 +36,28 @@ fi
 if [ -x scripts/test-phone-plan-guards.sh ]; then
     PHONE_SKIP_GENERATED_PAGE_GUARD=1 scripts/test-phone-plan-guards.sh
 fi
+
+# WHY: v296's controllable slow drag, two-direction fling momentum, held-scroll
+# ownership, SSE independence, send/draft fencing, and status colors were each
+# hard-won old-red failures. A release build must run their source guards before
+# touching aapt/javac; compiling successfully is not acceptance evidence.
+python3 scripts/test-apk-t5-observability-contract.py
+python3 scripts/test-apk-manual-scroll-distinct-row-owner-guard.py
+python3 scripts/test-apk-second-down-held-history-contract.py
+python3 scripts/test-apk-pending-send-scroll-owner-guard.py
+python3 scripts/test-apk-active-switch-ephemeral-scroll-owner-guard.py
+python3 scripts/test-apk-composer-read-hold-release-contract.py
+python3 scripts/test-apk-upload-retry-ime-toolbar-guards.py
+python3 scripts/test-apk-paintonly-identity-guard.py
+bash scripts/test-apk-realtime-idle-guards.sh
+if [ -f "${WEZTERM_CONTROL_SOURCE:-$HOME/.local/bin/mantis-phone-control-server}" ]; then
+    control_source="${WEZTERM_CONTROL_SOURCE:-$HOME/.local/bin/mantis-phone-control-server}"
+    MANTIS_SCROLL_CONTRACT_SERVER="$control_source" bash scripts/test-apk-local-history-cache-guards.sh
+    python3 scripts/test-apk-native-fling-stream-contract.py --control-source "$control_source"
+    python3 scripts/test-apk-released-scroll-hold-contract.py --control-source "$control_source"
+    python3 scripts/test-apk-title-status-color-contract.py --control-source "$control_source"
+fi
+PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q -p no:cacheprovider tests/test_window_title_lkg.py
 
 "$AAPT2" compile --dir app/src/main/res -o build/compiled
 "$AAPT2" link \
@@ -53,6 +77,26 @@ javac --release 8 \
     -d build/classes \
     $(find app/src/main/java build/gen -name '*.java' -not -path '*.backups/*' | sort)
 
+javac --release 8 \
+    -classpath "$ANDROID_JAR:build/classes" \
+    -d build/test-classes \
+    tests/WindowTitleBindingLastGoodTest.java \
+    app/src/test/java/com/kaleeb/wezterm/RateLimitControlIndependenceTest.java \
+    tests/SendStatusRevisionFenceTest.java \
+    tests/SendStatusRevisionFenceLateOlderTest.java \
+    tests/SendStatusRevisionFenceStackedAfterWorkingTest.java \
+    tests/SendStatusRevisionFenceEqualBaselineTimeoutTest.java
+
+for test_class in \
+    WindowTitleBindingLastGoodTest \
+    RateLimitControlIndependenceTest \
+    SendStatusRevisionFenceTest \
+    SendStatusRevisionFenceLateOlderTest \
+    SendStatusRevisionFenceStackedAfterWorkingTest \
+    SendStatusRevisionFenceEqualBaselineTimeoutTest; do
+    java -ea -cp "$ANDROID_JAR:build/classes:build/test-classes" "com.kaleeb.wezterm.$test_class"
+done
+
 "$D8" \
     --lib "$ANDROID_JAR" \
     --min-api 26 \
@@ -61,6 +105,14 @@ javac --release 8 \
 
 cp build/WEzterm-unsigned.apk build/WEzterm-with-dex-unsigned.apk
 (cd build/dex && zip -q ../WEzterm-with-dex-unsigned.apk classes.dex)
+
+"$PROFGEN" validate app/src/main/baseline-prof.txt
+"$PROFGEN" bin app/src/main/baseline-prof.txt \
+    --apk build/WEzterm-with-dex-unsigned.apk \
+    --profile-format v0_1_0_p \
+    --output build/profile/assets/dexopt/baseline.prof \
+    --output-meta build/profile/assets/dexopt/baseline.profm
+(cd build/profile && zip -q ../WEzterm-with-dex-unsigned.apk assets/dexopt/baseline.prof assets/dexopt/baseline.profm)
 
 "$ZIPALIGN" -f 4 build/WEzterm-with-dex-unsigned.apk build/WEzterm-aligned-unsigned.apk
 "$APKSIGNER" sign \
@@ -72,6 +124,7 @@ cp build/WEzterm-unsigned.apk build/WEzterm-with-dex-unsigned.apk
     build/WEzterm-aligned-unsigned.apk
 
 "$APKSIGNER" verify --print-certs build/WEzterm.apk >/dev/null
+"$PROFGEN" extractProfile --apk build/WEzterm.apk --output-dex-metadata build/WEzterm.dm --profile-format v0_1_5_s
 
 # WHY: the phone opens build/install.html for no-USB installs. APK signing is
 # not treated as hash-stable here, so a manually maintained SHA can become
@@ -81,6 +134,27 @@ cp build/WEzterm-unsigned.apk build/WEzterm-with-dex-unsigned.apk
 VERSION_CODE="$(grep -o 'android:versionCode="[0-9]*"' app/src/main/AndroidManifest.xml | head -n 1 | cut -d'"' -f2)"
 VERSION_NAME="$(grep -o 'android:versionName="[^"]*"' app/src/main/AndroidManifest.xml | head -n 1 | cut -d'"' -f2)"
 APK_SHA="$(sha256sum build/WEzterm.apk | awk '{print $1}')"
+DM_SHA="$(sha256sum build/WEzterm.dm | awk '{print $1}')"
+SIGNER_SHA="$($APKSIGNER verify --print-certs build/WEzterm.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+[ "$($APKANALYZER manifest application-id build/WEzterm.apk)" = "com.kaleeb.wezterm" ]
+[ "$($APKANALYZER manifest version-code build/WEzterm.apk)" = "$VERSION_CODE" ]
+[ "$($APKANALYZER manifest version-name build/WEzterm.apk)" = "$VERSION_NAME" ]
+python3 - "build/WEzterm.apk.json" "$VERSION_NAME" "$VERSION_CODE" "$APK_SHA" "$DM_SHA" "$SIGNER_SHA" <<'PY'
+import json, sys
+path, version_name, version_code, apk_sha, dm_sha, signer_sha = sys.argv[1:]
+payload = {
+    "schema_version": 1,
+    "package": "com.kaleeb.wezterm",
+    "version_name": version_name,
+    "version_code": int(version_code),
+    "sha256": apk_sha,
+    "dm_sha256": dm_sha,
+    "signer_sha256": signer_sha,
+}
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(payload, handle, indent=2, sort_keys=True)
+    handle.write("\n")
+PY
 cat > build/install.html <<HTML
 <!doctype html>
 <html lang="en">

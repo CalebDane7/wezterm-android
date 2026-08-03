@@ -90,8 +90,13 @@ fi
   die "build-apk.sh failed"
 }
 apk="$ROOT/build/WEzterm.apk"
+dm="$ROOT/build/WEzterm.dm"
+release_manifest="$ROOT/build/WEzterm.apk.json"
 [ -s "$apk" ] || die "missing built APK at $apk"
+[ -s "$dm" ] || die "missing built dex metadata at $dm"
+[ -s "$release_manifest" ] || die "missing verified release manifest at $release_manifest"
 sha="$(sha256sum "$apk" | awk '{print $1}')"
+manifest_sha="$(sha256sum "$release_manifest" | awk '{print $1}')"
 
 notes="$(mktemp)"
 trap 'rm -f "$notes"' EXIT
@@ -100,6 +105,7 @@ WEzTerm Android $tag
 
 - versionCode: $version_code
 - APK sha256: $sha
+- Verified metadata sha256: $manifest_sha
 - Stop maps to one desktop Escape.
 - Enter / IME action submits through the same pinned path as Send.
 EOF
@@ -110,13 +116,21 @@ fi
 git push --quiet origin "$tag"
 
 if gh release view "$tag" --repo "$REPO" >/dev/null 2>&1; then
-  gh release upload "$tag" "$apk#WEzterm.apk" --repo "$REPO" --clobber
+  gh release upload "$tag" \
+    "$apk#WEzterm.apk" \
+    "$dm#WEzterm.dm" \
+    "$release_manifest#WEzterm.apk.json" \
+    --repo "$REPO" --clobber
 else
-  gh release create "$tag" "$apk#WEzterm.apk" \
+  gh release create "$tag" \
+    "$apk#WEzterm.apk" \
+    "$dm#WEzterm.dm" \
+    "$release_manifest#WEzterm.apk.json" \
     --repo "$REPO" \
     --title "WEzTerm Android $tag" \
     --notes-file "$notes" \
-    --verify-tag
+    --verify-tag \
+    --latest
 fi
 
 echo "[$(timestamp)] published APK release $tag versionCode=$version_code sha256=$sha repo=$REPO"

@@ -1,0 +1,5 @@
+stage=apk-action result=started actionId=active-row-switch-52725050-2 tapId=tap-52725050-3 actionKind=active-row-switch windowId=@74
+stage=apk-local-feedback result=first-local-feedback actionId=active-row-switch-52725050-2 tapId=tap-52725050-3 windowId=@74 actionElapsedMs=11 firstLocalFeedbackElapsedMs=11
+stage=response method=GET endpoint=/select-live windowId=@74 actionId=active-row-switch-52725050-2 tapId=tap-52725050-3 code=200 ok=true elapsedMs=1074
+stage=apk-readable-frame result=first-readable-frame actionId=active-row-switch-52725050-2 tapId=tap-52725050-3 endpoint=/terminal-frame windowId=@74 frameWindowId=@74 actionElapsedMs=1131 firstLocalFeedbackElapsedMs=11
+stage=active-switch-lifecycle endpoint=dom-apply result=committed actionId=active-row-switch-52725050-2 tapId=tap-52725050-3 windowId=@74 frameWindowId=@74 elapsedMs=1129 bodyTitleSessionAtomic=true visualStateCommitted=true

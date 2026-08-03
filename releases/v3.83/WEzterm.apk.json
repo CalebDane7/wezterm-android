@@ -1,0 +1,9 @@
+{
+  "dm_sha256": "7ba3850ae7d54aa6e36c63b9eab8d3998aa8ae642e01922928a4897445fba719",
+  "package": "com.kaleeb.wezterm",
+  "schema_version": 1,
+  "sha256": "0c2db9a73601bb68de641873c5fed90d7538f929e2e6086f38703e903aaaeef6",
+  "signer_sha256": "130ac1b9a8b57bc12b87a944e6e42518dc12da6fa956bc2c46f3efac588dfd62",
+  "version_code": 296,
+  "version_name": "3.83"
+}

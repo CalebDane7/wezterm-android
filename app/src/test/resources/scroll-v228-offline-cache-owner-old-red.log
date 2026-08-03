@@ -1,0 +1,27 @@
+# Privacy-safe excerpt of installed v228 evidence. No terminal body text is retained.
+# Physical one-finger drag: renderer returned no visible owner.
+1785134905.942 WEztermControl: stage=terminal-touch actionId=scroll-57051891-1 action=down windowId=@74 x=970.0 y=1332.0 firstLocalFeedbackElapsedMs=-1
+1785134905.955 WEztermControl: stage=terminal-touch actionId=scroll-57051891-1 action=history-start windowId=@74 firstLocalFeedbackElapsedMs=-1
+1785134906.783 WEztermControl: stage=touch-nudge endpoint=renderer actionId=scroll-57051891-1 deltaPx=768.86 firstLocalFeedbackElapsedMs=-1 result=READY_GAP appliedPx=0.0
+1785134906.785 WEztermControl: stage=terminal-touch actionId=scroll-57051891-1 action=up windowId=@74 firstLocalFeedbackAtMs=0 firstLocalFeedbackElapsedMs=-1 historyActive=true
+1785134906.786 WEztermControl: stage=touch-scroll-release endpoint=local actionId=scroll-57051891-1 firstLocalFeedbackElapsedMs=-1 result=no-visible-owner-release
+
+# The exact-generation cache reached its 4,000-row bound but remained memory-only.
+1785134913.966 WEztermControl: stage=local-history-viewport endpoint=/scrollback/chunk result=boundary-prepended actionId=scroll-57051891-1 windowId=@74 generationKey=@74:-74:764744:100000 beforeRows=4000 viewportRows=4000
+1785134913.966 WEztermControl: stage=local-history-owner endpoint=local-cache result=async-paint-deferred-boundary-source-memory-only actionId=scroll-57051891-1 windowId=@74 activeFeedbackOwner=false firstLocalFeedbackAtMs=0 localViewportOffset=3904 localHistoryCachedRows=4000
+
+# Both configured network bases timed out; cached rows already existed.
+1785134919.375 WEztermControl: stage=exception method=GET endpoint=/active actionId=scroll-57051891-1 base=direct code=-1 ok=false elapsedMs=3007 exception=SocketTimeoutException
+1785134920.471 WEztermControl: stage=exception method=GET endpoint=/scrollback/chunk windowId=@74 actionId=scroll-57051891-1 base=direct code=-1 ok=false elapsedMs=5489 exception=SocketTimeoutException
+1785134922.527 WEztermControl: stage=exception method=GET endpoint=/active actionId=scroll-57051891-1 base=magicdns code=-1 ok=false elapsedMs=3010 exception=SocketTimeoutException
+
+# Later, the same exact cache repeatedly hit while native read-hold suppressed
+# accepted and pending frame application. The action id is correlation evidence;
+# this later action itself was a tap, not the physical drag above.
+1785135284.714 WEztermControl: stage=local-history-cache endpoint=/scrollback/chunk result=hit windowId=@74 generationKey=@74:-74:764744:100000 frameHash=ffd7e4e4
+1785135287.466 WEztermControl: stage=local-history-cache endpoint=/scrollback/chunk result=hit windowId=@74 generationKey=@74:-74:764744:100000 frameHash=ffd7e4e4
+1785135288.745 WEztermControl: stage=local-history-cache endpoint=/scrollback/chunk result=hit windowId=@74 generationKey=@74:-74:764744:100000 frameHash=ffd7e4e4
+1785135290.013 WEztermControl: stage=local-history-cache endpoint=/scrollback/chunk result=hit windowId=@74 generationKey=@74:-74:764744:100000 frameHash=ffd7e4e4
+1785135283.473 WEztermControl: stage=capture-renderer endpoint=/terminal-frame result=suppressed-read-hold windowId=@74 actionId=scroll-57422106-26 status=200 acceptedFrame=true frameWindowId=@74 frameHash=ffd7e4e4 generation=211 skipReason=native-read-hold
+1785135283.511 WEztermControl: stage=capture-renderer endpoint=dom-apply result=suppressed-read-hold windowId=@74 actionId=scroll-57422106-26 acceptedFrame=true frameWindowId=@74 frameHash=ffd7e4e4 generation=212 skipReason=native-read-hold
+1785135289.421 WEztermControl: stage=capture-renderer endpoint=/terminal-frame result=skipped windowId=@74 actionId=scroll-57422106-26 acceptedFrame=false generation=224 skipReason=native-read-hold

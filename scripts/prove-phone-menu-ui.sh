@@ -4,6 +4,7 @@ trap 'echo "phone menu UI proof failed at line $LINENO while running: $BASH_COMM
 
 ADB_SERIAL="${ADB_SERIAL:-127.0.0.1:5556}"
 ADB_TIMEOUT_SECONDS="${ADB_TIMEOUT_SECONDS:-20}"
+ADB_EXECUTABLE="${WEZTERM_ADB_EXECUTABLE:-adb}"
 CONTROL_URL="${PHONE_CONTROL_URL:-http://100.113.254.7:8089}"
 TMUX_SESSION="${PHONE_TMUX_SESSION:-main_phone}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -13,26 +14,27 @@ PACKAGE="${WEZTERM_PACKAGE:-com.kaleeb.wezterm}"
 ACTIVITY="${WEZTERM_ACTIVITY:-com.kaleeb.wezterm/.MainActivity}"
 EXPECTED_VERSION_NAME="${EXPECTED_VERSION_NAME:-$(grep -o 'android:versionName="[^"]*"' "$MANIFEST" | head -n 1 | cut -d'"' -f2)}"
 EXPECTED_VERSION_CODE="${EXPECTED_VERSION_CODE:-$(grep -o 'android:versionCode="[0-9]*"' "$MANIFEST" | head -n 1 | cut -d'"' -f2)}"
+TMP_ROOT="${WEZTERM_UI_TMP_ROOT:-${TMPDIR:-/tmp}}"
 DUMP_REMOTE="${WEZTERM_UI_DUMP_REMOTE:-/sdcard/wezterm-window-$$.xml}"
-DUMP_LOCAL="${WEZTERM_UI_DUMP_LOCAL:-/tmp/wezterm-window-$$.xml}"
+DUMP_LOCAL="${WEZTERM_UI_DUMP_LOCAL:-$TMP_ROOT/wezterm-window-$$.xml}"
 SCREENSHOT_DIR="${WEZTERM_SCREENSHOT_DIR:-/tmp}"
 OLD_SCREENSHOT="$SCREENSHOT_DIR/wezterm-v152-old-sessions.png"
 BUTTON_SCREENSHOT="$SCREENSHOT_DIR/wezterm-v152-button-proof.png"
 PROOF_NAME="WEzterm UI Button Proof"
 CLI_KEYS_TITLE="Phone Keys Test"
-COPY_FILE="/tmp/wezterm-ui-copy-paste-proof.$$"
-STOP_FILE="/tmp/wezterm-ui-stop-proof.$$"
+COPY_FILE="$TMP_ROOT/wezterm-ui-copy-paste-proof.$$"
+STOP_FILE="$TMP_ROOT/wezterm-ui-stop-proof.$$"
 COPY_TOKEN="PHONE_UI_COPY_SOURCE_$(date +%s)_$$"
 COPY_SENTENCE="PHONE UI COPY FULL TEXT OK $(date +%s) $$"
-TYPE_FILE="/tmp/wezterm-ui-keyboard-proof.$$"
+TYPE_FILE="$TMP_ROOT/wezterm-ui-keyboard-proof.$$"
 TYPE_TOKEN="PHONE_UI_TYPE_$(date +%s)_$$"
 TYPE_BAD_SUFFIX="BAD"
-DRIFT_FILE="/tmp/wezterm-ui-draft-target-proof.$$"
-DRIFT_OTHER_FILE="/tmp/wezterm-ui-draft-target-other.$$"
+DRIFT_FILE="$TMP_ROOT/wezterm-ui-draft-target-proof.$$"
+DRIFT_OTHER_FILE="$TMP_ROOT/wezterm-ui-draft-target-other.$$"
 DRIFT_TOKEN="PHONE_UI_DRAFT_TARGET_$(date +%s)_$$"
 REFRESH_TOKEN="PHONE_UI_REFRESH_$(date +%s)_$$"
-CLI_KEYS_FILE="/tmp/wezterm-ui-cli-keys-proof.$$"
-CLI_KEYS_SCRIPT="/tmp/wezterm-ui-cli-picker-proof.$$.py"
+CLI_KEYS_FILE="$TMP_ROOT/wezterm-ui-cli-keys-proof.$$"
+CLI_KEYS_SCRIPT="$TMP_ROOT/wezterm-ui-cli-picker-proof.$$.py"
 STOP_VISIBLE_DRAFT_TOKEN="PHONE_UI_STOP_DRAFT_$(date +%s)_$$"
 
 orig_window=""
@@ -45,6 +47,14 @@ resume_window=""
 reader_window=""
 reader_source_window=""
 initial_windows_file=""
+scroll_record_remote=""
+scroll_record_pid=""
+
+sealed_t5_mode() {
+    [ "${WEZTERM_UI_SEALED_T5_PROOF:-0}" = "1" ]
+}
+
+export PHONE_PROOF_ADB_EXECUTABLE="${PHONE_PROOF_ADB_EXECUTABLE:-$ADB_EXECUTABLE}"
 
 if [ -f "$SELECTION_LOCK_HELPER" ]; then
     # shellcheck source=/dev/null
@@ -58,16 +68,16 @@ if ! declare -F phone_proof_curl >/dev/null; then
 fi
 
 adb_cmd() {
-    adb -s "$ADB_SERIAL" "$@"
+    "$ADB_EXECUTABLE" -s "$ADB_SERIAL" "$@"
 }
 
 assert_installed_package_version() {
-    local package_dump="/tmp/wezterm-menu-ui-package-proof.txt"
+    local package_dump="$TMP_ROOT/wezterm-menu-ui-package-proof.$$.txt"
     # WHY: this proof exercises the real installed APK, so it must reject stale
     # phone builds. Otherwise a source-only v2.09 guard can pass while the phone
     # is still running the older build that duplicated typing or opened Send on
     # tab switches.
-    if ! timeout "${ADB_TIMEOUT_SECONDS}s" adb -s "$ADB_SERIAL" shell dumpsys package "$PACKAGE" > "$package_dump"; then
+    if ! timeout "${ADB_TIMEOUT_SECONDS}s" "$ADB_EXECUTABLE" -s "$ADB_SERIAL" shell dumpsys package "$PACKAGE" > "$package_dump"; then
         echo "phone menu UI proof blocked: ADB package proof timed out after ${ADB_TIMEOUT_SECONDS}s" >&2
         exit 3
     fi
@@ -86,7 +96,7 @@ adb_pull_dump() {
     # following `adb pull` hangs indefinitely. Bound the pull so this proof lane
     # fails with retry diagnostics instead of freezing while the APK bug remains
     # unproven.
-    timeout "${timeout_seconds}s" adb -s "$ADB_SERIAL" pull "$DUMP_REMOTE" "$DUMP_LOCAL"
+    timeout "${timeout_seconds}s" "$ADB_EXECUTABLE" -s "$ADB_SERIAL" pull "$DUMP_REMOTE" "$DUMP_LOCAL"
 }
 
 urlencode() {
@@ -932,8 +942,11 @@ import xml.etree.ElementTree as ET
 
 path, wanted = sys.argv[1], sys.argv[2]
 root = ET.parse(path).getroot()
+def normalized_text(value):
+    return (value or "").replace("\n", "/").strip()
 for node in root.iter("node"):
-    if node.attrib.get("class") == "android.widget.Button" and node.attrib.get("text") == wanted:
+    text = node.attrib.get("text") or ""
+    if node.attrib.get("class") == "android.widget.Button" and (text == wanted or normalized_text(text) == wanted):
         raise SystemExit(0)
 raise SystemExit(1)
 PY
@@ -1048,6 +1061,21 @@ assert_absent() {
     echo "absent: $text"
 }
 
+assert_terminal_scroll_did_not_open_active_sessions() {
+    local label="$1"
+    dump_ui
+    if dump_has_text "Active Sessions"; then
+        # WHY: Newton's 2026-07-04 installed proof showed Active Sessions after
+        # terminal-area scroll gestures. That is not a scroll proof; it means the
+        # gesture escaped the terminal owner or the proof injected into controls.
+        # Fail immediately so black-gap/snapback rows cannot look green while a
+        # modal hid the terminal and native draft state.
+        echo "phone menu UI proof failed: terminal-area scroll opened Active Sessions during $label" >&2
+        echo "UI dump: $DUMP_LOCAL" >&2
+        exit 1
+    fi
+}
+
 input_method_visible() {
     adb_cmd shell dumpsys input_method | grep -Eq 'mInputShown=true|mImeWindowVis=[^0]'
 }
@@ -1069,7 +1097,8 @@ terminal = None
 buttons = []
 nav_top = None
 screen_bottom = 0
-toolbar_labels = {"New", "Old", "Upload", "Active", "Bottom", "Copy/Paste", "Workspace", "Settings", "Close", "Start", "Stop"}
+toolbar_labels = {"New", "Old", "Active", "Bottom", "Copy/Paste", "Workspace", "Settings", "Close", "Start", "Send", "Stop"}
+required_toolbar_labels = {"New", "Old", "Active", "Bottom", "Copy/Paste", "Workspace", "Settings", "Close", "Stop"}
 composer_top = None
 composer_bottom = None
 
@@ -1094,8 +1123,9 @@ for node in root.iter("node"):
         candidate = (prefer, area, left, top, right, bottom)
         if terminal is None or candidate > terminal:
             terminal = candidate
-    if text in toolbar_labels and klass == "android.widget.Button":
-        buttons.append((left, top, right, bottom, text))
+    normalized_text = text.replace("\n", "/").strip()
+    if normalized_text in toolbar_labels and klass == "android.widget.Button":
+        buttons.append((left, top, right, bottom, normalized_text))
     if klass == "android.widget.EditText" and (
         text == "Type prompt"
         or node.attrib.get("content-desc", "") == "Type prompt"
@@ -1108,9 +1138,14 @@ for node in root.iter("node"):
 
 if terminal is None:
     raise SystemExit("could not find terminal-container/WebView bounds")
-if len(buttons) < len(toolbar_labels):
-    found = sorted({item[4] for item in buttons})
-    raise SystemExit(f"not all toolbar buttons were present: {found}")
+found = {item[4] for item in buttons}
+missing = required_toolbar_labels - found
+if missing or not ({"Start", "Send"} & found):
+    raise SystemExit(
+        "not all toolbar buttons were present: "
+        f"found={sorted(found)} missing={sorted(missing)} "
+        f"start_or_send={sorted({'Start', 'Send'} & found)}"
+    )
 
 _, _, t_left, t_top, t_right, t_bottom = terminal
 button_top = min(item[1] for item in buttons)
@@ -1311,7 +1346,14 @@ dismiss_terminal_input_draft_if_present() {
         return 0
     fi
     local draft_file="$SCREENSHOT_DIR/wezterm-preserved-terminal-input-draft-$$.txt"
-    printf '%s\n' "$draft" > "$draft_file"
+    if sealed_t5_mode; then
+        # WHY: installed-phone proof must never turn an unsent user draft into
+        # a durable artifact. Presence and length are enough to fail closed.
+        draft_file="$SCREENSHOT_DIR/wezterm-blocked-terminal-input-draft-$$.metadata"
+        printf 'draft_present=true\ncharacter_count=%s\n' "${#draft}" > "$draft_file"
+    else
+        printf '%s\n' "$draft" > "$draft_file"
+    fi
     if [ "${WEZTERM_UI_ALLOW_CLEAR_DRAFT:-0}" != "1" ]; then
         echo "phone menu UI proof blocked: hidden terminal input contains unsent text; saved draft to $draft_file and refused to clear it" >&2
         echo "WHY: xterm's hidden Terminal input is not the native composer, so Back cannot reliably dismiss it. Clearing it without an explicit opt-in could lose a real prompt." >&2
@@ -1338,7 +1380,14 @@ dismiss_native_composer_if_open() {
         draft="$(composer_draft_text_from_dump)"
         if [ -n "$draft" ]; then
             local draft_file="$SCREENSHOT_DIR/wezterm-preserved-composer-draft-$$.txt"
-            printf '%s\n' "$draft" > "$draft_file"
+            if sealed_t5_mode; then
+                # WHY: retain only privacy-safe blocker metadata in a sealed
+                # proof run; raw prompt text is never an evidence artifact.
+                draft_file="$SCREENSHOT_DIR/wezterm-blocked-composer-draft-$$.metadata"
+                printf 'draft_present=true\ncharacter_count=%s\n' "${#draft}" > "$draft_file"
+            else
+                printf '%s\n' "$draft" > "$draft_file"
+            fi
             if [ "${WEZTERM_UI_ALLOW_CLEAR_DRAFT:-0}" = "1" ]; then
                 echo "Native composer draft preserved to $draft_file before explicit proof clear"
             fi
@@ -1662,8 +1711,11 @@ import xml.etree.ElementTree as ET
 
 path, wanted = sys.argv[1], sys.argv[2]
 root = ET.parse(path).getroot()
+def normalized_text(value):
+    return (value or "").replace("\n", "/").strip()
 for node in root.iter("node"):
-    if node.attrib.get("text") == wanted:
+    text = node.attrib.get("text") or ""
+    if text == wanted or normalized_text(text) == wanted:
         bounds = node.attrib.get("bounds", "")
         match = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
         if not match:
@@ -1692,8 +1744,11 @@ import xml.etree.ElementTree as ET
 
 path, wanted = sys.argv[1], sys.argv[2]
 root = ET.parse(path).getroot()
+def normalized_text(value):
+    return (value or "").replace("\n", "/").strip()
 for node in root.iter("node"):
-    if node.attrib.get("text") == wanted:
+    text = node.attrib.get("text") or ""
+    if text == wanted or normalized_text(text) == wanted:
         bounds = node.attrib.get("bounds", "")
         match = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
         if not match:
@@ -1724,6 +1779,56 @@ PY
         dump_ui
     done
     echo "phone menu UI proof failed: focus kept leaving WEzterm before tapping '$text'" >&2
+    adb_cmd shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' >&2 || true
+    exit 1
+}
+
+tap_first_visible_text_prefix_from_current_dump() {
+    local prefix="$1"
+    local coords
+    local attempt
+    for attempt in 1 2; do
+        coords="$(python3 - "$DUMP_LOCAL" "$prefix" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+path, wanted_prefix = sys.argv[1], sys.argv[2]
+root = ET.parse(path).getroot()
+def normalized_text(value):
+    return (value or "").replace("\n", "/").strip()
+for node in root.iter("node"):
+    if node.attrib.get("enabled", "true") == "false":
+        continue
+    text = normalized_text(node.attrib.get("text") or "")
+    if not text.startswith(wanted_prefix):
+        continue
+    bounds = node.attrib.get("bounds", "")
+    match = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
+    if not match:
+        raise SystemExit(f"no parsable bounds for prefix {wanted_prefix}: {bounds}")
+    left, top, right, bottom = map(int, match.groups())
+    print((left + right) // 2, (top + bottom) // 2)
+    break
+else:
+    raise SystemExit(f"missing enabled text prefix {wanted_prefix} in current dump")
+PY
+        )"
+        read -r x y <<<"$coords"
+        if has_window_focus; then
+            adb_cmd shell input tap "$x" "$y"
+            sleep 0.8
+            return 0
+        fi
+        if [ "${WEZTERM_UI_ALLOW_FOCUS_STEAL:-0}" != "1" ]; then
+            echo "phone menu UI proof failed: focus left WEzterm before tapping prefix '$prefix' from current dump" >&2
+            adb_cmd shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' >&2 || true
+            exit 1
+        fi
+        wait_for_focus
+        dump_ui
+    done
+    echo "phone menu UI proof failed: focus kept leaving WEzterm before tapping prefix '$prefix'" >&2
     adb_cmd shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' >&2 || true
     exit 1
 }
@@ -2277,6 +2382,13 @@ restore_original_tmux_state() {
 
 cleanup() {
     set +e
+    if [ -n "${scroll_record_pid:-}" ]; then
+        kill "$scroll_record_pid" >/dev/null 2>&1 || true
+        wait "$scroll_record_pid" >/dev/null 2>&1 || true
+    fi
+    if [ -n "${scroll_record_remote:-}" ]; then
+        adb_cmd shell rm -f "$scroll_record_remote" >/dev/null 2>&1 || true
+    fi
     cleanup_window "$reader_window" "READ "
     cleanup_window "$resume_window"
     cleanup_window "$drift_window" "$PROOF_NAME Drift"
@@ -2290,6 +2402,8 @@ cleanup() {
     restore_original_tmux_state
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
 
 echo "phone menu UI proof: adb/control state"
 assert_exclusive_phone_proof
@@ -2325,7 +2439,7 @@ ensure_toolbar
 ensure_plain_toolbar
 
 echo "phone menu UI proof: toolbar labels"
-for label in New Old Upload Active Bottom "Copy/Paste" Workspace Settings Close Start Stop; do
+for label in New Old Active Bottom "Copy/Paste" Workspace Settings Close Start Stop; do
     assert_toolbar_button_text "$label"
 done
 assert_absent "Tabs"
@@ -2502,6 +2616,31 @@ wait_for_pane_mode "0"
 wait_for_terminal_screenshot_settled_without_dots /tmp/wezterm-v249-refresh-toolbar-proof.png "Settings Refresh" 30 0.5
 echo "Refresh button restored live mode"
 
+echo "phone menu UI proof: Settings -> Codex account switch controls"
+ensure_plain_toolbar
+dump_ui
+tap_visible_text_from_current_dump "Settings"
+wait_for_visible_text "Codex account" "Codex account Settings row"
+tap_visible_text_from_current_dump "Codex account"
+wait_for_visible_text "Current Codex account" "Codex account dialog"
+assert_text "Repair signed-in sessions"
+dump_ui
+tap_first_visible_text_prefix_from_current_dump "Switch to "
+wait_for_visible_text "Start Codex sign-in?" "saved-account switch confirmation"
+assert_text_any "Start switch" "START SWITCH"
+assert_text_any "Cancel" "CANCEL"
+press_back
+wait_for_visible_text "Current Codex account" "Codex account dialog after saved-account cancel"
+dump_ui
+tap_first_visible_text_prefix_from_current_dump "Show login code for "
+wait_for_visible_text "Show Codex login code?" "saved-account explicit code confirmation"
+assert_text_any "Show code" "SHOW CODE"
+assert_text_any "Cancel" "CANCEL"
+press_back
+wait_for_visible_text "Current Codex account" "Codex account dialog after code-login cancel"
+press_back
+ensure_plain_toolbar
+
 echo "phone menu UI proof: Scroll menu buttons"
 tmux send-keys -t "$TMUX_SESSION:$proof_window" "for i in \$(seq 1 140); do printf 'UIBTN_%04d\\n' \"\$i\"; done; printf '${COPY_TOKEN}\\n'" Enter
 wait_for_capture_text "$proof_window" "$COPY_TOKEN"
@@ -2538,9 +2677,14 @@ control_get "/scroll?where=bottom" >/dev/null || true
 wait_for_active_window_id "$proof_window"
 wait_for_window_pane_mode "$proof_window" "0"
 ensure_toolbar
-scroll_record_remote="/sdcard/wezterm-v296-physical-scroll-$$.mp4"
+scroll_record_remote="${WEZTERM_UI_SCREENRECORD_REMOTE:-/sdcard/wezterm-v296-physical-scroll-$$.mp4}"
 scroll_record_local="$SCREENSHOT_DIR/wezterm-v296-physical-scroll.mp4"
+scroll_logcat_local="$SCREENSHOT_DIR/wezterm-v296-physical-scroll-logcat.txt"
 adb_cmd shell rm -f "$scroll_record_remote" >/dev/null 2>&1 || true
+# WHY: never clear the device-wide log buffer for one proof. A timestamp-bounded
+# filtered read keeps unrelated diagnostics intact while still tying the app's
+# touch-scroll messages to this installed-phone gesture run.
+scroll_logcat_since="$(date '+%m-%d %H:%M:%S.000')"
 # WHY: the release-stop/top-edge checks are visual regressions. Keep a real
 # installed-phone screenrecord beside the tmux cadence samples so the plan proof
 # is not reduced to source guards or control-server JSON.
@@ -2617,6 +2761,7 @@ for _ in $(seq 1 5); do
 done
 wait "$slow_swipe_pid"
 sleep 0.45
+assert_terminal_scroll_did_not_open_active_sessions "slow one-finger drag"
 wait_for_active_window_id "$proof_window"
 slow_scroll="$(tmux_window_scroll_position "$proof_window")"
 if ! [[ "$slow_scroll" =~ ^[0-9]+$ ]]; then
@@ -2666,6 +2811,7 @@ wait_for_window_pane_mode "$proof_window" "0"
 ensure_toolbar
 terminal_swipe history-fast 120
 sleep 1.6
+assert_terminal_scroll_did_not_open_active_sessions "fast one-finger flick"
 wait_for_active_window_id "$proof_window"
 fast_scroll="$(tmux_window_scroll_position "$proof_window")"
 fast_min_scroll=$(( slow_scroll + 20 ))
@@ -2700,6 +2846,7 @@ if [ "$live_return_elapsed_ms" -gt 1200 ]; then
     echo "phone menu UI proof failed: physical one-finger live-bottom return was too delayed; elapsed_ms=$live_return_elapsed_ms mode=$live_return_mode scroll=$live_return_scroll" >&2
     exit 1
 fi
+assert_terminal_scroll_did_not_open_active_sessions "live-bottom return"
 echo "Physical one-finger live-bottom exited copy-mode quietly and smoothly in ${live_return_elapsed_ms}ms"
 echo "phone menu UI proof: physical one-finger history-top range edge"
 control_get "/scroll?where=bottom" >/dev/null || true
@@ -2727,10 +2874,27 @@ if [ "$top_edge_seen" != "1" ]; then
 fi
 terminal_swipe history-slow 900
 sleep 0.75
+assert_terminal_scroll_did_not_open_active_sessions "history-top edge slow drag"
 top_after_json="$(control_get "/touch-scroll?where=lineUp&repeat=1")"
 printf '%s\n' "$top_after_json" | json_assert "history top remains a bounded range edge" "p.get('ok') is True and p.get('atHistoryTop') is True and p.get('scrollPosition', -1) >= p.get('historySize', 10**9)"
 echo "History-top one-finger range edge stayed bounded: before=$top_edge_json after=$top_after_json"
 wait "$scroll_record_pid" >/dev/null 2>&1 || true
+adb_cmd logcat -d -T "$scroll_logcat_since" -s WEztermControl:I '*:S' >"$scroll_logcat_local" 2>"$SCREENSHOT_DIR/wezterm-v296-logcat-dump.log" || true
+if [ ! -s "$scroll_logcat_local" ]; then
+    echo "phone menu UI proof failed: physical scroll logcat was not captured at $scroll_logcat_local" >&2
+    exit 1
+fi
+for required_log in \
+    "stage=touch-scroll-dispatch endpoint=/touch-scroll" \
+    "stage=touch-scroll-response endpoint=/touch-scroll" \
+    "scrollPosition="
+do
+    if ! grep -Fq "$required_log" "$scroll_logcat_local"; then
+        echo "phone menu UI proof failed: physical scroll logcat missing '$required_log'" >&2
+        echo "logcat: $scroll_logcat_local" >&2
+        exit 1
+    fi
+done
 adb_cmd pull "$scroll_record_remote" "$scroll_record_local" >"$SCREENSHOT_DIR/wezterm-v296-screenrecord-pull.log" 2>&1 || true
 if [ ! -s "$scroll_record_local" ]; then
     echo "phone menu UI proof failed: physical scroll screenrecord was not captured at $scroll_record_local" >&2
@@ -2738,6 +2902,7 @@ if [ ! -s "$scroll_record_local" ]; then
 fi
 assert_scroll_screenrecord_no_large_black_sections "$scroll_record_local" "Physical one-finger scroll"
 echo "Physical one-finger scroll screenrecord: $scroll_record_local"
+echo "Physical one-finger scroll logcat: $scroll_logcat_local"
 control_get "/scroll?where=bottom" >/dev/null || true
 wait_for_pane_mode "0"
 
@@ -2812,40 +2977,45 @@ tap_visible_text_from_current_dump "Rename current session"
 assert_text "Rename current session"
 press_back
 
-bug_dir="${XDG_RUNTIME_DIR:-/tmp}/phone-terminal/bug-reports"
-mkdir -p "$bug_dir"
-bug_before="$(find "$bug_dir" -maxdepth 1 -type f -name 'report-*.json' | wc -l)"
-open_command_palette
-scroll_until_text "Create bug report"
-tap_visible_text_from_current_dump "Create bug report"
-for _ in $(seq 1 30); do
-    bug_after="$(find "$bug_dir" -maxdepth 1 -type f -name 'report-*.json' | wc -l)"
-    if [ "$bug_after" -gt "$bug_before" ]; then
-        echo "Create bug report button created report"
-        break
+if sealed_t5_mode; then
+    echo "sealed T5 proof: skipping external Create bug report action"
+    echo "sealed T5 proof: skipping Install/update ACTION_VIEW action"
+else
+    bug_dir="${XDG_RUNTIME_DIR:-/tmp}/phone-terminal/bug-reports"
+    mkdir -p "$bug_dir"
+    bug_before="$(find "$bug_dir" -maxdepth 1 -type f -name 'report-*.json' | wc -l)"
+    open_command_palette
+    scroll_until_text "Create bug report"
+    tap_visible_text_from_current_dump "Create bug report"
+    for _ in $(seq 1 30); do
+        bug_after="$(find "$bug_dir" -maxdepth 1 -type f -name 'report-*.json' | wc -l)"
+        if [ "$bug_after" -gt "$bug_before" ]; then
+            echo "Create bug report button created report"
+            break
+        fi
+        sleep 0.2
+    done
+    if [ "${bug_after:-0}" -le "$bug_before" ]; then
+        echo "phone menu UI proof failed: Create bug report did not create a report file" >&2
+        exit 1
     fi
-    sleep 0.2
-done
-if [ "${bug_after:-0}" -le "$bug_before" ]; then
-    echo "phone menu UI proof failed: Create bug report did not create a report file" >&2
-    exit 1
-fi
 
-open_command_palette
-scroll_until_text "Install/update over Tailscale"
-tap_visible_text_from_current_dump "Install/update over Tailscale"
-sleep 1.5
-if has_window_focus; then
-    echo "phone menu UI proof failed: install page button did not leave WEzterm for ACTION_VIEW" >&2
-    exit 1
+    open_command_palette
+    scroll_until_text "Install/update over Tailscale"
+    tap_visible_text_from_current_dump "Install/update over Tailscale"
+    sleep 1.5
+    if has_window_focus; then
+        echo "phone menu UI proof failed: install page button did not leave WEzterm for ACTION_VIEW" >&2
+        exit 1
+    fi
+    echo "Install/update button launched external install surface"
+    reopen_wezterm
+    select_window "$proof_window"
+    wait_for_active_window_id "$proof_window"
+    control_get "/scroll?where=bottom" >/dev/null || true
+    wait_for_pane_mode "0"
+    ensure_toolbar
 fi
-echo "Install/update button launched external install surface"
-reopen_wezterm
-select_window "$proof_window"
-wait_for_active_window_id "$proof_window"
-control_get "/scroll?where=bottom" >/dev/null || true
-wait_for_pane_mode "0"
-ensure_toolbar
 
 echo "phone menu UI proof: Copy/Paste buttons round-trip Android clipboard through tmux"
 tmux send-keys -t "$TMUX_SESSION:$proof_window" "rm -f '$COPY_FILE'; printf '%s\\n' '$COPY_SENTENCE'; cat > '$COPY_FILE'" Enter
@@ -2887,10 +3057,18 @@ terminal_tap_for_typing
 sleep 0.8
 assert_regex '(text|content-desc|hint)="Type prompt"' "native composer opened from terminal tap"
 echo "Native composer opened from terminal tap"
+# WHY: v226 collapsed the whole first row while the IME was open. The user must
+# be able to switch/create sessions and hit Bottom without abandoning a draft;
+# only the redundant standalone Upload is gone because composer + owns upload.
+for label in New Old Active Bottom "Copy/Paste" Workspace Settings Close Send Stop; do
+    assert_toolbar_button_text "$label"
+done
+assert_terminal_toolbar_geometry
+echo "IME-open toolbar retained every requested action; standalone Upload absent"
 assert_composer_terminal_refit "$before_composer_terminal_height" "$before_composer_pane_height"
 assert_absent "Cancel"
-adb_cmd shell dumpsys input_method > /tmp/wezterm-ime-proof.txt || true
-adb_cmd exec-out screencap -p > /tmp/wezterm-v166-native-composer-proof.png
+adb_cmd shell dumpsys input_method > "$SCREENSHOT_DIR/wezterm-ime-proof.txt" || true
+adb_cmd exec-out screencap -p > "$SCREENSHOT_DIR/wezterm-v166-native-composer-proof.png"
 adb_cmd shell input text "${TYPE_TOKEN}${TYPE_BAD_SUFFIX}"
 if tmux capture-pane -p -t "$TMUX_SESSION:$proof_window" -S -20 -E - | grep -Fq "$TYPE_TOKEN"; then
     echo "phone menu UI proof failed: native composer text reached tmux before toolbar Send" >&2
